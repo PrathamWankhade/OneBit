@@ -12,7 +12,7 @@ import 'package:onebit/features/about/presentation/licenses_screen.dart';
 import 'package:onebit/features/bluetooth/presentation/bluetooth_dev_screen.dart';
 import 'package:onebit/features/channels/presentation/channel_details_screen.dart';
 import 'package:onebit/features/channels/presentation/channels_screen.dart';
-import 'package:onebit/features/channels/presentation/compose_message_screen.dart';
+import 'package:onebit/features/messaging/presentation/compose_message_screen.dart';
 import 'package:onebit/features/developer/presentation/developer_screen.dart';
 import 'package:onebit/features/developer/presentation/diagnostics_screen.dart';
 import 'package:onebit/features/developer/presentation/logs_screen.dart';
@@ -24,7 +24,11 @@ import 'package:onebit/features/identity/presentation/qr_scanner_screen.dart';
 import 'package:onebit/features/launch/presentation/intro_screen.dart';
 import 'package:onebit/features/launch/presentation/opening_screen.dart';
 import 'package:onebit/features/media/presentation/media_gallery_screen.dart';
+import 'package:onebit/features/media/presentation/media_providers.dart';
 import 'package:onebit/features/media/presentation/transfer_progress_screen.dart';
+import 'package:onebit/features/media/transfer/transfer_bitmap.dart';
+import 'package:onebit/features/media/transfer/transfer_session.dart';
+import 'package:onebit/features/media/transfer/transfer_state.dart';
 import 'package:onebit/features/mesh/presentation/mesh_dev_screen.dart';
 import 'package:onebit/features/mesh/presentation/mesh_screen.dart';
 import 'package:onebit/features/mesh/presentation/route_inspector_screen.dart';
@@ -191,6 +195,8 @@ void main() {
       final router = routerOf(tester);
       for (final entry in routes.entries) {
         router.go(entry.key);
+        // ignore: avoid_print
+        print('DEBUG navigating to ${entry.key}');
         await tester.pumpAndSettle();
         expect(
           find.byType(entry.value),
@@ -247,7 +253,31 @@ void main() {
     testWidgets('transfer session id reaches the progress screen', (
       tester,
     ) async {
+      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
       await tester.pumpWidget(oneBitApp(identity: testIdentity()));
+      await tester.pumpAndSettle();
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(OneBitApp)),
+      );
+      await container
+          .read(sqliteTransferRepositoryProvider)
+          .createSession(
+            TransferSession(
+              sessionId: 'session-1',
+              attachmentId: 'att-1',
+              peerNodeId: 'peer-9',
+              direction: TransferDirection.send,
+              state: TransferState.queued,
+              chunkSize: 512,
+              totalChunks: 4,
+              chunksBitmap: TransferBitmap.empty(4),
+              bytesTransferred: 0,
+              createdAt: DateTime.utc(2026, 1, 1),
+              updatedAt: DateTime.utc(2026, 1, 1),
+            ),
+          );
       await tester.pumpAndSettle();
 
       routerOf(tester).go(AppRoutePaths.transferOf('session-1'));

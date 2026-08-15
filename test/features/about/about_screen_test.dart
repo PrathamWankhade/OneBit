@@ -17,6 +17,9 @@ void main() {
     WidgetTester tester, {
     InMemorySharedPreferencesAsync? prefs,
   }) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
     final store = prefs ?? sharedPrefsStore();
     await tester.pumpWidget(oneBitApp(identity: testIdentity(), prefs: store));
     await tester.pumpAndSettle();

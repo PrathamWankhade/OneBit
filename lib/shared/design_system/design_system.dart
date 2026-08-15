@@ -9,6 +9,7 @@ export 'animations/onebit_motion.dart';
 export 'colors/onebit_color_schemes.dart';
 export 'colors/onebit_palette.dart';
 export 'icons/onebit_icons.dart';
+export 'navigation/onebit_navigation_direction.dart';
 export 'responsive/onebit_responsive.dart';
 export 'spacing/onebit_elevation.dart';
 export 'spacing/onebit_radius.dart';
