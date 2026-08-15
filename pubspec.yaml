@@ -1,0 +1,93 @@
+name: onebit
+description: >-
+  OneBit — a fully decentralized, offline-first Bluetooth Low Energy mesh
+  communication platform. Every device is a node, router, relay, cache and
+  secure endpoint. No internet, no cloud, no servers, no phone numbers.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.2
+
+# ---------------------------------------------------------------------------
+# Dependencies
+# ---------------------------------------------------------------------------
+# The dependency graph follows the architecture rule: presentation depends on
+# domain contracts; business logic never imports Flutter. Packages below are
+# selected to keep that boundary honest.
+dependencies:
+  cryptography: ^2.9.0
+  drift: ^2.34.3
+  drift_flutter: ^0.3.1
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # State management — controllers are Notifier/AsyncNotifier per feature.
+  flutter_riverpod: ^3.4.2
+
+  # Navigation — single declarative router for the whole mesh shell.
+  go_router: ^17.4.0
+
+  # Localization infrastructure (drives flutter gen-l10n).
+  intl: 0.20.3
+  meta: ^1.18.0
+
+  # Injectable clock (tests control tap-window timing via package:clock).
+  clock: ^1.1.2
+
+  # Key-value persistence for non-secret identity metadata (display name,
+  # contacts). Private key material lives in the Android Keystore instead.
+  shared_preferences: ^2.5.5
+  sqlite3: ^3.5.1
+  qr: ^4.0.0
+  file_picker: ^11.0.3
+  mobile_scanner: ^7.4.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  shared_preferences_platform_interface: ^2.4.2
+  drift_dev: ^2.34.0
+  build_runner: ^2.15.1
+  flutter_launcher_icons: ^0.14.4
+
+# ---------------------------------------------------------------------------
+# Localization
+# ---------------------------------------------------------------------------
+flutter:
+  generate: true
+  uses-material-design: true
+
+  # App brand assets. OneBit.png is the official app logo (also the Android
+  # launcher icon); OneBit.svg is the vector master kept for tooling.
+  assets:
+    - assets/icons/OneBit.png
+
+  # Primary font: Consolas (system font, not bundled).
+  #
+  # Consolas ships with Windows; on Android, macOS and Linux the platform
+  # monospace family provides a graceful fallback. The font family and
+  # fallback chain are declared in OneBitTypography — no font asset is
+  # bundled because Consolas is not redistributed. A cross-platform
+  # monospace asset may replace it in a future phase.
+
+# ---------------------------------------------------------------------------
+# Launcher icons. Regenerate after changing the logo:
+#   dart run flutter_launcher_icons
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: assets/icons/OneBit.png
+  adaptive_icon_background: "#000000"
+  adaptive_icon_foreground: assets/icons/OneBit.png
+
+  # NOTE: The database (Drift), native crypto acceleration (libsodium) and
+  # FFI dependencies are intentionally NOT declared yet. Identity crypto runs
+  # on the pure-Dart `cryptography` package (deps already above); the C++ core
+  # (COBS, codec, hashing, fast signing) lands in Phase 3 and would only burn
+  # build time today.

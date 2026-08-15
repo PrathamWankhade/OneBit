@@ -1,0 +1,181 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:onebit/app/shell_controller.dart';
+import 'package:onebit/app/shell_tabs.dart';
+import 'package:onebit/core/navigation/app_router_provider.dart';
+import 'package:onebit/core/theme/onebit_theme.dart';
+import 'package:onebit/core/theme/theme_preference_provider.dart';
+import 'package:onebit/features/dtn/dtn_providers.dart';
+import 'package:onebit/l10n/app_localizations.dart';
+import 'package:onebit/shared/design_system/components/onebit_navigation_bar.dart';
+import 'package:onebit/shared/design_system/components/onebit_navigation_rail.dart';
+import 'package:onebit/shared/design_system/responsive/onebit_responsive.dart';
+import 'package:onebit/shared/localization/locale_controller.dart';
+
+/// Root shell hosting the active tab's navigator.
+///
+/// Chrome is responsive and derived from the viewport width:
+/// * compact (phones) — bottom [OneBitNavigationBar];
+/// * medium/expanded (tablets, landscape) — [OneBitNavigationRail].
+///
+/// Both layouts consume the same [shellTabs] list — navigation logic is
+/// never duplicated. Switching tabs preserves every branch's stack and
+/// scroll state ([StatefulShellRoute.indexedStack]) and persists the
+/// current tab for the next launch.
+class AppShell extends StatelessWidget {
+  const AppShell({required this.navigationShell, super.key});
+
+  /// The stateful shell handed over by `StatefulShellRoute`.
+  final StatefulNavigationShell navigationShell;
+
+  @override
+  Widget build(BuildContext context) {
+    final tabs = shellTabs(AppLocalizations.of(context));
+    return OneBitResponsiveLayout(
+      compact: (context) => _ShellScaffold(
+        navigationShell: navigationShell,
+        tabs: tabs,
+        chrome: (selectedIndex, onSelected) => OneBitNavigationBar(
+          destinations: _destinations(tabs),
+          selectedIndex: selectedIndex,
+          onDestinationSelected: onSelected,
+        ),
+      ),
+      medium: (context) => _RailShell(
+        navigationShell: navigationShell,
+        tabs: tabs,
+        extended: false,
+      ),
+      expanded: (context) => _RailShell(
+        navigationShell: navigationShell,
+        tabs: tabs,
+        extended: true,
+      ),
+    );
+  }
+
+  static List<OneBitNavigationDestination> _destinations(List<ShellTab> tabs) =>
+      [for (final tab in tabs) tab.destination];
+}
+
+/// Compact layout: bottom navigation bar under the branch navigator.
+final class _ShellScaffold extends ConsumerWidget {
+  const _ShellScaffold({
+    required this.navigationShell,
+    required this.tabs,
+    required this.chrome,
+  });
+
+  final StatefulNavigationShell navigationShell;
+  final List<ShellTab> tabs;
+  final Widget Function(int selectedIndex, ValueChanged<int> onSelected) chrome;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final index = navigationShell.currentIndex;
+    return Scaffold(
+      body: SafeArea(child: navigationShell),
+      bottomNavigationBar: chrome(
+        index,
+        (selected) => _selectBranch(ref, navigationShell, tabs, selected),
+      ),
+    );
+  }
+}
+
+/// Medium/expanded layout: navigation rail beside the branch navigator.
+final class _RailShell extends ConsumerWidget {
+  const _RailShell({
+    required this.navigationShell,
+    required this.tabs,
+    required this.extended,
+  });
+
+  final StatefulNavigationShell navigationShell;
+  final List<ShellTab> tabs;
+  final bool extended;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final index = navigationShell.currentIndex;
+    return Scaffold(
+      body: SafeArea(
+        child: Row(
+          children: [
+            OneBitNavigationRail(
+              destinations: [for (final tab in tabs) tab.destination],
+              selectedIndex: index,
+              extended: extended,
+              onDestinationSelected: (selected) =>
+                  _selectBranch(ref, navigationShell, tabs, selected),
+            ),
+            const VerticalDivider(width: 1, thickness: 1),
+            Expanded(child: navigationShell),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Shared tab-selection logic: switch branch, persist the tab, reset the
+/// branch when re-selecting the active tab.
+void _selectBranch(
+  WidgetRef ref,
+  StatefulNavigationShell navigationShell,
+  List<ShellTab> tabs,
+  int index,
+) {
+  final currentIndex = navigationShell.currentIndex;
+  navigationShell.goBranch(index, initialLocation: index == currentIndex);
+  unawaited(persistLastTabPath(tabs[index].path));
+}
+
+/// Riverpod root for the whole app tree.
+///
+/// Everything below `OneBitApp` participates in the same provider container,
+/// so controllers, repositories and bridges share state safely.
+class OneBitApp extends ConsumerWidget {
+  const OneBitApp({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return const _AppView();
+  }
+}
+
+final class _AppView extends ConsumerWidget {
+  const _AppView();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final preference = ref.watch(themePreferenceProvider);
+    // Startup touch: restores persisted DTN envelopes and arms the
+    // scheduler before the first frame renders.
+    ref.watch(dtnEngineProvider);
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        statusBarBrightness: Brightness.dark,
+        systemNavigationBarColor: Colors.black,
+        systemNavigationBarIconBrightness: Brightness.light,
+        systemNavigationBarDividerColor: Colors.transparent,
+      ),
+      child: MaterialApp.router(
+        routerConfig: ref.watch(goRouterProvider),
+        theme: OneBitTheme.light,
+        darkTheme: OneBitTheme.dark,
+        themeMode: preference.themeMode,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        locale: ref.watch(appLocaleProvider),
+        debugShowCheckedModeBanner: false,
+      ),
+    );
+  }
+}
