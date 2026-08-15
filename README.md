@@ -48,3 +48,4 @@ android/  cpp/  assets/  docs/  test/  integration_test/
 
 See `docs/architecture/` for the full design series, `docs/adr/` for
 decision records, and `docs/guidelines/` for standards.
+# OneBit
