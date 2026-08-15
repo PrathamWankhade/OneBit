@@ -25,11 +25,11 @@ class PerformanceScreen extends ConsumerWidget {
         children: [
           _FpsSection(l10n: l10n),
           const SizedBox(height: OneBitSpacing.m),
-          _MemorySection(ref: ref, l10n: l10n),
+          _MemorySection(l10n: l10n),
           const SizedBox(height: OneBitSpacing.m),
           _StorageSection(l10n: l10n),
           const SizedBox(height: OneBitSpacing.m),
-          _DatabaseSection(ref: ref, l10n: l10n),
+          _DatabaseSection(l10n: l10n),
         ],
       ),
     );
@@ -53,8 +53,7 @@ class _FpsSection extends StatelessWidget {
 }
 
 class _MemorySection extends ConsumerWidget {
-  const _MemorySection({required this.ref, required this.l10n});
-  final WidgetRef ref;
+  const _MemorySection({required this.l10n});
   final AppLocalizations l10n;
 
   @override
@@ -96,13 +95,12 @@ class _StorageSection extends StatelessWidget {
 }
 
 class _DatabaseSection extends ConsumerWidget {
-  const _DatabaseSection({required this.ref, required this.l10n});
-  final WidgetRef ref;
+  const _DatabaseSection({required this.l10n});
   final AppLocalizations l10n;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final bufferSize = ref.read(appLogBufferProvider).snapshot().length;
+    final bufferSize = ref.watch(appLogBufferProvider).snapshot().length;
 
     return OneBitDiagnosticCard(
       title: l10n.perfDatabaseSection,

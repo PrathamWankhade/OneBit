@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:onebit/features/dtn/dtn_providers.dart';
 import 'package:onebit/features/dtn/domain/dtn_queue_snapshot.dart';
 import 'package:onebit/features/dtn/domain/dtn_statistics.dart';
+import 'package:onebit/features/dtn/dtn_providers.dart';
 import 'package:onebit/features/dtn/queue/queue_manager.dart';
 
 /// Queue depth panel.

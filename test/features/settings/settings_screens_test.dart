@@ -15,8 +15,6 @@ import 'package:onebit/features/about/presentation/licenses_screen.dart';
 import 'package:onebit/features/bluetooth/domain/bluetooth_permission_state.dart';
 import 'package:onebit/features/bluetooth/domain/bluetooth_radio_state.dart';
 import 'package:onebit/features/bluetooth/domain/bluetooth_repository.dart';
-import 'package:onebit/features/bluetooth/domain/bluetooth_state.dart';
-import 'package:onebit/features/bluetooth/domain/bluetooth_views.dart';
 import 'package:onebit/features/bluetooth/presentation/bluetooth_providers.dart';
 import 'package:onebit/features/media/storage/storage_statistics.dart';
 import 'package:onebit/features/settings/presentation/appearance_settings_screen.dart';

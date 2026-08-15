@@ -19,7 +19,7 @@ import 'package:onebit/shared/design_system/components/onebit_loading_indicator.
 import 'package:onebit/shared/design_system/components/onebit_offline_banner.dart';
 import 'package:onebit/shared/design_system/components/onebit_offline_state.dart';
 import 'package:onebit/shared/design_system/icons/onebit_icons.dart';
-import 'package:onebit/shared/design_system/responsive/onebit_master_detail.dart';
+import 'package:onebit/shared/design_system/responsive/onebit_responsive.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
 
 /// Channels tab: the live conversation list.

@@ -11,7 +11,6 @@ import 'package:onebit/features/mesh/domain/mesh_engine_state.dart';
 import 'package:onebit/features/mesh/presentation/mesh_providers.dart';
 import 'package:onebit/features/messaging/domain/messages/message.dart';
 import 'package:onebit/features/messaging/domain/use_cases/load_draft.dart';
-import 'package:onebit/features/messaging/presentation/compose_message_controller.dart';
 import 'package:onebit/features/messaging/presentation/compose_message_screen/widgets/compose_widgets.dart';
 import 'package:onebit/features/messaging/presentation/message_actions_controller.dart';
 import 'package:onebit/features/messaging/presentation/messaging_providers.dart';

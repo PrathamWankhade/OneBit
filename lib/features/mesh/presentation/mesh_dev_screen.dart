@@ -6,8 +6,8 @@ import 'package:onebit/features/mesh/domain/mesh_events.dart';
 import 'package:onebit/features/mesh/domain/mesh_neighbor.dart';
 import 'package:onebit/features/mesh/domain/mesh_repository.dart';
 import 'package:onebit/features/mesh/domain/mesh_route.dart';
-import 'package:onebit/features/mesh/presentation/mesh_providers.dart';
 import 'package:onebit/features/mesh/presentation/mesh_dev_screen/widgets/mesh_dev_panels.dart';
+import 'package:onebit/features/mesh/presentation/mesh_providers.dart';
 
 /// Developer dashboard for the mesh engine.
 ///

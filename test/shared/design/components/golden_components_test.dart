@@ -299,7 +299,7 @@ void main() {
 
       await tester.pumpWidget(
         _wrapApp(
-          OneBitErrorState(
+          const OneBitErrorState(
             message: 'Sync failed',
             detail: 'dtn.e2e.timeout',
             onRetry: _noop,
@@ -320,7 +320,7 @@ void main() {
 
       await tester.pumpWidget(
         _wrapApp(
-          OneBitErrorState(
+          const OneBitErrorState(
             message: 'Sync failed',
             detail: 'dtn.e2e.timeout',
             onRetry: _noop,
@@ -555,7 +555,7 @@ void main() {
 
       await tester.pumpWidget(
         _wrapApp(
-          OneBitPermissionState(
+          const OneBitPermissionState(
             title: 'Bluetooth required',
             message: 'Scanning needs the radio.',
             onRequest: _noop,
@@ -576,7 +576,7 @@ void main() {
 
       await tester.pumpWidget(
         _wrapApp(
-          OneBitPermissionState(
+          const OneBitPermissionState(
             title: 'Bluetooth required',
             message: 'Scanning needs the radio.',
             onRequest: _noop,

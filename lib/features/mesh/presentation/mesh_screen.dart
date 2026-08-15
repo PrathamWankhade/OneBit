@@ -17,6 +17,7 @@ import 'package:onebit/shared/design_system/components/onebit_icon_button.dart';
 import 'package:onebit/shared/design_system/components/onebit_loading_indicator.dart';
 import 'package:onebit/shared/design_system/components/onebit_status_chip.dart';
 import 'package:onebit/shared/design_system/icons/onebit_icons.dart';
+import 'package:onebit/shared/design_system/responsive/onebit_master_detail.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
 
 /// Mesh overview tab: network health, topology visualization, active nodes,
@@ -72,22 +73,24 @@ class _MeshBody extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return ListView(
-      padding: const EdgeInsets.all(OneBitSpacing.m),
-      children: [
-        _EnginePanel(engineState: engineState),
-        const SizedBox(height: OneBitSpacing.m),
-        const NetworkHealthPanel(),
-        const SizedBox(height: OneBitSpacing.m),
-        const TopologyVisualizationPanel(),
-        const SizedBox(height: OneBitSpacing.m),
-        const ActiveNodesPanel(),
-        const SizedBox(height: OneBitSpacing.m),
-        const RoutesPanel(),
-        const SizedBox(height: OneBitSpacing.m),
-        const StatsPanel(),
-      ],
-    );
+    return context.isTablet
+        ? _TabletMeshLayout(engineState: engineState)
+        : ListView(
+            padding: const EdgeInsets.all(OneBitSpacing.m),
+            children: [
+              _EnginePanel(engineState: engineState),
+              const SizedBox(height: OneBitSpacing.m),
+              const NetworkHealthPanel(),
+              const SizedBox(height: OneBitSpacing.m),
+              const TopologyVisualizationPanel(),
+              const SizedBox(height: OneBitSpacing.m),
+              const ActiveNodesPanel(),
+              const SizedBox(height: OneBitSpacing.m),
+              const RoutesPanel(),
+              const SizedBox(height: OneBitSpacing.m),
+              const StatsPanel(),
+            ],
+          );
   }
 }
 
@@ -112,6 +115,7 @@ class _EnginePanel extends ConsumerWidget {
     };
 
     return OneBitCard(
+      semanticLabel: 'Mesh engine ${engineState.name}',
       child: Row(
         children: [
           Expanded(
@@ -139,6 +143,40 @@ class _EnginePanel extends ConsumerWidget {
               engineState == MeshEngineState.stopped
                   ? l10n.meshEngineStart
                   : l10n.meshEngineStop,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Tablet-optimized mesh layout with two-column grid.
+class _TabletMeshLayout extends StatelessWidget {
+  const _TabletMeshLayout({required this.engineState});
+
+  final MeshEngineState engineState;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(OneBitSpacing.m),
+      child: Column(
+        children: [
+          _EnginePanel(engineState: engineState),
+          const SizedBox(height: OneBitSpacing.m),
+          const Expanded(
+            child: OneBitResponsiveGrid(
+              compactColumns: 1,
+              mediumColumns: 2,
+              expandedColumns: 2,
+              children: [
+                NetworkHealthPanel(),
+                TopologyVisualizationPanel(),
+                ActiveNodesPanel(),
+                RoutesPanel(),
+                StatsPanel(),
+              ],
             ),
           ),
         ],

@@ -3,16 +3,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:onebit/core/extensions/build_context_extensions.dart';
 import 'package:onebit/core/extensions/date_time_extensions.dart';
 import 'package:onebit/core/result/result.dart';
+import 'package:onebit/features/channels/presentation/channels_controller.dart';
 import 'package:onebit/features/media/attachments/attachment.dart';
 import 'package:onebit/features/media/presentation/media_providers.dart';
 import 'package:onebit/features/messaging/domain/messages/message.dart';
-import 'package:onebit/features/channels/presentation/channels_controller.dart';
 import 'package:onebit/features/messaging/domain/messages/message_status.dart';
 import 'package:onebit/shared/design_system/components/onebit_message_bubble.dart';
-import 'package:onebit/shared/design_system/icons/onebit_icons.dart';
-import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
 import 'package:onebit/shared/design_system/formatting/onebit_formatters.dart';
+import 'package:onebit/shared/design_system/icons/onebit_icons.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_radius.dart';
+import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
 import 'package:onebit/shared/design_system/typography/onebit_typography.dart';
 
 /// Attachments of one timeline message (for the bubble chips row).

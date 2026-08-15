@@ -105,11 +105,11 @@ class NodeDetailsScreen extends ConsumerWidget {
                   contact: contact,
                   l10n: l10n,
                   onPickTrustLevel: () =>
-                      _pickTrustLevel(context, ref, contact!.trustLevel),
+                      _pickTrustLevel(context, ref, contact.trustLevel),
                   onShowVerificationCode: () => _showVerificationCode(
                     context,
                     ref,
-                    contact!.fingerprintHex,
+                    contact.fingerprintHex,
                   ),
                 ),
 

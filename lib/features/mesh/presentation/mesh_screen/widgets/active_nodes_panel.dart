@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:onebit/core/extensions/build_context_extensions.dart';
-import 'package:onebit/core/result/result.dart';
 import 'package:onebit/features/mesh/domain/mesh_engine_state.dart';
 import 'package:onebit/features/mesh/domain/mesh_neighbor.dart';
 import 'package:onebit/features/mesh/presentation/mesh_providers.dart';

@@ -15,17 +15,13 @@ import 'package:onebit/core/result/result.dart';
 import 'package:onebit/core/theme/onebit_theme.dart';
 import 'package:onebit/features/about/presentation/about_screen.dart';
 import 'package:onebit/features/bluetooth/presentation/bluetooth_providers.dart';
-import 'package:onebit/features/channels/presentation/channels_screen.dart';
 import 'package:onebit/features/developer/presentation/developer_screen.dart';
 import 'package:onebit/features/identity/presentation/identity_providers.dart';
 import 'package:onebit/features/media/presentation/media_gallery_screen.dart';
 import 'package:onebit/features/mesh/presentation/mesh_screen.dart';
 import 'package:onebit/features/messaging/presentation/search_screen.dart';
-import 'package:onebit/features/nearby/presentation/nearby_screen.dart';
-import 'package:onebit/features/nodes/presentation/nodes_screen.dart';
 import 'package:onebit/features/settings/presentation/settings_screen.dart';
 import 'package:onebit/l10n/app_localizations.dart';
-import 'package:onebit/shared/design_system/components/onebit_empty_state.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 
 import '../app/support/app_navigation_support.dart';

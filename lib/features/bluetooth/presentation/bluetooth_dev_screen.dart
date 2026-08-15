@@ -10,8 +10,8 @@ import 'package:onebit/features/bluetooth/domain/bluetooth_radio_state.dart';
 import 'package:onebit/features/bluetooth/domain/bluetooth_repository.dart';
 import 'package:onebit/features/bluetooth/domain/bluetooth_state.dart';
 import 'package:onebit/features/bluetooth/domain/bluetooth_views.dart';
-import 'package:onebit/features/bluetooth/presentation/bluetooth_providers.dart';
 import 'package:onebit/features/bluetooth/presentation/bluetooth_dev_screen/widgets/bluetooth_panels.dart';
+import 'package:onebit/features/bluetooth/presentation/bluetooth_providers.dart';
 
 /// Developer testing screen for the Bluetooth transport.
 ///

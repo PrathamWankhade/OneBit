@@ -1,22 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:onebit/core/extensions/build_context_extensions.dart';
-import 'package:onebit/core/navigation/app_route_paths.dart';
 import 'package:onebit/features/channels/presentation/channels_controller.dart';
 import 'package:onebit/features/messaging/domain/channels/channel.dart';
 import 'package:onebit/features/messaging/domain/messages/message.dart';
-import 'package:onebit/features/messaging/domain/messages/message_status.dart';
 import 'package:onebit/features/messaging/presentation/messaging_providers.dart';
 import 'package:onebit/shared/design_system/components/onebit_bottom_sheets.dart';
 import 'package:onebit/shared/design_system/components/onebit_dialogs.dart';
-import 'package:onebit/shared/design_system/components/onebit_icon_button.dart';
 import 'package:onebit/shared/design_system/components/onebit_list_item.dart';
 import 'package:onebit/shared/design_system/components/onebit_technical_card.dart';
 import 'package:onebit/shared/design_system/icons/onebit_icons.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
-import 'package:onebit/shared/design_system/typography/onebit_typography.dart';
 
 enum MessageAction { reply, forward, copy, edit, retry, select, delete }
 

@@ -218,3 +218,29 @@ String trustLevelLabel(AppLocalizations l10n, TrustLevel level) =>
 /// Relative "last seen" text ("just now", "5 min ago", …).
 String relativeTimeLabel(AppLocalizations l10n, DateTime time) =>
     RelativeTime.of(time).label(l10n);
+
+/// Tablet-optimized node grid with responsive column count.
+class _TabletNodeGrid extends StatelessWidget {
+  const _TabletNodeGrid({
+    required this.trusted,
+    required this.nearby,
+    required this.l10n,
+  });
+
+  final List<TrustedNodeRow> trusted;
+  final List<NearbyNodeRow> nearby;
+  final AppLocalizations l10n;
+
+  @override
+  Widget build(BuildContext context) {
+    final allCards = [
+      for (final row in trusted) _TrustedNodeCard(row: row),
+      for (final row in nearby) _NearbyNodeCard(row: row),
+    ];
+
+    return OneBitResponsiveGrid(
+      padding: const EdgeInsets.all(OneBitSpacing.m),
+      children: allCards,
+    );
+  }
+}

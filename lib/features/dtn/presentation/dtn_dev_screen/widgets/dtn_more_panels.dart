@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:onebit/features/dtn/delivery/simulated_mesh_gateway.dart';
-import 'package:onebit/features/dtn/dtn_providers.dart';
 import 'package:onebit/features/dtn/domain/dtn_statistics.dart';
-import 'package:onebit/features/dtn/queue/queue_manager.dart';
+import 'package:onebit/features/dtn/dtn_providers.dart';
 import 'package:onebit/features/dtn/presentation/dtn_dev_screen/widgets/dtn_panels.dart';
+import 'package:onebit/features/dtn/queue/queue_manager.dart';
 
 /// Connectivity gate + simulated mesh toggle.
 final class ConnectivityPanel extends ConsumerWidget {
