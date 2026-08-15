@@ -45,6 +45,10 @@ it again.
 - Semantic labels for user-facing strings are localizable — pass localized
   strings (ARB) as `semanticsLabel`/`tooltip` parameters; never hardcode
   English in components.
+- Tappable cards (`OneBitCard`, `OneBitChannelCard`, `OneBitNodeCard`) expose
+  their semantic label via the `semanticLabel` parameter.
+- `OneBitListItem` combines title and subtitle in its semantic label for
+  screen readers.
 
 ## Text scaling
 
@@ -62,6 +66,9 @@ it again.
 - All durations route through `OneBitMotion.resolve(context, duration)` (or
   `context.motionDuration(...)`), which collapses to `Duration.zero` when
   the platform requests reduced motion (`MediaQuery.disableAnimationsOf`).
+- Repeating animations (indeterminate progress bars, pulsing dots) also
+  route through `OneBitMotion.resolve` and pause when reduced motion is
+  enabled.
 - No infinite decorative animation may block screen-reader navigation or
   test settling.
 
@@ -72,6 +79,25 @@ it again.
 - The monochrome scale guarantees strong text contrast; do not lower
   contrast by mixing in paler tokens.
 
+## Terminal error states
+
+Domain-specific error states with terminal semantics are available in
+`lib/shared/design_system/components/onebit_terminal_states.dart`:
+
+- `OneBitBluetoothDisabledState` — [WARN] Bluetooth disabled
+- `OneBitMeshUnavailableState` — [ERR] Mesh unavailable
+- `OneBitStorageFullState` — [ERR] Storage full
+- `OneBitTransferFailedState` — [ERR] Transfer failed
+- `OneBitDatabaseErrorState` — [ERR] Database error
+- `OneBitUnknownErrorState` — [ERR] Unknown error
+- `OneBitNoResultsState` — [INFO] No results
+- `OneBitNoNodesState` — [INFO] No nodes
+- `OneBitNoChannelsState` — [INFO] No channels
+
+Each widget composes the base design system states with domain-appropriate
+icons, messages, and suggested actions. All strings are expected to be
+localized by the caller.
+
 ## Rules for screens
 
 1. Wrap every tappable compact visual in `OneBitTapTarget`.
@@ -79,3 +105,5 @@ it again.
 3. Exclude purely decorative graphics via `OneBitSemantics.decorative`.
 4. Never rebuild these helpers per screen — compose them.
 5. Keep interactive targets ≥48dp and let content grow with text scaling.
+6. Use `OneBitTerminalStates` for domain-specific error presentations.
+7. Every icon-only button must have a semantic label (tooltip).

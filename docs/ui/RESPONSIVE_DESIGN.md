@@ -38,6 +38,46 @@ OneBitResponsiveLayout(
 when omitted, so new screens can ship a compact layout first and add richer
 ones later.
 
+## Tablet layouts
+
+### Master-Detail
+
+`OneBitMasterDetail` provides a side-by-side layout for tablets:
+
+```dart
+OneBitMasterDetail(
+  master: ChannelList(),
+  detail: ChannelDetails(),
+  selectedIndex: selectedChannelId,
+)
+```
+
+On compact viewports, only the master pane is shown. On medium/expanded,
+both panes are displayed side-by-side with a divider.
+
+### Responsive Grid
+
+`OneBitResponsiveGrid` adapts column count to viewport width:
+
+```dart
+OneBitResponsiveGrid(
+  children: items.map((item) => NodeCard(item: item)).toList(),
+)
+```
+
+- Compact: 1 column
+- Medium: 2 columns
+- Expanded: 3 columns
+
+Items reflow naturally using `LayoutBuilder` and `Wrap`.
+
+### Screen implementations
+
+- **Channels**: Uses `OneBitMasterDetail` on tablets for channel list +
+  conversation preview.
+- **Nodes**: Uses `OneBitResponsiveGrid` for node cards on tablets.
+- **Mesh**: Uses `OneBitResponsiveGrid` for mesh panels on tablets.
+
 ## Rules
 
 1. Layouts are chosen from `MediaQuery.sizeOf(context).width` via the
@@ -52,3 +92,6 @@ ones later.
 5. Keep touch targets ≥48dp at every breakpoint.
 6. The shell composes `OneBitResponsiveLayout`; feature screens stay
    width-aware through the same helpers.
+7. Use `OneBitMasterDetail` for master-detail flows on tablets.
+8. Use `OneBitResponsiveGrid` for card grids that benefit from multiple
+   columns on larger screens.

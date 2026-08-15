@@ -70,12 +70,8 @@ final class ChannelsController extends AsyncNotifier<ChannelsView> {
   @override
   Future<ChannelsView> build() async {
     final summariesAsync = ref.watch(conversationSummariesProvider);
-    final meshAsync = ref.watch(
-      meshStateProvider,
-      (prev, next) => next.value?.value,
-    );
-
-    final engineState = meshAsync;
+    final meshAsync = ref.watch(meshStateProvider);
+    final engineState = meshAsync.value?.value;
     final offline =
         engineState != null && engineState != MeshEngineState.running;
 
