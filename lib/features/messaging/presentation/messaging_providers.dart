@@ -117,7 +117,7 @@ final Provider<MessagingEngine> messagingEngineProvider =
 
 /// Timeline stream of a channel (newest-last).
 final channelTimelineProvider =
-    StreamProvider.family<Result<List<Message>>, String>(
+    StreamProvider.family.autoDispose<Result<List<Message>>, String>(
       (ref, channelId) =>
           ref.watch(messagingEngineProvider).watchChannel(channelId),
     );
@@ -130,14 +130,15 @@ final conversationSummariesProvider =
 
 /// Conversation list stream including archived channels.
 final archivedConversationSummariesProvider =
-    StreamProvider<Result<List<ConversationSummary>>>(
+    StreamProvider.autoDispose<Result<List<ConversationSummary>>>(
       (ref) => ref
           .watch(messagingEngineProvider)
           .watchSummaries(includeArchived: true),
     );
 
 /// Draft stream of a channel (null when absent).
-final channelDraftProvider = StreamProvider.family<Result<Draft?>, String>(
+final channelDraftProvider =
+    StreamProvider.family.autoDispose<Result<Draft?>, String>(
   (ref, channelId) => ref.watch(messagingEngineProvider).watchDraft(channelId),
 );
 

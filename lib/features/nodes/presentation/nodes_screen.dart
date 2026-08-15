@@ -20,6 +20,7 @@ import 'package:onebit/shared/design_system/components/onebit_section_header.dar
 import 'package:onebit/shared/design_system/components/onebit_status_chip.dart';
 import 'package:onebit/shared/design_system/icons/onebit_icons.dart';
 import 'package:onebit/shared/design_system/responsive/onebit_master_detail.dart';
+import 'package:onebit/shared/design_system/responsive/onebit_responsive.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
 
 /// Nodes tab: the local registry.

@@ -12,7 +12,7 @@ import 'package:onebit/shared/design_system/components/onebit_status_chip.dart';
 
 /// The last message of a channel (delivery/read presentation only).
 final channelLastMessageProvider =
-    StreamProvider.family<Result<List<Message>>, String>(
+    StreamProvider.family.autoDispose<Result<List<Message>>, String>(
       (ref, channelId) => ref
           .watch(messageRepositoryProvider)
           .watchChannel(channelId, limit: 1),
@@ -70,9 +70,12 @@ final class ChannelsController extends AsyncNotifier<ChannelsView> {
   @override
   Future<ChannelsView> build() async {
     final summariesAsync = ref.watch(conversationSummariesProvider);
-    final meshAsync = ref.watch(meshStateProvider);
+    final meshAsync = ref.watch(
+      meshStateProvider,
+      (prev, next) => next.value?.value,
+    );
 
-    final engineState = meshAsync.value?.value;
+    final engineState = meshAsync;
     final offline =
         engineState != null && engineState != MeshEngineState.running;
 

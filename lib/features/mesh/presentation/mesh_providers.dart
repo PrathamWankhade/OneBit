@@ -74,37 +74,37 @@ final StreamProvider<Result<List<MeshRoute>>> meshRoutesProvider =
     );
 
 final StreamProvider<Result<TopologySnapshot>> meshTopologyProvider =
-    StreamProvider<Result<TopologySnapshot>>(
+    StreamProvider.autoDispose<Result<TopologySnapshot>>(
       (ref) => ref.watch(meshRepositoryProvider).observeTopology(),
     );
 
 final StreamProvider<Result<MeshStatistics>> meshStatisticsProvider =
-    StreamProvider<Result<MeshStatistics>>(
+    StreamProvider.autoDispose<Result<MeshStatistics>>(
       (ref) => ref.watch(meshRepositoryProvider).observeStatistics(),
     );
 
 final StreamProvider<Result<MeshNetworkStatus>> meshNetworkStatusProvider =
-    StreamProvider<Result<MeshNetworkStatus>>(
+    StreamProvider.autoDispose<Result<MeshNetworkStatus>>(
       (ref) => ref.watch(meshRepositoryProvider).observeNetworkStatus(),
     );
 
 final StreamProvider<Result<MeshDiagnostics>> meshDiagnosticsProvider =
-    StreamProvider<Result<MeshDiagnostics>>(
+    StreamProvider.autoDispose<Result<MeshDiagnostics>>(
       (ref) => ref.watch(meshRepositoryProvider).observeDiagnostics(),
     );
 
 final StreamProvider<Result<MeshRelayEvent>> meshRelayEventsProvider =
-    StreamProvider<Result<MeshRelayEvent>>(
+    StreamProvider.autoDispose<Result<MeshRelayEvent>>(
       (ref) => ref.watch(meshRepositoryProvider).observeRelayEvents(),
     );
 
 final StreamProvider<Result<MeshNeighborEvent>> meshNeighborEventsProvider =
-    StreamProvider<Result<MeshNeighborEvent>>(
+    StreamProvider.autoDispose<Result<MeshNeighborEvent>>(
       (ref) => ref.watch(meshRepositoryProvider).observeNeighborEvents(),
     );
 
 final StreamProvider<Result<MeshRouteChangedEvent>> meshRouteEventsProvider =
-    StreamProvider<Result<MeshRouteChangedEvent>>(
+    StreamProvider.autoDispose<Result<MeshRouteChangedEvent>>(
       (ref) => ref.watch(meshRepositoryProvider).observeRouteEvents(),
     );
 

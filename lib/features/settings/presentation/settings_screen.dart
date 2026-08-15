@@ -20,13 +20,17 @@ class SettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
-    final developerEnabled = ref.watch(developerModeProvider).value == true;
+    final developerEnabled = ref.watch(
+      developerModeProvider,
+      (prev, next) => next.value == true,
+    );
 
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.settingsTitle),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded),
+          tooltip: l10n.commonBack,
           onPressed: () => context.pop(),
         ),
       ),
