@@ -5,7 +5,7 @@ import 'package:onebit/core/widgets/onebit_scaffold.dart';
 import 'package:onebit/features/launch/domain/local_initializer.dart';
 import 'package:onebit/features/launch/presentation/launch_providers.dart';
 import 'package:onebit/features/launch/presentation/launch_theme.dart';
-import 'package:onebit/shared/design_system/colors/onebit_color_schemes.dart';
+import 'package:onebit/shared/design_system/colors/onebit_palette.dart';
 import 'package:onebit/shared/design_system/components/onebit_button.dart';
 import 'package:onebit/shared/design_system/components/onebit_loading_indicator.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
@@ -105,10 +105,9 @@ final class _CheckLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.oneBitColors;
     final status = outcome.ok
-        ? ('[OK]', colors.ansiGreen)
-        : ('[ERR]', colors.ansiRed);
+        ? ('[OK]', OneBitPalette.ansiGreen)
+        : ('[ERR]', OneBitPalette.ansiRed);
     final label = switch (outcome.check) {
       LocalInitCheck.identity => context.l10n.initializingIdentity,
       LocalInitCheck.storage => context.l10n.initializingStorage,
@@ -146,20 +145,19 @@ final class _Failure extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.oneBitColors;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           context.l10n.initializingFailed,
-          style: context.textTheme.titleSmall?.copyWith(color: colors.ansiRed),
+          style: context.textTheme.titleSmall?.copyWith(color: OneBitPalette.ansiRed),
         ),
         const SizedBox(height: OneBitSpacing.s),
         Text(
           detail,
           style: OneBitTypography.technicalStyle(
             fontSize: OneBitTypography.caption,
-            color: colors.ansiBrightBlack,
+            color: OneBitPalette.ansiBrightBlack,
           ),
         ),
       ],

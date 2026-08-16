@@ -249,10 +249,10 @@ final class _ChannelDetailsScreenState
                 ),
                 child: Row(
                   children: [
-                    const Icon(
+                    Icon(
                       OneBitIcons.chat,
                       size: 14,
-                      color: Colors.black54,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                     const SizedBox(width: OneBitSpacing.xs),
                     Text(

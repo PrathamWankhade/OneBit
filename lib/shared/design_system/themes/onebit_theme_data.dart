@@ -3,8 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:onebit/core/theme/theme_preference.dart';
 import 'package:onebit/shared/design_system/colors/onebit_color_schemes.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
+import 'package:onebit/shared/design_system/themes/onebit_theme_extension.dart';
 import 'package:onebit/shared/design_system/tokens/onebit_component_tokens.dart';
 import 'package:onebit/shared/design_system/typography/onebit_typography.dart';
+
+export 'onebit_theme_extension.dart';
 
 /// Builds the complete [ThemeData] for both identities.
 ///
@@ -30,7 +33,7 @@ abstract final class OneBitDarkTheme {
   const OneBitDarkTheme._();
 
   static ThemeData build() =>
-      _buildBase(OneBitColorSchemes.dark(), OneBitThemeExtension.dark);
+      _buildBase(OneBitColorSchemes.dark, OneBitThemeExtension.dark);
 }
 
 /// The light identity: paper-white monochrome.
@@ -38,7 +41,7 @@ abstract final class OneBitLightTheme {
   const OneBitLightTheme._();
 
   static ThemeData build() =>
-      _buildBase(OneBitColorSchemes.light(), OneBitThemeExtension.light);
+      _buildBase(OneBitColorSchemes.light, OneBitThemeExtension.light);
 }
 
 ThemeData _buildBase(ColorScheme scheme, OneBitThemeExtension extension) {
@@ -133,6 +136,8 @@ ThemeData _buildBase(ColorScheme scheme, OneBitThemeExtension extension) {
       height: OneBitNavigationTokens.barHeight,
       labelTextStyle: const WidgetStatePropertyAll(
         TextStyle(
+          fontFamily: OneBitTypography.primaryFamily,
+          fontFamilyFallback: OneBitTypography.primaryFallback,
           fontSize: OneBitNavigationTokens.labelFontSize,
           fontWeight: OneBitTypography.medium,
         ),
@@ -152,12 +157,16 @@ ThemeData _buildBase(ColorScheme scheme, OneBitThemeExtension extension) {
     snackBarTheme: SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
       backgroundColor: scheme.inverseSurface,
-      contentTextStyle: TextStyle(color: scheme.onInverseSurface),
+      contentTextStyle: TextStyle(
+        fontFamily: OneBitTypography.primaryFamily,
+        fontFamilyFallback: OneBitTypography.primaryFallback,
+        color: scheme.onInverseSurface,
+      ),
     ),
     dividerTheme: DividerThemeData(
       color: scheme.outlineVariant,
       thickness: 1,
-      space: OneBitSpacing.xl,
+      space: OneBitSpacing.lg,
     ),
   );
 }

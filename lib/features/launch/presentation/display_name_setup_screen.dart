@@ -5,7 +5,7 @@ import 'package:onebit/core/widgets/onebit_scaffold.dart';
 import 'package:onebit/features/launch/domain/display_name_validator.dart';
 import 'package:onebit/features/launch/presentation/launch_providers.dart';
 import 'package:onebit/features/launch/presentation/launch_theme.dart';
-import 'package:onebit/shared/design_system/colors/onebit_color_schemes.dart';
+import 'package:onebit/shared/design_system/colors/onebit_palette.dart';
 import 'package:onebit/shared/design_system/components/onebit_button.dart';
 import 'package:onebit/shared/design_system/components/onebit_inline_error.dart';
 import 'package:onebit/shared/design_system/components/onebit_text_field.dart';
@@ -81,7 +81,6 @@ final class _DisplayNameSetupScreenState
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final colors = context.oneBitColors;
 
     return PopScope(
       // The back gesture navigates the state machine back to intro instead
@@ -128,7 +127,7 @@ final class _DisplayNameSetupScreenState
                   textAlign: TextAlign.center,
                   style: OneBitTypography.technicalStyle(
                     fontSize: OneBitTypography.caption,
-                    color: colors.ansiBrightBlack,
+                    color: OneBitPalette.ansiBrightBlack,
                   ),
                 ),
                 const SizedBox(height: OneBitSpacing.m),

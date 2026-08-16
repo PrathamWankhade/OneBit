@@ -62,7 +62,7 @@ class AppLocalizationsHi extends AppLocalizations {
       'आपकी पहचान नहीं बनाई जा सकी। कृपया पुनः प्रयास करें।';
 
   @override
-  String get routeComingSoon => 'यह क्षेत्र अभी तक नहीं बनाया गया है।';
+  String get routeComingSoon => 'यह सुविधा अभी उपलब्ध नहीं है।';
 
   @override
   String get routeDeepLinkParameters => 'डीप-लिंक पैरामीटर';
@@ -84,6 +84,9 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get commonLoading => 'लोड हो रहा है…';
+
+  @override
+  String get commonGoBack => 'वापस जाएँ';
 
   @override
   String get commonEmpty => 'अभी कुछ नहीं है';
@@ -403,6 +406,9 @@ class AppLocalizationsHi extends AppLocalizations {
   String get channelsArchived => 'चैनल संग्रहित हो गया';
 
   @override
+  String get channelsRestored => 'चैनल पुनर्स्थापित';
+
+  @override
   String get channelsDraft => 'ड्राफ़्ट';
 
   @override
@@ -510,7 +516,7 @@ class AppLocalizationsHi extends AppLocalizations {
   String get nodeTrustBlocked => 'अवरुद्ध';
 
   @override
-  String get nodeNotInContacts => 'आपके संपर्कों में नहीं';
+  String get nodeNotInContacts => 'आपके नोड में नहीं';
 
   @override
   String get nodeVerificationSection => 'सत्यापन';
@@ -646,17 +652,17 @@ class AppLocalizationsHi extends AppLocalizations {
   String get nodeVerificationTrusted => 'विश्वसनीय';
 
   @override
-  String get nodeRemoveContact => 'संपर्कों से हटाएँ';
+  String get nodeRemoveContact => 'नोड हटाएँ';
 
   @override
-  String get nodeRemoveContactTitle => 'संपर्क हटाएँ?';
+  String get nodeRemoveContactTitle => 'नोड हटाएँ?';
 
   @override
   String get nodeRemoveContactMessage =>
-      'यह संपर्क आपके डिवाइस से हटा देगा। मौजूदा बातचीत सुरक्षित रहती है।';
+      'यह नोड आपके डिवाइस से हटा देगा। मौजूदा बातचीत सुरक्षित रहती है।';
 
   @override
-  String get nodeContactRemoved => 'संपर्क हटा दिया गया';
+  String get nodeContactRemoved => 'नोड हटा दिया गया';
 
   @override
   String get nodeNotNearby => 'यह नोड फ़िलहाल आस-पास नहीं है';
@@ -1054,10 +1060,10 @@ class AppLocalizationsHi extends AppLocalizations {
   }
 
   @override
-  String get qrScannerAddContact => 'संपर्कों में जोड़ें';
+  String get qrScannerAddContact => 'नोड में जोड़ें';
 
   @override
-  String get qrScannerContactAdded => 'संपर्क जोड़ा गया';
+  String get qrScannerContactAdded => 'नोड जोड़ा गया';
 
   @override
   String get qrScannerFingerprintMatches =>
@@ -2088,7 +2094,7 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get settingsPrivacyVerificationDescription =>
-      'Verify contact identities by comparing fingerprints. This ensures you\'re talking to the right person.';
+      'Verify node identities by comparing fingerprints. This ensures you\'re talking to the right person.';
 
   @override
   String get settingsPrivacySecureStorage => 'Secure storage';
@@ -2179,4 +2185,30 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get licensesOneBitTitle => 'OneBit application';
+
+  @override
+  String get licensesSubtitle =>
+      'OneBit द्वारा उपयोग किए गए सभी ओपन-सोर्स पैकेज और उनके संबंधित लाइसेंस देखें।';
+
+  @override
+  String get licensesCopyright => 'कॉपीराइट (c) 2026 OneBit योगदानकर्ता';
+
+  @override
+  String get settingsReducedMotion => 'रिड्यूस्ड मोशन';
+
+  @override
+  String get settingsReducedMotionOn => 'सिस्टम सेटिंग: एनिमेशन कम किए गए हैं';
+
+  @override
+  String get settingsReducedMotionOff => 'सिस्टम सेटिंग: पूर्ण एनिमेशन सक्षम';
+
+  @override
+  String get settingsReducedMotionDescription =>
+      'आपके डिवाइस एक्सेसिबिलिटी सेटिंग्स द्वारा नियंत्रित। OneBit सिस्टम रिड्यूस्ड-मोशन प्राथमिकता का सम्मान करता है।';
+
+  @override
+  String get settingsTerminalPreview => 'टर्मिनल पूर्वावलोकन';
+
+  @override
+  String get settingsTerminalPreviewSample => 'Hello, World!';
 }

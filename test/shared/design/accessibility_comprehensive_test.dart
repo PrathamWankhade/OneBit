@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:onebit/shared/design_system/accessibility/onebit_accessibility.dart';
 import 'package:onebit/shared/design_system/components/onebit_card.dart';
 import 'package:onebit/shared/design_system/components/onebit_channel_card.dart';
 import 'package:onebit/shared/design_system/components/onebit_empty_state.dart';

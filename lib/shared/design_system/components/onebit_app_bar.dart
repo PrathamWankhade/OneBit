@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:onebit/shared/design_system/colors/onebit_color_schemes.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
+import 'package:onebit/shared/design_system/themes/onebit_theme_extension.dart';
 import 'package:onebit/shared/design_system/typography/onebit_typography.dart';
 
 /// OneBit-styled app bar with consistent terminal-inspired typography.
@@ -85,7 +85,7 @@ class OneBitAppBar extends StatelessWidget implements PreferredSizeWidget {
       elevation: elevation,
       scrolledUnderElevation: elevation,
       centerTitle: centerTitle,
-      backgroundColor: backgroundColor ?? colors.surface,
+      backgroundColor: backgroundColor ?? colors.primarySurface,
       foregroundColor: foregroundColor ?? colors.textPrimary,
       titleSpacing: OneBitSpacing.m,
       toolbarHeight: kToolbarHeight,

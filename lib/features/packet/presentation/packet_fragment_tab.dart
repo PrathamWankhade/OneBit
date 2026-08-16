@@ -5,6 +5,7 @@ import 'package:onebit/features/packet/domain/packet_reassembly_state.dart';
 import 'package:onebit/features/packet/presentation/packet_controllers.dart';
 import 'package:onebit/features/packet/presentation/packet_dev_widgets.dart';
 import 'package:onebit/features/packet/presentation/packet_providers.dart';
+import 'package:onebit/shared/design_system/components/onebit_scroll_clearance.dart';
 
 /// Fragment viewer: sends payloads through the repository (fragmented by the
 /// transport MTU), shows the live reassembly queue, the received packets and
@@ -57,7 +58,12 @@ final class _PacketFragmentTabState extends ConsumerState<PacketFragmentTab> {
     final state = ref.watch(packetStateProvider);
     final outcome = state.value;
     return ListView(
-      padding: const EdgeInsets.all(12),
+      padding: EdgeInsets.fromLTRB(
+        12,
+        12,
+        12,
+        OneBitScrollClearance.bottom(context),
+      ),
       children: <Widget>[
         PacketDevSection(
           title: 'Send (repository path with MTU fragmentation)',

@@ -9,10 +9,13 @@ import 'package:onebit/core/logger/log_record.dart';
 import 'package:onebit/core/logger/log_tags.dart';
 import 'package:onebit/core/logger/logger_providers.dart';
 import 'package:onebit/core/widgets/onebit_scaffold.dart';
-import 'package:onebit/shared/design_system/colors/onebit_color_schemes.dart';
+import 'package:onebit/shared/design_system/colors/onebit_palette.dart';
+import 'package:onebit/shared/design_system/components/onebit_empty_state.dart';
+import 'package:onebit/shared/design_system/components/onebit_scroll_clearance.dart';
 import 'package:onebit/shared/design_system/components/onebit_snackbar.dart';
 import 'package:onebit/shared/design_system/icons/onebit_icons.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
+import 'package:onebit/shared/design_system/themes/onebit_theme_extension.dart';
 import 'package:onebit/shared/design_system/typography/onebit_typography.dart';
 
 /// Log viewer: displays the in-memory ring buffer with search, level filter,
@@ -158,16 +161,18 @@ final class _LogsScreenState extends ConsumerState<LogsScreen> {
           ),
           Expanded(
             child: _records.isEmpty
-                ? Center(
-                    child: Text(
-                      l10n.logsEmpty,
-                      style: context.textTheme.bodyMedium?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
+                ? OneBitEmptyState(
+                    icon: OneBitIcons.shellDeveloper,
+                    title: l10n.logsEmpty,
+                    message: l10n.logsEmptyMessage,
                   )
                 : ListView.builder(
-                    padding: const EdgeInsets.all(OneBitSpacing.s),
+                    padding: EdgeInsets.fromLTRB(
+                      OneBitSpacing.s,
+                      OneBitSpacing.s,
+                      OneBitSpacing.s,
+                      OneBitScrollClearance.bottom(context),
+                    ),
                     itemCount: _records.length,
                     itemBuilder: (context, index) {
                       final record = _records[index];
@@ -268,7 +273,7 @@ class _LogRow extends StatelessWidget {
       LogLevel.trace || LogLevel.debug => colors.textMuted,
       LogLevel.info => colors.textPrimary,
       LogLevel.warning => colors.warning,
-      LogLevel.error || LogLevel.fatal => colors.ansiRed,
+      LogLevel.error || LogLevel.fatal => OneBitPalette.ansiRed,
     };
 
     final tagPrefix = _tagPrefix(record.tag);
@@ -328,10 +333,10 @@ class _LogRow extends StatelessWidget {
     if (tag == null) return colors.textMuted;
     if (tag.startsWith('ble') || tag == 'bluetooth') return colors.info;
     if (tag.startsWith('mesh')) return colors.success;
-    if (tag.startsWith('dtn')) return colors.pending;
-    if (tag.startsWith('packet')) return colors.ansiCyan;
+    if (tag.startsWith('dtn')) return colors.warning;
+    if (tag.startsWith('packet')) return OneBitPalette.ansiCyan;
     if (tag.startsWith('identity')) return colors.identity;
-    if (tag.startsWith('media')) return colors.relay;
+    if (tag.startsWith('media')) return OneBitPalette.ansiBrightCyan;
     return colors.textMuted;
   }
 }

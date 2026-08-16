@@ -18,6 +18,8 @@ import 'package:onebit/shared/design_system/components/onebit_icon_button.dart';
 import 'package:onebit/shared/design_system/components/onebit_loading_indicator.dart';
 import 'package:onebit/shared/design_system/components/onebit_offline_banner.dart';
 import 'package:onebit/shared/design_system/components/onebit_offline_state.dart';
+import 'package:onebit/shared/design_system/components/onebit_page_header.dart';
+import 'package:onebit/shared/design_system/components/onebit_scroll_clearance.dart';
 import 'package:onebit/shared/design_system/icons/onebit_icons.dart';
 import 'package:onebit/shared/design_system/responsive/onebit_responsive.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
@@ -44,34 +46,30 @@ class _ChannelsScreenState extends ConsumerState<ChannelsScreen> {
     final l10n = context.l10n;
     final view = ref.watch(channelsViewProvider);
 
-    return OneBitScaffold(
-      appBar: AppBar(
-        title: Text(
-          _showArchived ? l10n.channelsArchivedTitle : l10n.channelsTitle,
-        ),
-        actions: [
-          OneBitIconButton(
-            icon: OneBitIcons.archive,
-            tooltip: _showArchived
-                ? l10n.channelsHideArchived
-                : l10n.channelsShowArchived,
-            onPressed: () => setState(() => _showArchived = !_showArchived),
-          ),
-          OneBitIconButton(
-            icon: OneBitIcons.search,
-            tooltip: l10n.channelsSearch,
-            onPressed: () => context.go(AppRoutePaths.search),
-          ),
-          OneBitIconButton(
-            icon: OneBitIcons.shellSettings,
-            tooltip: l10n.settingsTitle,
-            onPressed: () => context.push(AppRoutePaths.settings),
-          ),
-        ],
+    final headerActions = [
+      OneBitIconButton(
+        icon: OneBitIcons.archive,
+        tooltip: _showArchived
+            ? l10n.channelsHideArchived
+            : l10n.channelsShowArchived,
+        onPressed: () => setState(() => _showArchived = !_showArchived),
       ),
+      OneBitIconButton(
+        icon: OneBitIcons.search,
+        tooltip: l10n.channelsSearch,
+        onPressed: () => context.go(AppRoutePaths.search),
+      ),
+      OneBitIconButton(
+        icon: OneBitIcons.shellSettings,
+        tooltip: l10n.settingsTitle,
+        onPressed: () => context.push(AppRoutePaths.settings),
+      ),
+    ];
+
+    return OneBitScaffold(
       body: _showArchived
-          ? _archivedBody(context, ref, view)
-          : _activeBody(context, ref, view),
+          ? _archivedBody(context, ref, view, headerActions)
+          : _activeBody(context, ref, view, headerActions),
     );
   }
 
@@ -79,6 +77,7 @@ class _ChannelsScreenState extends ConsumerState<ChannelsScreen> {
     BuildContext context,
     WidgetRef ref,
     AsyncValue<ChannelsView> view,
+    List<Widget> headerActions,
   ) {
     final l10n = context.l10n;
     if (view.hasError) {
@@ -116,6 +115,11 @@ class _ChannelsScreenState extends ConsumerState<ChannelsScreen> {
     }
     return Column(
       children: [
+        OneBitPageHeader.status(
+          title: _showArchived ? l10n.channelsArchivedTitle : l10n.channelsTitle,
+          status: '${value.summaries.length}',
+          actions: headerActions,
+        ),
         if (value.offline)
           OneBitOfflineBanner(
             title: l10n.channelsOfflineTitle,
@@ -129,7 +133,12 @@ class _ChannelsScreenState extends ConsumerState<ChannelsScreen> {
                   onSelect: (id) => setState(() => _selectedChannelId = id),
                 )
               : ListView.separated(
-                  padding: const EdgeInsets.all(OneBitSpacing.m),
+                  padding: EdgeInsets.fromLTRB(
+                    OneBitSpacing.m,
+                    OneBitSpacing.m,
+                    OneBitSpacing.m,
+                    OneBitScrollClearance.bottom(context),
+                  ),
                   itemCount: value.summaries.length,
                   separatorBuilder: (_, _) =>
                       const SizedBox(height: OneBitSpacing.s),
@@ -147,6 +156,7 @@ class _ChannelsScreenState extends ConsumerState<ChannelsScreen> {
     BuildContext context,
     WidgetRef ref,
     AsyncValue<ChannelsView> view,
+    List<Widget> headerActions,
   ) {
     final l10n = context.l10n;
     final archivedAsync = ref.watch(archivedConversationSummariesProvider);
@@ -173,18 +183,44 @@ class _ChannelsScreenState extends ConsumerState<ChannelsScreen> {
     }
     final summaries = result.value!.where((s) => s.archived).toList();
     if (summaries.isEmpty) {
-      return OneBitEmptyState(
-        icon: OneBitIcons.archive,
-        title: l10n.channelsArchivedEmpty,
-        message: l10n.channelsArchivedEmptyMessage,
+      return Column(
+        children: [
+          OneBitPageHeader.minimal(
+            title: l10n.channelsArchivedTitle,
+            actions: headerActions,
+          ),
+          Expanded(
+            child: OneBitEmptyState(
+              icon: OneBitIcons.archive,
+              title: l10n.channelsArchivedEmpty,
+              message: l10n.channelsArchivedEmptyMessage,
+            ),
+          ),
+        ],
       );
     }
-    return ListView.separated(
-      padding: const EdgeInsets.all(OneBitSpacing.m),
-      itemCount: summaries.length,
-      separatorBuilder: (_, _) => const SizedBox(height: OneBitSpacing.s),
-      itemBuilder: (context, index) =>
-          _ChannelRow(summary: summaries[index], archivedView: true),
+    return Column(
+      children: [
+        OneBitPageHeader.minimal(
+          title: l10n.channelsArchivedTitle,
+          actions: headerActions,
+        ),
+        Expanded(
+          child: ListView.separated(
+            padding: EdgeInsets.fromLTRB(
+              OneBitSpacing.m,
+              OneBitSpacing.m,
+              OneBitSpacing.m,
+              OneBitScrollClearance.bottom(context),
+            ),
+            itemCount: summaries.length,
+            separatorBuilder: (_, _) =>
+                const SizedBox(height: OneBitSpacing.s),
+            itemBuilder: (context, index) =>
+                _ChannelRow(summary: summaries[index], archivedView: true),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -253,7 +289,8 @@ final class _ChannelRow extends ConsumerWidget {
         lastMessage: hasDraft ? draft.body : lastMessage?.body,
         delivery: deliveryPresetFor(lastMessage, localNodeId),
         timestamp: timestamp == null ? null : clockLabel(timestamp),
-        onTap: onTapOverride ??
+        onTap:
+            onTapOverride ??
             () {
               unawaited(
                 ref
@@ -300,7 +337,7 @@ final class _ChannelRow extends ConsumerWidget {
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
-          content: Text(l10n.channelsArchived),
+          content: Text(l10n.channelsRestored),
           action: SnackBarAction(
             label: l10n.commonUndo,
             onPressed: () => unawaited(
@@ -384,23 +421,30 @@ class _TabletChannelList extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        SizedBox(
-          width: 360,
-          child: ListView.separated(
-            padding: const EdgeInsets.all(OneBitSpacing.m),
-            itemCount: summaries.length,
-            separatorBuilder: (_, _) =>
-                const SizedBox(height: OneBitSpacing.s),
-            itemBuilder: (context, index) {
-              final summary = summaries[index];
-              final isSelected = summary.channelId == selectedId;
-              return _ChannelRow(
-                summary: summary,
-                archivedView: false,
-                selected: isSelected,
-                onTapOverride: () => onSelect(summary.channelId),
-              );
-            },
+        Flexible(
+          flex: 2,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 360),
+            child: ListView.separated(
+              padding: EdgeInsets.fromLTRB(
+                OneBitSpacing.m,
+                OneBitSpacing.m,
+                OneBitSpacing.m,
+                OneBitScrollClearance.bottom(context),
+              ),
+              itemCount: summaries.length,
+              separatorBuilder: (_, _) => const SizedBox(height: OneBitSpacing.s),
+              itemBuilder: (context, index) {
+                final summary = summaries[index];
+                final isSelected = summary.channelId == selectedId;
+                return _ChannelRow(
+                  summary: summary,
+                  archivedView: false,
+                  selected: isSelected,
+                  onTapOverride: () => onSelect(summary.channelId),
+                );
+              },
+            ),
           ),
         ),
         Container(

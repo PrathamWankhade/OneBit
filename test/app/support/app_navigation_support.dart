@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:onebit/app/app_shell.dart';
 import 'package:onebit/core/crypto/identity/fingerprint.dart';
@@ -127,11 +128,13 @@ final class FakeIdentityRepository implements IdentityRepository {
 Widget oneBitApp({
   NodeIdentity? identity,
   InMemorySharedPreferencesAsync? prefs,
+  List<Override> overrides = const [],
 }) {
   final store = prefs ?? sharedPrefsStore();
   SharedPreferencesAsyncPlatform.instance = store;
   return ProviderScope(
     overrides: [
+      ...overrides,
       identityRepositoryProvider.overrideWithValue(
         FakeIdentityRepository(identity: identity),
       ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
 
 /// Responsive breakpoints for OneBit.
 ///
@@ -14,6 +15,9 @@ import 'package:flutter/material.dart';
 abstract final class OneBitBreakpoints {
   static const double compactMaxWidth = 599;
   static const double mediumMaxWidth = 839;
+
+  /// Maximum content width on expanded viewports to prevent giant cards.
+  static const double maxContentWidth = 720;
 
   const OneBitBreakpoints._();
 }
@@ -31,6 +35,66 @@ enum OneBitBreakpoint {
 
   /// Whether this class uses a bottom navigation bar vs. a side rail.
   bool get usesBottomNavigation => this == OneBitBreakpoint.compact;
+}
+
+/// Responsive horizontal margin tokens.
+///
+/// Returns appropriate horizontal padding based on viewport width:
+/// * Compact: 16dp
+/// * Medium: 20dp
+/// * Expanded: 24dp (centered content region)
+abstract final class OneBitResponsiveMargin {
+  /// Horizontal margin for compact viewports (phones).
+  static const double compact = OneBitSpacing.lg;
+
+  /// Horizontal margin for medium viewports (large phones, foldables).
+  static const double medium = OneBitSpacing.xl;
+
+  /// Horizontal margin for expanded viewports (tablets).
+  static const double expanded = OneBitSpacing.xxl;
+
+  const OneBitResponsiveMargin._();
+}
+
+/// A widget that constrains content width on large screens and centers it.
+///
+/// On compact/medium viewports, the child fills available width.
+/// On expanded viewports, content is constrained to [maxWidth] and centered
+/// to prevent giant cards and text on tablets.
+class OneBitConstrainedContent extends StatelessWidget {
+  const OneBitConstrainedContent({
+    required this.child,
+    this.maxWidth = OneBitBreakpoints.maxContentWidth,
+    this.padding,
+    super.key,
+  });
+
+  /// The child widget to constrain.
+  final Widget child;
+
+  /// Maximum width on expanded viewports.
+  final double maxWidth;
+
+  /// Optional padding applied on all sides.
+  final EdgeInsetsGeometry? padding;
+
+  @override
+  Widget build(BuildContext context) {
+    final isExpanded = context.isExpanded;
+
+    if (!isExpanded && padding == null) {
+      return child;
+    }
+
+    return Center(
+      child: ConstrainedBox(
+        constraints: isExpanded
+            ? BoxConstraints(maxWidth: maxWidth)
+            : const BoxConstraints.expand(),
+        child: padding != null ? Padding(padding: padding!, child: child) : child,
+      ),
+    );
+  }
 }
 
 /// Builds a layout from the ambient viewport width.
@@ -86,4 +150,11 @@ extension OneBitResponsiveContextX on BuildContext {
 
   /// True on tablet/desktop-sized viewports (≥840dp).
   bool get isExpanded => breakpoint == OneBitBreakpoint.expanded;
+
+  /// Responsive horizontal margin based on current breakpoint.
+  double get responsiveMargin => switch (breakpoint) {
+    OneBitBreakpoint.compact => OneBitResponsiveMargin.compact,
+    OneBitBreakpoint.medium => OneBitResponsiveMargin.medium,
+    OneBitBreakpoint.expanded => OneBitResponsiveMargin.expanded,
+  };
 }

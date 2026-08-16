@@ -73,7 +73,16 @@ class OneBitTextField extends StatelessWidget {
         prefixIcon: prefixIcon,
         suffixIcon: suffixIcon,
         errorText: validator?.call(controller.text),
-        prefixIconColor: scheme.onSurfaceVariant,
+        prefixIconColor: WidgetStateColor.resolveWith((states) {
+          if (states.contains(WidgetState.error)) return scheme.error;
+          if (states.contains(WidgetState.focused)) return scheme.primary;
+          return scheme.onSurfaceVariant;
+        }),
+        suffixIconColor: WidgetStateColor.resolveWith((states) {
+          if (states.contains(WidgetState.error)) return scheme.error;
+          if (states.contains(WidgetState.focused)) return scheme.primary;
+          return scheme.onSurfaceVariant;
+        }),
       ),
       autofocus: autofocus,
     );

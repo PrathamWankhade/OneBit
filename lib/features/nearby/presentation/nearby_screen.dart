@@ -10,22 +10,27 @@ import 'package:onebit/core/widgets/onebit_scaffold.dart';
 import 'package:onebit/features/bluetooth/domain/bluetooth_connection_state.dart';
 import 'package:onebit/features/bluetooth/domain/bluetooth_permission_state.dart';
 import 'package:onebit/features/bluetooth/domain/bluetooth_radio_state.dart';
+import 'package:onebit/features/bluetooth/domain/bluetooth_views.dart';
 import 'package:onebit/features/bluetooth/presentation/bluetooth_providers.dart';
 import 'package:onebit/features/nearby/domain/nearby_peer.dart';
 import 'package:onebit/features/nearby/presentation/nearby_controller.dart';
 import 'package:onebit/l10n/app_localizations.dart';
-import 'package:onebit/shared/design_system/colors/onebit_color_schemes.dart';
+import 'package:onebit/shared/design_system/animations/onebit_motion.dart';
 import 'package:onebit/shared/design_system/components/onebit_card.dart';
 import 'package:onebit/shared/design_system/components/onebit_empty_state.dart';
 import 'package:onebit/shared/design_system/components/onebit_error_state.dart';
 import 'package:onebit/shared/design_system/components/onebit_icon_button.dart';
 import 'package:onebit/shared/design_system/components/onebit_loading_indicator.dart';
 import 'package:onebit/shared/design_system/components/onebit_offline_state.dart';
+import 'package:onebit/shared/design_system/components/onebit_page_header.dart';
 import 'package:onebit/shared/design_system/components/onebit_permission_state.dart';
+import 'package:onebit/shared/design_system/components/onebit_scroll_clearance.dart';
 import 'package:onebit/shared/design_system/components/onebit_section_header.dart';
 import 'package:onebit/shared/design_system/components/onebit_status_chip.dart';
 import 'package:onebit/shared/design_system/icons/onebit_icons.dart';
+import 'package:onebit/shared/design_system/responsive/onebit_responsive.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
+import 'package:onebit/shared/design_system/themes/onebit_theme_extension.dart';
 import 'package:onebit/shared/design_system/typography/onebit_typography.dart';
 
 /// Nearby tab: live Bluetooth discovery.
@@ -38,33 +43,11 @@ class NearbyScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final l10n = context.l10n;
     final view = ref.watch(nearbyViewProvider);
     final scanning = view.value?.scanning ?? false;
 
     return OneBitScaffold(
-      appBar: AppBar(
-        title: Text(l10n.nearbyTitle),
-        actions: [
-          OneBitIconButton(
-            icon: OneBitIcons.radar,
-            tooltip: l10n.nearbyScanToggle,
-            onPressed: scanning
-                ? () => unawaited(
-                    ref.read(nearbyViewProvider.notifier).stopScan(),
-                  )
-                : () => unawaited(
-                    ref.read(nearbyViewProvider.notifier).startScan(),
-                  ),
-          ),
-          OneBitIconButton(
-            icon: OneBitIcons.shellSettings,
-            tooltip: l10n.settingsTitle,
-            onPressed: () => context.push(AppRoutePaths.settings),
-          ),
-        ],
-      ),
-      body: _body(context, ref, view),
+      body: _body(context, ref, view, scanning),
     );
   }
 
@@ -72,6 +55,7 @@ class NearbyScreen extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     AsyncValue<NearbyView> view,
+    bool scanning,
   ) {
     final l10n = context.l10n;
     if (view.hasError) {
@@ -137,17 +121,46 @@ class NearbyScreen extends ConsumerWidget {
         icon: OneBitIcons.shellNearby,
         title: l10n.nearbyEmpty,
         message: l10n.nearbyEmptyMessage,
+        secondaryInfo: value.scanning ? const _ScanningPulse() : null,
       );
     }
-    return _peerList(context, ref, value);
+    return _peerList(context, ref, value, scanning);
   }
 
-  Widget _peerList(BuildContext context, WidgetRef ref, NearbyView view) {
+  Widget _peerList(
+    BuildContext context,
+    WidgetRef ref,
+    NearbyView view,
+    bool scanning,
+  ) {
     final l10n = context.l10n;
     final colors = context.oneBitColors;
     final links = ref.watch(bluetoothLinkControllerProvider);
     return Column(
       children: [
+        OneBitPageHeader.status(
+          title: l10n.nearbyTitle,
+          status: view.scanning ? l10n.nearbyScanning : '${view.peers.length}',
+          statusColor: view.scanning ? colors.warning : colors.info,
+          actions: [
+            OneBitIconButton(
+              icon: OneBitIcons.radar,
+              tooltip: l10n.nearbyScanToggle,
+              onPressed: scanning
+                  ? () => unawaited(
+                      ref.read(nearbyViewProvider.notifier).stopScan(),
+                    )
+                  : () => unawaited(
+                      ref.read(nearbyViewProvider.notifier).startScan(),
+                    ),
+            ),
+            OneBitIconButton(
+              icon: OneBitIcons.shellSettings,
+              tooltip: l10n.settingsTitle,
+              onPressed: () => context.push(AppRoutePaths.settings),
+            ),
+          ],
+        ),
         Padding(
           padding: const EdgeInsets.fromLTRB(
             OneBitSpacing.m,
@@ -160,35 +173,146 @@ class NearbyScreen extends ConsumerWidget {
             subtitle: view.scanning
                 ? l10n.nearbyScanning
                 : l10n.nearbyPeerCount(view.peers.length),
-            trailing: view.scanning
-                ? SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: colors.info,
-                    ),
-                  )
-                : null,
+            trailing: view.scanning ? const _ScanningPulse() : null,
           ),
         ),
         Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.all(OneBitSpacing.m),
-            itemCount: view.peers.length,
-            itemBuilder: (context, index) {
-              final peer = view.peers[index];
-              return Padding(
-                padding: const EdgeInsets.only(bottom: OneBitSpacing.s),
-                child: _PeerCard(
-                  peer: peer,
-                  connection: links.connections[peer.peerId],
-                ),
-              );
-            },
-          ),
+          child: context.isTablet
+              ? _tabletPeerGrid(context, view, links)
+              : _phonePeerList(context, view, links, scanning),
         ),
       ],
+    );
+  }
+
+  Widget _phonePeerList(
+    BuildContext context,
+    NearbyView view,
+    BluetoothLinksView links,
+    bool scanning,
+  ) {
+    return ListView.builder(
+      padding: EdgeInsets.fromLTRB(
+        OneBitSpacing.m,
+        OneBitSpacing.m,
+        OneBitSpacing.m,
+        OneBitScrollClearance.bottom(context),
+      ),
+      itemCount: view.peers.length,
+      itemBuilder: (context, index) {
+        final peer = view.peers[index];
+        return Padding(
+          padding: const EdgeInsets.only(bottom: OneBitSpacing.s),
+          child: _AnimatedPeerCard(
+            peer: peer,
+            connection: links.connections[peer.peerId],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _tabletPeerGrid(
+    BuildContext context,
+    NearbyView view,
+    BluetoothLinksView links,
+  ) {
+    return GridView.builder(
+      padding: EdgeInsets.fromLTRB(
+        OneBitSpacing.m,
+        OneBitSpacing.m,
+        OneBitSpacing.m,
+        OneBitScrollClearance.bottom(context),
+      ),
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 400,
+        childAspectRatio: 2.5,
+        crossAxisSpacing: OneBitSpacing.m,
+        mainAxisSpacing: OneBitSpacing.s,
+      ),
+      itemCount: view.peers.length,
+      itemBuilder: (context, index) {
+        final peer = view.peers[index];
+        return _AnimatedPeerCard(
+          peer: peer,
+          connection: links.connections[peer.peerId],
+        );
+      },
+    );
+  }
+}
+
+/// Animated wrapper around [_PeerCard] that plays a subtle slide+fade
+/// entrance when a new peer appears. Duration: 200ms (within 180–240ms).
+///
+/// Each card owns its own [AnimationController] so new entries animate
+/// independently without affecting existing items.
+class _AnimatedPeerCard extends StatefulWidget {
+  const _AnimatedPeerCard({required this.peer, this.connection});
+
+  final NearbyPeer peer;
+  final BluetoothConnectionState? connection;
+
+  @override
+  State<_AnimatedPeerCard> createState() => _AnimatedPeerCardState();
+}
+
+class _AnimatedPeerCardState extends State<_AnimatedPeerCard>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _fade;
+  late final Animation<Offset> _slide;
+  late final bool _reduceMotion;
+
+  @override
+  void initState() {
+    super.initState();
+    _reduceMotion = MediaQuery.disableAnimationsOf(context);
+    _controller = AnimationController(
+      vsync: this,
+      duration: _reduceMotion ? Duration.zero : const Duration(milliseconds: 200),
+    );
+    _fade = CurvedAnimation(
+      parent: _controller,
+      curve: OneBitMotion.emphasized,
+    );
+    _slide = Tween<Offset>(
+      begin: const Offset(0, 0.08),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: OneBitMotion.emphasized,
+      ),
+    );
+    if (!_reduceMotion) {
+      _controller.forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_reduceMotion) {
+      return _PeerCard(
+        peer: widget.peer,
+        connection: widget.connection,
+      );
+    }
+    return FadeTransition(
+      opacity: _fade,
+      child: SlideTransition(
+        position: _slide,
+        child: _PeerCard(
+          peer: widget.peer,
+          connection: widget.connection,
+        ),
+      ),
     );
   }
 }
@@ -257,6 +381,75 @@ final class _PeerCard extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Pulsing scanning indicator — a small animated dot that communicates
+/// active discovery without dominating the screen.
+class _ScanningPulse extends StatefulWidget {
+  const _ScanningPulse();
+
+  @override
+  State<_ScanningPulse> createState() => _ScanningPulseState();
+}
+
+class _ScanningPulseState extends State<_ScanningPulse>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _pulse;
+  late final bool _reduceMotion;
+
+  @override
+  void initState() {
+    super.initState();
+    _reduceMotion = MediaQuery.disableAnimationsOf(context);
+    _controller = AnimationController(
+      vsync: this,
+      duration: _reduceMotion ? Duration.zero : OneBitMotion.statusPulse,
+    );
+    _pulse = Tween<double>(begin: 0.4, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+    if (!_reduceMotion) {
+      _controller.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.oneBitColors;
+    if (_reduceMotion) {
+      return Container(
+        width: 8,
+        height: 8,
+        decoration: BoxDecoration(
+          color: colors.info,
+          shape: BoxShape.circle,
+        ),
+      );
+    }
+    return AnimatedBuilder(
+      animation: _pulse,
+      builder: (context, child) {
+        return Opacity(
+          opacity: _pulse.value,
+          child: Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: colors.info,
+              shape: BoxShape.circle,
+            ),
+          ),
+        );
+      },
     );
   }
 }

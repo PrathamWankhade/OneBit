@@ -1,27 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:onebit/shared/design_system/animations/onebit_motion.dart';
-import 'package:onebit/shared/design_system/navigation/onebit_navigation_direction.dart';
 
 /// Wraps the [StatefulNavigationShell] body with directional slide transitions.
 ///
-/// When the user switches tabs, the outgoing page slides out and the incoming
-/// page slides in from the appropriate direction based on tab order. State
-/// is preserved because [StatefulShellRoute.indexedStack] manages the branch
-/// stacks independently.
+/// When the user switches tabs, content slides horizontally toward the
+/// selected destination:
+/// * Forward navigation (lower index → higher index): content slides left.
+/// * Backward navigation (higher index → lower index): content slides right.
 ///
-/// Under reduced motion, a subtle cross-fade replaces the slide.
+/// Under reduced motion the slide is replaced by a short cross-fade.
+///
+/// State is preserved because [StatefulShellRoute.indexedStack] manages
+/// the branch stacks independently — this widget only handles the visual
+/// transition between the visible branches.
 class DirectionalShellBody extends StatefulWidget {
-  const DirectionalShellBody({
-    required this.navigationShell,
-    required this.child,
-    super.key,
-  });
+  const DirectionalShellBody({required this.navigationShell, super.key});
 
   /// The stateful navigation shell providing the current branch.
-  final Widget navigationShell;
-
-  /// The child widget (typically the navigation shell itself).
-  final Widget child;
+  final StatefulNavigationShell navigationShell;
 
   @override
   State<DirectionalShellBody> createState() => _DirectionalShellBodyState();
@@ -29,36 +26,39 @@ class DirectionalShellBody extends StatefulWidget {
 
 class _DirectionalShellBodyState extends State<DirectionalShellBody>
     with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<Offset> _slideAnimation;
-  late Animation<double> _fadeAnimation;
-
-  int _previousIndex = 0;
-  bool _isAnimating = false;
+  late final AnimationController _controller;
+  late final Animation<double> _slideAnimation;
+  late final Animation<double> _fadeAnimation;
+  bool _isForward = true;
 
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(
+      duration: OneBitMotion.pageSlide,
       vsync: this,
-      duration: OneBitMotion.medium,
     );
-
-    _slideAnimation = Tween<Offset>(
-      begin: Offset.zero,
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
+    _slideAnimation = CurvedAnimation(
       parent: _controller,
-      curve: Curves.easeInOutCubic,
-    ));
+      curve: OneBitMotion.pageCurve,
+    );
+    _fadeAnimation = Tween<double>(begin: 0.85, end: 1).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: OneBitMotion.pageCurve,
+      ),
+    );
+  }
 
-    _fadeAnimation = Tween<double>(
-      begin: 1.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeInOutCubic,
-    ));
+  @override
+  void didUpdateWidget(covariant DirectionalShellBody oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final newIndex = widget.navigationShell.currentIndex;
+    final oldIdx = oldWidget.navigationShell.currentIndex;
+    if (newIndex != oldIdx) {
+      _isForward = newIndex > oldIdx;
+      _controller.forward(from: 0);
+    }
   }
 
   @override
@@ -67,72 +67,31 @@ class _DirectionalShellBodyState extends State<DirectionalShellBody>
     super.dispose();
   }
 
-  void _onIndexChanged(int newIndex) {
-    if (newIndex == _previousIndex || _isAnimating) return;
-
-    final direction = navigationDirection(_previousIndex, newIndex);
-    final reduceMotion = MediaQuery.disableAnimationsOf(context);
-
-    _previousIndex = newIndex;
-
-    if (reduceMotion) {
-      // Under reduced motion, just skip animation.
-      return;
-    }
-
-    _isAnimating = true;
-
-    final beginOffset = slideOffsetForDirection(direction, isIncoming: true);
-
-    _slideAnimation = Tween<Offset>(
-      begin: beginOffset,
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeInOutCubic,
-    ));
-
-    _fadeAnimation = Tween<double>(
-      begin: 0.96,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeInOutCubic,
-    ));
-
-    _controller.forward(from: 0).then((_) {
-      _isAnimating = false;
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
-    final currentIndex =
-        (widget.navigationShell as dynamic).currentIndex as int? ?? 0;
-
-    // Trigger animation when index changes.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _onIndexChanged(currentIndex);
-    });
-
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
 
     if (reduceMotion) {
-      return widget.child;
+      return AnimatedSwitcher(
+        duration: const Duration(milliseconds: 150),
+        child: widget.navigationShell,
+      );
     }
 
     return AnimatedBuilder(
-      animation: _controller,
+      animation: _slideAnimation,
       builder: (context, child) {
-        return SlideTransition(
-          position: _slideAnimation,
-          child: FadeTransition(
-            opacity: _fadeAnimation,
-            child: child,
+        final offset = _isForward
+            ? Offset(1.0 - _slideAnimation.value, 0)
+            : Offset(-1.0 + _slideAnimation.value, 0);
+        return FractionalTranslation(
+          translation: offset,
+          child: Opacity(
+            opacity: _fadeAnimation.value,
+            child: widget.navigationShell,
           ),
         );
       },
-      child: widget.child,
     );
   }
 }

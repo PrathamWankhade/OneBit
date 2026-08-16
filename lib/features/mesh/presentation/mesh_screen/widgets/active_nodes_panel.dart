@@ -5,10 +5,8 @@ import 'package:onebit/features/mesh/domain/mesh_engine_state.dart';
 import 'package:onebit/features/mesh/domain/mesh_neighbor.dart';
 import 'package:onebit/features/mesh/presentation/mesh_providers.dart';
 import 'package:onebit/shared/design_system/components/onebit_card.dart';
-import 'package:onebit/shared/design_system/components/onebit_empty_state.dart';
 import 'package:onebit/shared/design_system/components/onebit_loading_indicator.dart';
 import 'package:onebit/shared/design_system/components/onebit_status_chip.dart';
-import 'package:onebit/shared/design_system/icons/onebit_icons.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
 import 'package:onebit/shared/design_system/typography/onebit_typography.dart';
 
@@ -28,22 +26,11 @@ final class ActiveNodesPanel extends ConsumerWidget {
       ),
       data: (result) {
         if (result.isErr) {
-          return OneBitCard(
-            child: Text(
-              l10n.meshEmptyNodes,
-              style: context.textTheme.bodyMedium,
-            ),
-          );
+          return const SizedBox.shrink();
         }
         final neighbors = result.value ?? [];
         if (neighbors.isEmpty) {
-          return OneBitCard(
-            child: OneBitEmptyState(
-              icon: OneBitIcons.node,
-              title: l10n.meshEmptyNodes,
-              message: l10n.meshEmptyNodesMessage,
-            ),
-          );
+          return const SizedBox.shrink();
         }
         return ActiveNodesList(neighbors: neighbors);
       },
@@ -60,7 +47,6 @@ final class ActiveNodesList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final scheme = Theme.of(context).colorScheme;
 
     return OneBitCard(
       child: Column(
@@ -76,17 +62,17 @@ final class ActiveNodesList extends StatelessWidget {
               ),
               Text(
                 '${neighbors.length}',
-                style: OneBitTypography.technicalStyle(
-                  color: scheme.onSurfaceVariant,
+                style: OneBitTypography.oneBitNumeric(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: OneBitSpacing.s),
+          const SizedBox(height: OneBitSpacing.xs),
           for (final neighbor in neighbors) ...[
             NodeRow(neighbor: neighbor),
             if (neighbor != neighbors.last)
-              const SizedBox(height: OneBitSpacing.s),
+              const SizedBox(height: OneBitSpacing.xxs),
           ],
         ],
       ),
@@ -120,11 +106,11 @@ final class NodeRow extends StatelessWidget {
             children: [
               Text(
                 neighbor.nodeId,
-                style: OneBitTypography.technicalStyle(color: scheme.onSurface),
+                style: OneBitTypography.oneBitNumeric(color: scheme.onSurface),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 1),
               Text(
                 '${neighbor.hopEstimate} ${neighbor.hopEstimate == 1 ? 'hop' : 'hops'}',
                 style: context.textTheme.bodySmall?.copyWith(
@@ -138,8 +124,7 @@ final class NodeRow extends StatelessWidget {
         const SizedBox(width: OneBitSpacing.s),
         Text(
           '${neighbor.smoothedRssiDb.round()} dBm',
-          style: OneBitTypography.technicalStyle(
-            fontSize: OneBitTypography.caption,
+          style: OneBitTypography.oneBitCaption(
             color: scheme.onSurfaceVariant,
           ),
         ),

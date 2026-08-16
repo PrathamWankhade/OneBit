@@ -1,24 +1,25 @@
 import 'package:flutter/material.dart';
-import 'package:onebit/shared/design_system/accessibility/onebit_accessibility.dart';
 import 'package:onebit/shared/design_system/animations/onebit_motion.dart';
 import 'package:onebit/shared/design_system/components/onebit_navigation_bar.dart';
-import 'package:onebit/shared/design_system/typography/onebit_typography.dart';
+import 'package:onebit/shared/design_system/spacing/onebit_elevation.dart';
+import 'package:onebit/shared/design_system/spacing/onebit_radius.dart';
+import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
+import 'package:onebit/shared/design_system/themes/onebit_theme_extension.dart';
 
 /// Floating bottom navigation bar for the OneBit shell.
 ///
-/// Does not touch screen edges — floats above content with horizontal and
-/// bottom margins. Uses the OneBit monochrome design language with an
-/// animated selection indicator that physically travels between items.
+/// Icon-only capsule design — no text labels. An animated selection pill
+/// smoothly travels behind the active icon. Handles safe-area insets
+/// internally via [MediaQuery.paddingOf].
 ///
-/// On tablets ([OneBitBreakpoint.medium]/[expanded]), the bar uses a
-/// reasonable max width instead of stretching across the full display.
+/// On tablets, the bar uses a reasonable max width instead of stretching
+/// across the full display.
 class FloatingBottomNavigation extends StatelessWidget {
   const FloatingBottomNavigation({
     required this.destinations,
     required this.selectedIndex,
     required this.onDestinationSelected,
-    this.margin = const EdgeInsets.only(bottom: 16, left: 16, right: 16),
-    this.maxWidth = 480,
+    this.maxWidth = 320,
     super.key,
   });
 
@@ -31,36 +32,36 @@ class FloatingBottomNavigation extends StatelessWidget {
   /// Callback when a destination is tapped.
   final ValueChanged<int> onDestinationSelected;
 
-  /// Outer margin around the floating bar.
-  final EdgeInsetsGeometry margin;
-
   /// Maximum width of the bar on large screens.
   final double maxWidth;
 
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.sizeOf(context).width;
-    final effectiveWidth = screenWidth < maxWidth ? screenWidth - 32 : maxWidth;
+    final safeAreaBottom = MediaQuery.paddingOf(context).bottom;
+    const horizontalMargin = OneBitSpacing.lg;
+    final availableWidth = screenWidth - (horizontalMargin * 2);
+    final effectiveWidth = availableWidth < maxWidth ? availableWidth : maxWidth;
 
-    return SafeArea(
-      child: Padding(
-        padding: margin,
-        child: Center(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: effectiveWidth),
-            child: _FloatingBar(
-              destinations: destinations,
-              selectedIndex: selectedIndex,
-              onDestinationSelected: onDestinationSelected,
-            ),
-          ),
+    return Padding(
+      padding: EdgeInsets.only(
+        left: horizontalMargin,
+        right: horizontalMargin,
+        bottom: OneBitSpacing.m + safeAreaBottom,
+      ),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: effectiveWidth),
+        child: _FloatingBar(
+          destinations: destinations,
+          selectedIndex: selectedIndex,
+          onDestinationSelected: onDestinationSelected,
         ),
       ),
     );
   }
 }
 
-class _FloatingBar extends StatelessWidget {
+class _FloatingBar extends StatefulWidget {
   const _FloatingBar({
     required this.destinations,
     required this.selectedIndex,
@@ -72,39 +73,163 @@ class _FloatingBar extends StatelessWidget {
   final ValueChanged<int> onDestinationSelected;
 
   @override
+  State<_FloatingBar> createState() => _FloatingBarState();
+}
+
+class _FloatingBarState extends State<_FloatingBar>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _animController;
+  late final Animation<double> _anim;
+  final _itemKeys = <GlobalKey>[];
+
+  Rect? _fromRect;
+  Rect? _toRect;
+  Rect? _currentRect;
+
+  @override
+  void initState() {
+    super.initState();
+    _itemKeys.addAll(
+      List.generate(widget.destinations.length, (_) => GlobalKey()),
+    );
+    _animController = AnimationController(
+      vsync: this,
+      duration: OneBitMotion.medium,
+    );
+    _anim = CurvedAnimation(
+      parent: _animController,
+      curve: OneBitMotion.emphasized,
+    );
+    _anim.addListener(_onAnimTick);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateSelectedRect());
+  }
+
+  @override
+  void didUpdateWidget(covariant _FloatingBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.selectedIndex != widget.selectedIndex) {
+      _fromRect = _currentRect;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _updateSelectedRect();
+        if (_fromRect != null && _toRect != null) {
+          _animController.forward(from: 0);
+        }
+      });
+    }
+  }
+
+  void _onAnimTick() {
+    setState(() {
+      if (_fromRect != null && _toRect != null) {
+        _currentRect = Rect.lerp(_fromRect, _toRect, _anim.value);
+      }
+    });
+  }
+
+  void _updateSelectedRect() {
+    final key = _itemKeys[widget.selectedIndex];
+    final ctx = key.currentContext;
+    if (ctx == null) return;
+    final box = ctx.findRenderObject() as RenderBox?;
+    if (box == null) return;
+    final pos = box.localToGlobal(Offset.zero, ancestor: null);
+    final rect = Rect.fromLTWH(pos.dx, pos.dy, box.size.width, box.size.height);
+    _toRect = rect;
+    _currentRect = rect;
+  }
+
+  @override
+  void dispose() {
+    _anim.removeListener(_onAnimTick);
+    _animController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).extension<OneBitThemeExtension>()!;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final dim = _FloatingNavDimensions.calculate(
+      itemCount: widget.destinations.length,
+    );
+
     return Container(
-      decoration: _barDecoration(context),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
+      height: dim.capsuleHeight,
+      decoration: _barDecoration(colors, dim),
+      child: Stack(
         children: [
-          for (int i = 0; i < destinations.length; i++)
-            _FloatingNavItem(
-              destination: destinations[i],
-              isSelected: i == selectedIndex,
-              onTap: () => onDestinationSelected(i),
+          // Animated selection pill
+          if (_currentRect != null && !reduceMotion)
+            Positioned(
+              left: _currentRect!.left,
+              top: _currentRect!.top,
+              width: _currentRect!.width,
+              height: _currentRect!.height,
+              child: _SelectionPill(colors: colors, dim: dim),
             ),
+          // Static pill for initial frame / reduced motion
+          if (_currentRect != null && reduceMotion)
+            Positioned(
+              left: _toRect?.left ?? _currentRect!.left,
+              top: _toRect?.top ?? _currentRect!.top,
+              width: _toRect?.width ?? _currentRect!.width,
+              height: _toRect?.height ?? _currentRect!.height,
+              child: _SelectionPill(colors: colors, dim: dim),
+            ),
+          // Nav items
+          Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: dim.itemPadding,
+              vertical: dim.itemPadding,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (int i = 0; i < widget.destinations.length; i++)
+                  _FloatingNavItem(
+                    key: _itemKeys[i],
+                    destination: widget.destinations[i],
+                    isSelected: i == widget.selectedIndex,
+                    onTap: () => widget.onDestinationSelected(i),
+                    dim: dim,
+                  ),
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
 
-  BoxDecoration _barDecoration(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+  BoxDecoration _barDecoration(
+    OneBitThemeExtension colors,
+    _FloatingNavDimensions dim,
+  ) {
     return BoxDecoration(
-      color: const Color(0xFF1B1B1B),
-      borderRadius: BorderRadius.circular(26),
-      border: Border.all(
-        color: const Color(0xFF2C2C2C),
-        width: 1,
-      ),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: 0.3),
-          blurRadius: 12,
-          offset: const Offset(0, 4),
+      color: colors.surfaceElevated,
+      borderRadius: BorderRadius.circular(dim.capsuleRadius),
+      border: Border.all(color: colors.border, width: 1),
+      boxShadow: const [OneBitElevation.navigation],
+    );
+  }
+}
+
+class _SelectionPill extends StatelessWidget {
+  const _SelectionPill({required this.colors, required this.dim});
+
+  final OneBitThemeExtension colors;
+  final _FloatingNavDimensions dim;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.all(dim.pillPadding),
+      child: Container(
+        decoration: BoxDecoration(
+          color: colors.selectedBackground.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(OneBitRadius.xxl),
         ),
-      ],
+      ),
     );
   }
 }
@@ -114,29 +239,52 @@ class _FloatingNavItem extends StatelessWidget {
     required this.destination,
     required this.isSelected,
     required this.onTap,
+    required this.dim,
+    super.key,
   });
 
   final OneBitNavigationDestination destination;
   final bool isSelected;
   final VoidCallback onTap;
+  final _FloatingNavDimensions dim;
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
+    final colors = Theme.of(context).extension<OneBitThemeExtension>()!;
+    final iconColor = isSelected ? colors.selectedIcon : colors.iconSecondary;
+
+    return SizedBox(
+      width: dim.itemWidth,
+      height: dim.itemHeight,
       child: Semantics(
         button: true,
         selected: isSelected,
         label: isSelected
             ? '${destination.label}, selected'
             : '${destination.label}, not selected',
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(20),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-            child: _NavItemContent(
-              destination: destination,
-              isSelected: isSelected,
+        child: Tooltip(
+          message: destination.label,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(OneBitRadius.xxl),
+            child: Center(
+              child: AnimatedSwitcher(
+                duration: OneBitMotion.resolve(
+                  context,
+                  OneBitMotion.fast,
+                ),
+                transitionBuilder: (child, animation) {
+                  return ScaleTransition(scale: animation, child: child);
+                },
+                child: Icon(
+                  isSelected ? destination.selectedIcon : destination.icon,
+                  key: ValueKey(
+                    '${destination.id}-${isSelected ? "sel" : "unsel"}',
+                  ),
+                  size: dim.iconSize,
+                  color: iconColor,
+                ),
+              ),
             ),
           ),
         ),
@@ -145,46 +293,52 @@ class _FloatingNavItem extends StatelessWidget {
   }
 }
 
-class _NavItemContent extends StatelessWidget {
-  const _NavItemContent({
-    required this.destination,
-    required this.isSelected,
+/// Pre-computed dimensions for the floating navigation layout.
+class _FloatingNavDimensions {
+  const _FloatingNavDimensions({
+    required this.capsuleHeight,
+    required this.capsuleRadius,
+    required this.itemWidth,
+    required this.itemHeight,
+    required this.itemPadding,
+    required this.iconSize,
+    required this.pillPadding,
   });
 
-  final OneBitNavigationDestination destination;
-  final bool isSelected;
+  /// Layout from item count.
+  factory _FloatingNavDimensions.calculate({
+    required int itemCount,
+  }) {
+    const capsuleHeight = 60.0;
+    const capsuleRadius = 28.0;
+    const iconSize = 24.0;
+    const pillPadding = 8.0;
+    const itemPadding = 8.0;
+    const minItemWidth = 48.0;
+    const maxCapsuleWidth = 320.0;
 
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        AnimatedSwitcher(
-          duration: OneBitMotion.fast,
-          child: Icon(
-            isSelected ? destination.selectedIcon : destination.icon,
-            key: ValueKey('$isSelected-${destination.id}'),
-            size: 22,
-            color: isSelected
-                ? const Color(0xFFFFFFFF)
-                : const Color(0xFFA8A8A8),
-          ),
-        ),
-        const SizedBox(height: 2),
-        AnimatedDefaultTextStyle(
-          duration: OneBitMotion.fast,
-          style: TextStyle(
-            fontFamily: OneBitTypography.primaryFamily,
-            fontFamilyFallback: OneBitTypography.primaryFallback,
-            fontSize: 10,
-            fontWeight: isSelected ? OneBitTypography.medium : OneBitTypography.regular,
-            color: isSelected
-                ? const Color(0xFFFFFFFF)
-                : const Color(0xFFA8A8A8),
-          ),
-          child: Text(destination.label),
-        ),
-      ],
+    final maxItemWidth = maxCapsuleWidth / itemCount;
+    final itemWidth = (minItemWidth > maxItemWidth
+            ? minItemWidth
+            : (maxItemWidth > 72 ? 72 : maxItemWidth))
+        .toDouble();
+
+    return _FloatingNavDimensions(
+      capsuleHeight: capsuleHeight,
+      capsuleRadius: capsuleRadius,
+      itemWidth: itemWidth,
+      itemHeight: capsuleHeight - (itemPadding * 2),
+      itemPadding: itemPadding,
+      iconSize: iconSize,
+      pillPadding: pillPadding,
     );
   }
+
+  final double capsuleHeight;
+  final double capsuleRadius;
+  final double itemWidth;
+  final double itemHeight;
+  final double itemPadding;
+  final double iconSize;
+  final double pillPadding;
 }

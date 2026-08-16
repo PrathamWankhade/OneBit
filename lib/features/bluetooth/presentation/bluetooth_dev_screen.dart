@@ -12,6 +12,7 @@ import 'package:onebit/features/bluetooth/domain/bluetooth_state.dart';
 import 'package:onebit/features/bluetooth/domain/bluetooth_views.dart';
 import 'package:onebit/features/bluetooth/presentation/bluetooth_dev_screen/widgets/bluetooth_panels.dart';
 import 'package:onebit/features/bluetooth/presentation/bluetooth_providers.dart';
+import 'package:onebit/shared/design_system/components/onebit_scroll_clearance.dart';
 
 /// Developer testing screen for the Bluetooth transport.
 ///
@@ -58,7 +59,12 @@ final class _BluetoothDevScreenState extends ConsumerState<BluetoothDevScreen> {
     return OneBitScaffold(
       appBar: AppBar(title: const Text('Bluetooth Transport')),
       body: ListView(
-        padding: const EdgeInsets.all(12),
+        padding: EdgeInsets.fromLTRB(
+          12,
+          12,
+          12,
+          OneBitScrollClearance.bottom(context),
+        ),
         children: [
           _RadioPanel(radio: radio, machine: machine, permission: permission),
           const SizedBox(height: 12),

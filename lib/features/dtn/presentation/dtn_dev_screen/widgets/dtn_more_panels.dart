@@ -5,6 +5,7 @@ import 'package:onebit/features/dtn/domain/dtn_statistics.dart';
 import 'package:onebit/features/dtn/dtn_providers.dart';
 import 'package:onebit/features/dtn/presentation/dtn_dev_screen/widgets/dtn_panels.dart';
 import 'package:onebit/features/dtn/queue/queue_manager.dart';
+import 'package:onebit/shared/design_system/themes/onebit_theme_extension.dart';
 
 /// Connectivity gate + simulated mesh toggle.
 final class ConnectivityPanel extends ConsumerWidget {
@@ -32,7 +33,9 @@ final class ConnectivityPanel extends ConsumerWidget {
               children: [
                 Icon(
                   reachable ? Icons.wifi : Icons.wifi_off,
-                  color: reachable ? Colors.green : Colors.red,
+                  color: reachable
+                      ? context.oneBitColors.success
+                      : context.oneBitColors.statusDotError,
                 ),
                 const SizedBox(width: 8),
                 Text('${snapshot.linkName}: ${snapshot.toString()}'),

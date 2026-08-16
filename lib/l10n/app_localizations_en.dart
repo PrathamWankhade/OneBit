@@ -62,7 +62,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Could not create your identity. Please try again.';
 
   @override
-  String get routeComingSoon => 'This area is not built yet.';
+  String get routeComingSoon => 'This feature is not yet available.';
 
   @override
   String get routeDeepLinkParameters => 'Deep-link parameters';
@@ -84,6 +84,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get commonLoading => 'Loading…';
+
+  @override
+  String get commonGoBack => 'Go back';
 
   @override
   String get commonEmpty => 'Nothing here yet';
@@ -324,8 +327,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get nodesEmpty => 'No nodes yet';
 
   @override
-  String get nodesEmptyMessage =>
-      'Trusted contacts and nearby nodes appear here.';
+  String get nodesEmptyMessage => 'Trusted nodes and nearby nodes appear here.';
 
   @override
   String get channelsTitle => 'Channels';
@@ -402,6 +404,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get channelsArchived => 'Channel archived';
+
+  @override
+  String get channelsRestored => 'Channel restored';
 
   @override
   String get channelsDraft => 'Draft';
@@ -481,7 +486,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String nodesTrustedCount(Object count) {
-    return '$count contacts';
+    return '$count nodes';
   }
 
   @override
@@ -511,7 +516,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get nodeTrustBlocked => 'Blocked';
 
   @override
-  String get nodeNotInContacts => 'Not in your contacts';
+  String get nodeNotInContacts => 'Not in your nodes';
 
   @override
   String get nodeVerificationSection => 'Verification';
@@ -647,17 +652,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get nodeVerificationTrusted => 'Trusted';
 
   @override
-  String get nodeRemoveContact => 'Remove from contacts';
+  String get nodeRemoveContact => 'Remove from nodes';
 
   @override
-  String get nodeRemoveContactTitle => 'Remove contact?';
+  String get nodeRemoveContactTitle => 'Remove node?';
 
   @override
   String get nodeRemoveContactMessage =>
-      'This removes the contact from your device. Existing conversations are kept.';
+      'This removes the node from your device. Existing conversations are kept.';
 
   @override
-  String get nodeContactRemoved => 'Contact removed';
+  String get nodeContactRemoved => 'Node removed';
 
   @override
   String get nodeNotNearby => 'This node is not currently nearby';
@@ -696,7 +701,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get nodeIdentityNote =>
-      'Identity material is only available for contacts you added.';
+      'Identity material is only available for nodes you added.';
 
   @override
   String get nodeUnknownNode => 'Unknown node';
@@ -1056,10 +1061,10 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get qrScannerAddContact => 'Add to contacts';
+  String get qrScannerAddContact => 'Add to nodes';
 
   @override
-  String get qrScannerContactAdded => 'Contact added';
+  String get qrScannerContactAdded => 'Node added';
 
   @override
   String get qrScannerFingerprintMatches =>
@@ -2091,7 +2096,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsPrivacyVerificationDescription =>
-      'Verify contact identities by comparing fingerprints. This ensures you\'re talking to the right person.';
+      'Verify node identities by comparing fingerprints. This ensures you\'re talking to the right person.';
 
   @override
   String get settingsPrivacySecureStorage => 'Secure storage';
@@ -2182,4 +2187,32 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get licensesOneBitTitle => 'OneBit application';
+
+  @override
+  String get licensesSubtitle =>
+      'View all open-source packages used by OneBit and their respective licenses.';
+
+  @override
+  String get licensesCopyright => 'Copyright (c) 2026 OneBit contributors';
+
+  @override
+  String get settingsReducedMotion => 'Reduced motion';
+
+  @override
+  String get settingsReducedMotionOn =>
+      'System setting: animations are reduced';
+
+  @override
+  String get settingsReducedMotionOff =>
+      'System setting: full animations enabled';
+
+  @override
+  String get settingsReducedMotionDescription =>
+      'Controlled by your device accessibility settings. OneBit respects the system reduced-motion preference.';
+
+  @override
+  String get settingsTerminalPreview => 'Terminal preview';
+
+  @override
+  String get settingsTerminalPreviewSample => 'Hello, World!';
 }

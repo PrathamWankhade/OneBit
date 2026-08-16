@@ -5,6 +5,7 @@ import 'package:onebit/core/widgets/onebit_scaffold.dart';
 import 'package:onebit/features/identity/presentation/identity_controller.dart';
 import 'package:onebit/shared/design_system/components/onebit_button.dart';
 import 'package:onebit/shared/design_system/components/onebit_inline_error.dart';
+import 'package:onebit/shared/design_system/components/onebit_scroll_clearance.dart';
 import 'package:onebit/shared/design_system/components/onebit_text_field.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
 
@@ -59,7 +60,12 @@ final class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     return OneBitScaffold(
       appBar: AppBar(title: Text(l10n.onboardingTitle)),
       body: ListView(
-        padding: const EdgeInsets.all(OneBitSpacing.m),
+        padding: EdgeInsets.fromLTRB(
+          OneBitSpacing.m,
+          OneBitSpacing.m,
+          OneBitSpacing.m,
+          OneBitScrollClearance.bottom(context),
+        ),
         children: [
           const SizedBox(height: OneBitSpacing.l),
           Text(l10n.onboardingTitle, style: context.textTheme.headlineMedium),

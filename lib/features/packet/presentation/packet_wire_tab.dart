@@ -4,6 +4,7 @@ import 'package:onebit/features/packet/domain/packet_incoming.dart';
 import 'package:onebit/features/packet/domain/packet_payload.dart';
 import 'package:onebit/features/packet/presentation/packet_dev_widgets.dart';
 import 'package:onebit/features/packet/presentation/packet_providers.dart';
+import 'package:onebit/shared/design_system/components/onebit_scroll_clearance.dart';
 
 /// Serialization tester: paste arbitrary hex to decode a frame into its
 /// header fields, or run the engine's own sample round-trip. The "corrupt
@@ -103,7 +104,12 @@ final class _PacketWireTabState extends ConsumerState<PacketWireTab> {
   Widget build(BuildContext context) {
     final log = ref.watch(packetWireLogProvider);
     return ListView(
-      padding: const EdgeInsets.all(12),
+      padding: EdgeInsets.fromLTRB(
+        12,
+        12,
+        12,
+        OneBitScrollClearance.bottom(context),
+      ),
       children: <Widget>[
         PacketDevSection(
           title: 'Decode raw hex frame',

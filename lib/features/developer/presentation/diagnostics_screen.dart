@@ -8,6 +8,7 @@ import 'package:onebit/features/mesh/presentation/mesh_providers.dart';
 import 'package:onebit/shared/design_system/components/onebit_card.dart';
 import 'package:onebit/shared/design_system/components/onebit_diagnostic_card.dart';
 import 'package:onebit/shared/design_system/components/onebit_loading_indicator.dart';
+import 'package:onebit/shared/design_system/components/onebit_scroll_clearance.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
 
 /// Diagnostics screen: engine state, radio health, neighbor/route counts,
@@ -22,7 +23,12 @@ class DiagnosticsScreen extends ConsumerWidget {
     return OneBitScaffold(
       appBar: AppBar(title: Text(l10n.devDiagnosticsTitle)),
       body: ListView(
-        padding: const EdgeInsets.all(OneBitSpacing.m),
+        padding: EdgeInsets.fromLTRB(
+          OneBitSpacing.m,
+          OneBitSpacing.m,
+          OneBitSpacing.m,
+          OneBitScrollClearance.bottom(context),
+        ),
         children: [
           const _EngineDiagnostics(),
           const SizedBox(height: OneBitSpacing.m),

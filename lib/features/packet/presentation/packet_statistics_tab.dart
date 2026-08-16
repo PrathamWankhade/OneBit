@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:onebit/features/packet/presentation/packet_dev_widgets.dart';
 import 'package:onebit/features/packet/presentation/packet_providers.dart';
+import 'package:onebit/shared/design_system/components/onebit_scroll_clearance.dart';
 
 /// Protocol statistics: the engine counters, the active protocol version,
 /// the validation configuration and the compression policy in effect.
@@ -15,7 +16,12 @@ class PacketStatisticsTab extends ConsumerWidget {
     final validator = ref.watch(packetValidatorProvider);
     final compression = ref.watch(packetCompressionPolicyProvider);
     return ListView(
-      padding: const EdgeInsets.all(12),
+      padding: EdgeInsets.fromLTRB(
+        12,
+        12,
+        12,
+        OneBitScrollClearance.bottom(context),
+      ),
       children: <Widget>[
         PacketDevSection(
           title: 'Counters',

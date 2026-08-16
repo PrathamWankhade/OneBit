@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:onebit/core/extensions/build_context_extensions.dart';
 import 'package:onebit/core/widgets/onebit_scaffold.dart';
-import 'package:onebit/shared/design_system/components/onebit_card.dart';
+import 'package:onebit/shared/design_system/components/onebit_scroll_clearance.dart';
 import 'package:onebit/shared/design_system/components/onebit_section_header.dart';
+import 'package:onebit/shared/design_system/components/onebit_settings_card.dart';
 import 'package:onebit/shared/design_system/icons/onebit_icons.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
 
@@ -14,34 +15,22 @@ class NotificationsSettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final scheme = Theme.of(context).colorScheme;
 
     return OneBitScaffold(
       appBar: AppBar(title: Text(l10n.settingsNotificationsTitle)),
       body: ListView(
-        padding: const EdgeInsets.all(OneBitSpacing.m),
+        padding: EdgeInsets.fromLTRB(
+          24,
+          OneBitSpacing.m,
+          24,
+          OneBitScrollClearance.bottom(context),
+        ),
         children: [
           OneBitSectionHeader(title: l10n.settingsNotificationsTitle),
-          OneBitCard(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(
-                  OneBitIcons.notifications,
-                  size: 20,
-                  color: scheme.onSurfaceVariant,
-                ),
-                const SizedBox(width: OneBitSpacing.m),
-                Expanded(
-                  child: Text(
-                    l10n.settingsNotificationsDescription,
-                    style: context.textTheme.bodyMedium?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+          OneBitSettingsCard(
+            icon: OneBitIcons.notifications,
+            title: l10n.settingsNotificationsTitle,
+            subtitle: l10n.settingsNotificationsDescription,
           ),
         ],
       ),

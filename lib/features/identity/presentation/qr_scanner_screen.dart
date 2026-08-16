@@ -7,6 +7,7 @@ import 'package:onebit/features/identity/presentation/qr_scanner_controller.dart
 import 'package:onebit/features/identity/presentation/qr_scanner_service.dart';
 import 'package:onebit/shared/design_system/components/onebit_button.dart';
 import 'package:onebit/shared/design_system/components/onebit_error_state.dart';
+import 'package:onebit/shared/design_system/components/onebit_scroll_clearance.dart';
 import 'package:onebit/shared/design_system/components/onebit_technical_card.dart';
 import 'package:onebit/shared/design_system/icons/onebit_icons.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_radius.dart';
@@ -176,7 +177,7 @@ final class _ScanningView extends ConsumerWidget {
         ),
         if (decoding)
           Container(
-            color: Colors.black54,
+            color: Theme.of(context).colorScheme.scrim.withValues(alpha: 0.54),
             alignment: Alignment.center,
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -185,9 +186,9 @@ final class _ScanningView extends ConsumerWidget {
                 const SizedBox(height: OneBitSpacing.m),
                 Text(
                   l10n.qrScannerScanning,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyMedium?.copyWith(color: Colors.white),
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onInverseSurface,
+                  ),
                 ),
               ],
             ),
@@ -200,8 +201,13 @@ final class _ScanningView extends ConsumerWidget {
               child: Text(
                 l10n.qrScannerScanning,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.white,
-                  shadows: const [Shadow(color: Colors.black87, blurRadius: 4)],
+                  color: Theme.of(context).colorScheme.onInverseSurface,
+                  shadows: [
+                    Shadow(
+                      color: Theme.of(context).colorScheme.shadow,
+                      blurRadius: 4,
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -229,7 +235,12 @@ final class _SuccessView extends ConsumerWidget {
     final controller = ref.read(qrScannerControllerProvider.notifier);
 
     return ListView(
-      padding: const EdgeInsets.all(OneBitSpacing.m),
+      padding: EdgeInsets.fromLTRB(
+        OneBitSpacing.m,
+        OneBitSpacing.m,
+        OneBitSpacing.m,
+        OneBitScrollClearance.bottom(context),
+      ),
       children: [
         Icon(OneBitIcons.verified, size: 64, color: scheme.primary),
         const SizedBox(height: OneBitSpacing.m),

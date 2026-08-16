@@ -10,6 +10,7 @@ import 'package:onebit/shared/design_system/components/onebit_empty_state.dart';
 import 'package:onebit/shared/design_system/components/onebit_error_state.dart';
 import 'package:onebit/shared/design_system/components/onebit_loading_indicator.dart';
 import 'package:onebit/shared/design_system/components/onebit_progress.dart';
+import 'package:onebit/shared/design_system/components/onebit_scroll_clearance.dart';
 import 'package:onebit/shared/design_system/components/onebit_status_chip.dart';
 import 'package:onebit/shared/design_system/components/onebit_technical_card.dart';
 import 'package:onebit/shared/design_system/components/onebit_transfer_card.dart';
@@ -107,7 +108,12 @@ final class _TransferView extends ConsumerWidget {
         : null;
 
     return ListView(
-      padding: const EdgeInsets.all(OneBitSpacing.m),
+      padding: EdgeInsets.fromLTRB(
+        OneBitSpacing.m,
+        OneBitSpacing.m,
+        OneBitSpacing.m,
+        OneBitScrollClearance.bottom(context),
+      ),
       children: [
         OneBitTransferCard(
           title: value.fileName ?? session.attachmentId,

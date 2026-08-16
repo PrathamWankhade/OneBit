@@ -8,6 +8,7 @@ import 'package:onebit/features/mesh/domain/mesh_repository.dart';
 import 'package:onebit/features/mesh/domain/mesh_route.dart';
 import 'package:onebit/features/mesh/presentation/mesh_dev_screen/widgets/mesh_dev_panels.dart';
 import 'package:onebit/features/mesh/presentation/mesh_providers.dart';
+import 'package:onebit/shared/design_system/components/onebit_scroll_clearance.dart';
 
 /// Developer dashboard for the mesh engine.
 ///
@@ -52,7 +53,12 @@ final class _MeshDevScreenState extends ConsumerState<MeshDevScreen> {
     return OneBitScaffold(
       appBar: AppBar(title: const Text('Mesh Engine')),
       body: ListView(
-        padding: const EdgeInsets.all(12),
+        padding: EdgeInsets.fromLTRB(
+          12,
+          12,
+          12,
+          OneBitScrollClearance.bottom(context),
+        ),
         children: [
           _LifecyclePanel(engineState: engineState),
           const SizedBox(height: 12),

@@ -47,6 +47,7 @@ import 'package:onebit/features/settings/presentation/privacy_settings_screen.da
 import 'package:onebit/features/settings/presentation/settings_screen.dart';
 import 'package:onebit/features/settings/presentation/storage_settings_screen.dart';
 import 'package:onebit/l10n/app_localizations.dart';
+import 'package:onebit/shared/design_system/navigation/onebit_settings_transition.dart';
 
 /// Declarative router for the whole application.
 ///
@@ -111,38 +112,31 @@ abstract final class AppRouter {
           path: AppRoutePaths.settings,
           builder: (context, state) => const SettingsScreen(),
           routes: [
-            _simpleRoute(
-              AppRoutePaths.settings,
+            _settingsRoute(
               AppRoutePaths.appearance,
               const AppearanceSettingsScreen(),
             ),
-            _simpleRoute(
-              AppRoutePaths.settings,
+            _settingsRoute(
               AppRoutePaths.privacy,
               const PrivacySettingsScreen(),
             ),
-            _simpleRoute(
-              AppRoutePaths.settings,
+            _settingsRoute(
               AppRoutePaths.storage,
               const StorageSettingsScreen(),
             ),
-            _simpleRoute(
-              AppRoutePaths.settings,
+            _settingsRoute(
               AppRoutePaths.notifications,
               const NotificationsSettingsScreen(),
             ),
-            _simpleRoute(
-              AppRoutePaths.settings,
+            _settingsRoute(
               AppRoutePaths.bluetooth,
               const BluetoothSettingsScreen(),
             ),
-            _simpleRoute(
-              AppRoutePaths.settings,
+            _settingsRoute(
               AppRoutePaths.about,
               const AboutScreen(),
             ),
-            _simpleRoute(
-              AppRoutePaths.settings,
+            _settingsRoute(
               AppRoutePaths.licenses,
               const LicensesScreen(),
             ),
@@ -333,6 +327,24 @@ abstract final class AppRouter {
         builder: (context, state) => screen,
       );
 
+  /// A settings subpage route with slide-from-right transition.
+  static GoRoute _settingsRoute(String path, Widget screen) => GoRoute(
+    path: _childPath(AppRoutePaths.settings, path),
+    pageBuilder: (context, state) => CustomTransitionPage<void>(
+      key: state.pageKey,
+      child: screen,
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        return const SettingsSlideTransition().buildTransitions<void>(
+          ModalRoute.of(context)! as PageRoute<dynamic>,
+          context,
+          animation,
+          secondaryAnimation,
+          child,
+        );
+      },
+    ),
+  );
+
   /// A child route whose screen reads resolved deep-link parameters.
   static GoRoute _paramRoute(
     String parentPath,
@@ -344,8 +356,10 @@ abstract final class AppRouter {
   );
 
   /// Absolute path -> relative child path under [parentPath].
-  static String _childPath(String parentPath, String absolutePath) =>
-      absolutePath.substring(parentPath.length);
+  static String _childPath(String parentPath, String absolutePath) {
+    final suffix = absolutePath.substring(parentPath.length);
+    return suffix.startsWith('/') ? suffix.substring(1) : suffix;
+  }
 
   // ---------------------------------------------------------------------
   // Guards

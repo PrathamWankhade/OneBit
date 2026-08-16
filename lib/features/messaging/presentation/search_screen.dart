@@ -10,6 +10,7 @@ import 'package:onebit/shared/design_system/components/onebit_empty_state.dart';
 import 'package:onebit/shared/design_system/components/onebit_error_state.dart';
 import 'package:onebit/shared/design_system/components/onebit_list_item.dart';
 import 'package:onebit/shared/design_system/components/onebit_loading_indicator.dart';
+import 'package:onebit/shared/design_system/components/onebit_scroll_clearance.dart';
 import 'package:onebit/shared/design_system/components/onebit_search_field.dart';
 import 'package:onebit/shared/design_system/components/onebit_status_chip.dart';
 import 'package:onebit/shared/design_system/icons/onebit_icons.dart';
@@ -87,7 +88,9 @@ final class _SearchScreenState extends ConsumerState<SearchScreen> {
       );
     }
     return ListView.separated(
-      padding: const EdgeInsets.only(bottom: OneBitSpacing.m),
+      padding: EdgeInsets.only(
+        bottom: OneBitScrollClearance.bottom(context),
+      ),
       itemCount: view.results.length + (view.hasMore ? 1 : 0),
       separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, index) {

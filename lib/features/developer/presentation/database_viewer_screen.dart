@@ -5,6 +5,7 @@ import 'package:onebit/core/extensions/build_context_extensions.dart';
 import 'package:onebit/core/widgets/onebit_scaffold.dart';
 import 'package:onebit/shared/design_system/components/onebit_card.dart';
 import 'package:onebit/shared/design_system/components/onebit_loading_indicator.dart';
+import 'package:onebit/shared/design_system/components/onebit_scroll_clearance.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
 
 /// Database viewer: read-only presentation of table row counts and storage
@@ -52,7 +53,12 @@ class DatabaseViewerScreen extends ConsumerWidget {
           final total = rows.fold<int>(0, (sum, r) => sum + r.count);
 
           return ListView(
-            padding: const EdgeInsets.all(OneBitSpacing.m),
+            padding: EdgeInsets.fromLTRB(
+              OneBitSpacing.m,
+              OneBitSpacing.m,
+              OneBitSpacing.m,
+              OneBitScrollClearance.bottom(context),
+            ),
             children: [
               OneBitCard(
                 child: Row(

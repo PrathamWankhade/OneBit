@@ -5,9 +5,9 @@ import 'package:onebit/features/mesh/domain/mesh_network_status.dart';
 import 'package:onebit/features/mesh/presentation/mesh_providers.dart';
 import 'package:onebit/shared/design_system/components/onebit_card.dart';
 import 'package:onebit/shared/design_system/components/onebit_loading_indicator.dart';
+import 'package:onebit/shared/design_system/components/onebit_metric_row.dart';
 import 'package:onebit/shared/design_system/components/onebit_status_chip.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
-import 'package:onebit/shared/design_system/typography/onebit_typography.dart';
 
 /// Network health overview panel.
 final class NetworkHealthPanel extends ConsumerWidget {
@@ -23,18 +23,13 @@ final class NetworkHealthPanel extends ConsumerWidget {
       error: (e, _) => OneBitCard(
         child: Text(l10n.commonError, style: context.textTheme.bodyMedium),
       ),
-      data: (result) {
-        if (result.isErr || result.value == null) {
-          return OneBitCard(
-            child: Text(
-              l10n.meshEmptyTopology,
-              style: context.textTheme.bodyMedium,
-            ),
-          );
-        }
-        final status = result.value!;
-        return NetworkHealthCard(status: status);
-      },
+        data: (result) {
+          if (result.isErr || result.value == null) {
+            return const SizedBox.shrink();
+          }
+          final status = result.value!;
+          return NetworkHealthCard(status: status);
+        },
     );
   }
 }
@@ -70,80 +65,58 @@ final class NetworkHealthCard extends StatelessWidget {
               OneBitStatusChip.preset(qualityPreset),
             ],
           ),
-          const SizedBox(height: OneBitSpacing.m),
-          HealthRow(
+          const SizedBox(height: OneBitSpacing.s),
+          OneBitMetricRow(
             label: l10n.meshNeighborsLabel,
             value: '${status.activeNeighborCount}',
+            dense: true,
           ),
-          HealthRow(
+          OneBitMetricRow(
             label: l10n.meshKnownNodesLabel,
             value: '${status.knownNodeCount}',
+            dense: true,
           ),
-          HealthRow(
+          OneBitMetricRow(
             label: l10n.meshPartitionsLabel,
             value: '${status.partitionCount}',
+            dense: true,
           ),
-          HealthRow(
+          const SizedBox(height: OneBitSpacing.xxs),
+          OneBitMetricRow(
             label: l10n.meshQualityLabel,
             value: '${(status.connectionQuality * 100).round()}%',
+            dense: true,
           ),
-          HealthRow(
+          OneBitMetricRow(
             label: l10n.meshStabilityLabel,
             value: '${(status.meshStability * 100).round()}%',
+            dense: true,
           ),
           if (status.averageRssiDb != null)
-            HealthRow(
+            OneBitMetricRow(
               label: l10n.meshRssiTitle,
               value: '${status.averageRssiDb!.round()} dBm',
+              dense: true,
             ),
           if (status.averageHopCount != null)
-            HealthRow(
+            OneBitMetricRow(
               label: l10n.meshRouteHopCount,
               value: status.averageHopCount!.toStringAsFixed(1),
+              dense: true,
             ),
-          HealthRow(
+          const SizedBox(height: OneBitSpacing.xxs),
+          OneBitMetricRow(
             label: l10n.meshRelayRateLabel,
             value:
                 '${status.relayedPacketsPerMinute} ${l10n.meshPacketsPerMinute}',
+            dense: true,
           ),
           if (status.packetSuccessRate != null)
-            HealthRow(
+            OneBitMetricRow(
               label: l10n.meshPacketSuccessLabel,
               value: '${(status.packetSuccessRate! * 100).round()}%',
+              dense: true,
             ),
-        ],
-      ),
-    );
-  }
-}
-
-/// A single label/value row used across health and stats panels.
-final class HealthRow extends StatelessWidget {
-  const HealthRow({required this.label, required this.value, super.key});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: OneBitSpacing.xs),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: context.textTheme.bodyMedium?.copyWith(
-                color: scheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-          Text(
-            value,
-            style: OneBitTypography.technicalStyle(color: scheme.onSurface),
-          ),
         ],
       ),
     );

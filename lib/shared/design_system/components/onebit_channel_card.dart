@@ -4,7 +4,9 @@ import 'package:onebit/shared/design_system/components/onebit_card.dart';
 import 'package:onebit/shared/design_system/components/onebit_status_chip.dart';
 import 'package:onebit/shared/design_system/icons/onebit_icons.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
+import 'package:onebit/shared/design_system/themes/onebit_theme_extension.dart';
 import 'package:onebit/shared/design_system/tokens/onebit_component_tokens.dart';
+import 'package:onebit/shared/design_system/typography/onebit_typography.dart';
 
 /// Channel summary card.
 ///
@@ -63,6 +65,7 @@ class OneBitChannelCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     final scheme = Theme.of(context).colorScheme;
+    final colors = context.oneBitColors;
 
     return OneBitCard(
       onTap: onTap,
@@ -72,20 +75,21 @@ class OneBitChannelCard extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Row 1: Name + badges
           Row(
             children: [
               if (pinned) ...[
                 Icon(
                   OneBitIcons.pin,
-                  size: OneBitIconSize.s,
-                  color: scheme.onSurfaceVariant,
+                  size: OneBitIconSize.xs,
+                  color: colors.info,
                 ),
                 const SizedBox(width: OneBitSpacing.xs),
               ],
               if (muted) ...[
                 Icon(
                   OneBitIcons.mute,
-                  size: OneBitIconSize.s,
+                  size: OneBitIconSize.xs,
                   color: scheme.onSurfaceVariant,
                 ),
                 const SizedBox(width: OneBitSpacing.xs),
@@ -93,7 +97,9 @@ class OneBitChannelCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   name,
-                  style: textTheme.titleMedium,
+                  style: textTheme.titleMedium?.copyWith(
+                    fontWeight: OneBitTypography.semibold,
+                  ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -104,40 +110,43 @@ class OneBitChannelCard extends StatelessWidget {
               ],
             ],
           ),
+          // Row 2: Last message preview
           if (lastMessage != null) ...[
-            const SizedBox(height: OneBitSpacing.xs),
+            const SizedBox(height: 4),
             Text(
               lastMessage!,
-              style: textTheme.bodyMedium,
+              style: textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ],
-          const SizedBox(height: OneBitSpacing.s),
-          Row(
-            children: [
-              if (draft) ...[
-                OneBitStatusChip(
-                  label: draftLabel ?? 'Draft',
-                  tone: OneBitStatusTone.info,
-                ),
-                const SizedBox(width: OneBitSpacing.s),
-              ],
-              if (delivery != null)
-                OneBitStatusChip.preset(delivery!)
-              else
-                const SizedBox.shrink(),
-              const Spacer(),
-              if (timestamp != null)
-                Text(
-                  timestamp!,
-                  style: textTheme.labelMedium?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                    fontFeatures: const [FontFeature.tabularFigures()],
+          // Row 3: Status chips + timestamp
+          if (draft || delivery != null || timestamp != null) ...[
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                if (draft) ...[
+                  OneBitStatusChip(
+                    label: draftLabel ?? 'Draft',
+                    tone: OneBitStatusTone.info,
                   ),
-                ),
-            ],
-          ),
+                  const SizedBox(width: OneBitSpacing.s),
+                ],
+                if (delivery != null) OneBitStatusChip.preset(delivery!),
+                const Spacer(),
+                if (timestamp != null)
+                  Text(
+                    timestamp!,
+                    style: textTheme.labelSmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+              ],
+            ),
+          ],
         ],
       ),
     );

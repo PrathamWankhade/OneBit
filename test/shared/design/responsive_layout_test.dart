@@ -1,18 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:onebit/shared/design_system/responsive/onebit_master_detail.dart';
-import 'package:onebit/shared/design_system/responsive/onebit_responsive.dart';
-import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
 
 void main() {
   group('OneBitMasterDetail', () {
     testWidgets('shows only master on compact viewport', (tester) async {
       await tester.pumpWidget(
-        MaterialApp(
+        const MaterialApp(
           home: Scaffold(
             body: OneBitMasterDetail(
-              master: const Text('master'),
-              detail: const Text('detail'),
+              master: Text('master'),
+              detail: Text('detail'),
             ),
           ),
         ),
@@ -29,11 +27,11 @@ void main() {
       tester,
     ) async {
       await tester.pumpWidget(
-        MaterialApp(
+        const MaterialApp(
           home: Scaffold(
             body: OneBitMasterDetail(
-              master: const Text('master'),
-              detail: const Text('detail'),
+              master: Text('master'),
+              detail: Text('detail'),
             ),
           ),
         ),
@@ -50,11 +48,11 @@ void main() {
       tester,
     ) async {
       await tester.pumpWidget(
-        MaterialApp(
+        const MaterialApp(
           home: Scaffold(
             body: OneBitMasterDetail(
-              master: const Text('master'),
-              detail: const Text('detail'),
+              master: Text('master'),
+              detail: Text('detail'),
             ),
           ),
         ),
@@ -69,11 +67,11 @@ void main() {
 
     testWidgets('renders a divider between panes on tablets', (tester) async {
       await tester.pumpWidget(
-        MaterialApp(
+        const MaterialApp(
           home: Scaffold(
             body: OneBitMasterDetail(
-              master: const Text('master'),
-              detail: const Text('detail'),
+              master: Text('master'),
+              detail: Text('detail'),
             ),
           ),
         ),
@@ -89,10 +87,10 @@ void main() {
   group('OneBitResponsiveGrid', () {
     testWidgets('renders single column on compact viewport', (tester) async {
       await tester.pumpWidget(
-        MaterialApp(
+        const MaterialApp(
           home: Scaffold(
             body: OneBitResponsiveGrid(
-              children: const [
+              children: [
                 Text('Item 1'),
                 Text('Item 2'),
                 Text('Item 3'),
@@ -112,10 +110,10 @@ void main() {
 
     testWidgets('renders two columns on medium viewport', (tester) async {
       await tester.pumpWidget(
-        MaterialApp(
+        const MaterialApp(
           home: Scaffold(
             body: OneBitResponsiveGrid(
-              children: const [
+              children: [
                 Text('Item 1'),
                 Text('Item 2'),
                 Text('Item 3'),
@@ -135,10 +133,10 @@ void main() {
 
     testWidgets('renders three columns on expanded viewport', (tester) async {
       await tester.pumpWidget(
-        MaterialApp(
+        const MaterialApp(
           home: Scaffold(
             body: OneBitResponsiveGrid(
-              children: const [
+              children: [
                 Text('Item 1'),
                 Text('Item 2'),
                 Text('Item 3'),
@@ -158,13 +156,13 @@ void main() {
 
     testWidgets('respects custom column counts', (tester) async {
       await tester.pumpWidget(
-        MaterialApp(
+        const MaterialApp(
           home: Scaffold(
             body: OneBitResponsiveGrid(
               compactColumns: 2,
               mediumColumns: 3,
               expandedColumns: 4,
-              children: const [
+              children: [
                 Text('Item 1'),
                 Text('Item 2'),
                 Text('Item 3'),
@@ -186,11 +184,11 @@ void main() {
 
     testWidgets('applies outer padding', (tester) async {
       await tester.pumpWidget(
-        MaterialApp(
+        const MaterialApp(
           home: Scaffold(
             body: OneBitResponsiveGrid(
-              padding: const EdgeInsets.all(16),
-              children: const [Text('Item')],
+              padding: EdgeInsets.all(16),
+              children: [Text('Item')],
             ),
           ),
         ),

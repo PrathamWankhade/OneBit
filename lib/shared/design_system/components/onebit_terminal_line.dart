@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:onebit/shared/design_system/colors/onebit_color_schemes.dart';
+import 'package:onebit/shared/design_system/colors/onebit_palette.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
+import 'package:onebit/shared/design_system/themes/onebit_theme_extension.dart';
 import 'package:onebit/shared/design_system/typography/onebit_typography.dart';
 
 /// Semantic status types for [OneBitTerminalLine].
@@ -86,10 +87,10 @@ class OneBitTerminalLine extends StatelessWidget {
       OneBitTerminalStatus.ok => colors.success,
       OneBitTerminalStatus.info => colors.info,
       OneBitTerminalStatus.warn => colors.warning,
-      OneBitTerminalStatus.err => colors.ansiBrightRed,
+      OneBitTerminalStatus.err => OneBitPalette.ansiBrightRed,
       OneBitTerminalStatus.node => colors.identity,
-      OneBitTerminalStatus.tx => colors.ansiBrightGreen,
-      OneBitTerminalStatus.rx => colors.ansiBrightCyan,
+      OneBitTerminalStatus.tx => OneBitPalette.ansiBrightGreen,
+      OneBitTerminalStatus.rx => OneBitPalette.ansiBrightCyan,
       OneBitTerminalStatus.custom => colors.textSecondary,
     };
   }

@@ -8,6 +8,7 @@ import 'package:onebit/features/identity/presentation/identity_controller.dart';
 import 'package:onebit/features/launch/domain/display_name_validator.dart';
 import 'package:onebit/shared/design_system/components/onebit_button.dart';
 import 'package:onebit/shared/design_system/components/onebit_inline_error.dart';
+import 'package:onebit/shared/design_system/components/onebit_scroll_clearance.dart';
 import 'package:onebit/shared/design_system/components/onebit_snackbar.dart';
 import 'package:onebit/shared/design_system/components/onebit_technical_field.dart';
 import 'package:onebit/shared/design_system/components/onebit_text_field.dart';
@@ -110,14 +111,19 @@ final class _ProfileSettingsScreenState
     return OneBitScaffold(
       appBar: AppBar(title: Text(l10n.profileTitle)),
       body: ListView(
-        padding: const EdgeInsets.all(OneBitSpacing.m),
+        padding: EdgeInsets.fromLTRB(
+          OneBitSpacing.m,
+          OneBitSpacing.m,
+          OneBitSpacing.m,
+          OneBitScrollClearance.bottom(context),
+        ),
         children: [
           OneBitTechnicalField(
             controller: _nodeIdController,
             label: l10n.nodeIdLabel,
             enabled: false,
           ),
-          const SizedBox(height: OneBitSpacing.l),
+          const SizedBox(height: OneBitSpacing.lg),
           OneBitTextField(
             controller: _nameController,
             label: l10n.profileDisplayNameLabel,

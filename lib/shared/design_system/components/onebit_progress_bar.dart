@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:onebit/shared/design_system/animations/onebit_motion.dart';
-import 'package:onebit/shared/design_system/colors/onebit_color_schemes.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_radius.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
+import 'package:onebit/shared/design_system/themes/onebit_theme_extension.dart';
 import 'package:onebit/shared/design_system/typography/onebit_typography.dart';
 
 /// Tokenized progress bar for file transfers, downloads, and indeterminate

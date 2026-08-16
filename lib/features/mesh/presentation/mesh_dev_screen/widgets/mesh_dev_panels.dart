@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:onebit/features/mesh/domain/mesh_events.dart';
 import 'package:onebit/features/mesh/presentation/mesh_providers.dart';
 
 /// Section wrapper card.
@@ -107,7 +108,7 @@ final class TopologyPanel extends ConsumerWidget {
 final class RelayLogPanel extends StatelessWidget {
   const RelayLogPanel({required this.events, super.key});
 
-  final List<dynamic> events;
+  final List<MeshRelayEvent> events;
 
   @override
   Widget build(BuildContext context) {

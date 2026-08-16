@@ -4,10 +4,12 @@ import 'package:onebit/core/extensions/build_context_extensions.dart';
 import 'package:onebit/core/widgets/onebit_scaffold.dart';
 import 'package:onebit/features/media/presentation/media_providers.dart';
 import 'package:onebit/features/media/storage/storage_statistics.dart';
+import 'package:onebit/shared/design_system/components/onebit_button.dart';
 import 'package:onebit/shared/design_system/components/onebit_dialogs.dart';
 import 'package:onebit/shared/design_system/components/onebit_empty_state.dart';
 import 'package:onebit/shared/design_system/components/onebit_error_state.dart';
 import 'package:onebit/shared/design_system/components/onebit_loading_indicator.dart';
+import 'package:onebit/shared/design_system/components/onebit_scroll_clearance.dart';
 import 'package:onebit/shared/design_system/components/onebit_section_header.dart';
 import 'package:onebit/shared/design_system/components/onebit_settings_card.dart';
 import 'package:onebit/shared/design_system/components/onebit_snackbar.dart';
@@ -70,7 +72,12 @@ class _StorageBody extends ConsumerWidget {
     final l10n = context.l10n;
 
     return ListView(
-      padding: const EdgeInsets.all(OneBitSpacing.m),
+        padding: EdgeInsets.fromLTRB(
+          24,
+          OneBitSpacing.m,
+          24,
+          OneBitScrollClearance.bottom(context),
+        ),
       children: [
         OneBitSectionHeader(title: l10n.settingsStorageTitle),
         _StorageRow(
@@ -158,7 +165,10 @@ class _ClearCacheButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
 
-    return OutlinedButton.icon(
+    return OneBitButton(
+      label: l10n.settingsStorageCleanup,
+      icon: OneBitIcons.archiveFile,
+      variant: OneBitButtonVariant.secondary,
       onPressed: () async {
         final confirmed = await OneBitDialogs.warn(
           context,
@@ -175,8 +185,6 @@ class _ClearCacheButton extends ConsumerWidget {
           );
         }
       },
-      icon: const Icon(OneBitIcons.archiveFile, size: 18),
-      label: Text(l10n.settingsStorageCleanup),
     );
   }
 }
@@ -186,7 +194,10 @@ class _RemoveTempButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
 
-    return OutlinedButton.icon(
+    return OneBitButton(
+      label: l10n.settingsStorageRemoveTemp,
+      icon: OneBitIcons.delete,
+      variant: OneBitButtonVariant.secondary,
       onPressed: () async {
         final confirmed = await OneBitDialogs.warn(
           context,
@@ -203,8 +214,6 @@ class _RemoveTempButton extends ConsumerWidget {
           );
         }
       },
-      icon: const Icon(OneBitIcons.delete, size: 18),
-      label: Text(l10n.settingsStorageRemoveTemp),
     );
   }
 }

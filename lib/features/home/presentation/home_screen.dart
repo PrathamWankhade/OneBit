@@ -11,6 +11,7 @@ import 'package:onebit/features/home/presentation/home_controller.dart';
 import 'package:onebit/l10n/app_localizations.dart';
 import 'package:onebit/shared/design_system/components/onebit_card.dart';
 import 'package:onebit/shared/design_system/components/onebit_empty_state.dart';
+import 'package:onebit/shared/design_system/components/onebit_scroll_clearance.dart';
 import 'package:onebit/shared/design_system/icons/onebit_icons.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
 
@@ -43,7 +44,12 @@ final class _HomeDashboard extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
 
     return ListView(
-      padding: const EdgeInsets.all(OneBitSpacing.m),
+      padding: EdgeInsets.fromLTRB(
+        OneBitSpacing.m,
+        OneBitSpacing.m,
+        OneBitSpacing.m,
+        OneBitScrollClearance.bottom(context),
+      ),
       children: [
         Text(l10n.homeTitle, style: context.textTheme.displayLarge),
         const SizedBox(height: OneBitSpacing.xs),

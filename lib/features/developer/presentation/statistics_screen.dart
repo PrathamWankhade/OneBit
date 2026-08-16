@@ -7,6 +7,7 @@ import 'package:onebit/features/mesh/presentation/mesh_providers.dart';
 import 'package:onebit/features/packet/presentation/packet_providers.dart';
 import 'package:onebit/shared/design_system/components/onebit_card.dart';
 import 'package:onebit/shared/design_system/components/onebit_diagnostic_card.dart';
+import 'package:onebit/shared/design_system/components/onebit_scroll_clearance.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
 
 /// Statistics screen: displays packet, mesh, DTN and storage counters.
@@ -20,7 +21,12 @@ class StatisticsScreen extends ConsumerWidget {
     return OneBitScaffold(
       appBar: AppBar(title: Text(l10n.statsTitle)),
       body: ListView(
-        padding: const EdgeInsets.all(OneBitSpacing.m),
+        padding: EdgeInsets.fromLTRB(
+          OneBitSpacing.m,
+          OneBitSpacing.m,
+          OneBitSpacing.m,
+          OneBitScrollClearance.bottom(context),
+        ),
         children: [
           const _PacketStats(),
           const SizedBox(height: OneBitSpacing.m),

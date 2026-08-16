@@ -5,14 +5,13 @@ import 'package:onebit/core/navigation/app_route_paths.dart';
 import 'package:onebit/features/channels/presentation/channels_screen.dart';
 import 'package:onebit/features/mesh/presentation/mesh_screen.dart';
 import 'package:onebit/features/nodes/presentation/nodes_screen.dart';
-import 'package:onebit/features/settings/presentation/settings_screen.dart';
-import 'package:onebit/shared/design_system/components/onebit_navigation_bar.dart';
+import 'package:onebit/shared/design_system/components/onebit_floating_navigation.dart';
 import 'package:onebit/shared/design_system/components/onebit_navigation_rail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../app/support/app_navigation_support.dart';
 
-const _labels = ['Channels', 'Nodes', 'Nearby', 'Mesh', 'Settings'];
+const _labels = ['Channels', 'Nodes', 'Nearby', 'Mesh'];
 
 Future<void> pumpShell(
   WidgetTester tester, {
@@ -36,11 +35,11 @@ void main() {
     ) async {
       await pumpShell(tester);
 
-      expect(find.byType(OneBitNavigationBar), findsOneWidget);
-      expect(find.byType(NavigationBar), findsOneWidget);
+      expect(find.byType(FloatingBottomNavigation), findsOneWidget);
+      expect(find.byType(NavigationBar), findsNothing);
       expect(find.byType(NavigationRail), findsNothing);
       for (final label in _labels) {
-        expect(find.text(label), findsAtLeastNWidgets(1), reason: label);
+        expect(find.byTooltip(label), findsOneWidget, reason: label);
       }
 
       await disposeShell(tester);
@@ -50,7 +49,7 @@ void main() {
       await pumpShell(tester);
       expect(find.byType(ChannelsScreen), findsOneWidget);
 
-      await tester.tap(find.text('Nodes'));
+      await tester.tap(find.byTooltip('Nodes'));
       await tester.pumpAndSettle();
 
       expect(find.byType(NodesScreen), findsOneWidget);
@@ -69,7 +68,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Mesh'));
+      await tester.tap(find.byTooltip('Mesh'));
       await tester.pumpAndSettle();
       expect(find.byType(MeshScreen), findsOneWidget);
 
@@ -96,7 +95,7 @@ void main() {
         isFalse,
       );
       for (final label in _labels) {
-        expect(find.text(label), findsAtLeastNWidgets(1), reason: label);
+        expect(find.byTooltip(label), findsOneWidget, reason: label);
       }
 
       await disposeShell(tester);
@@ -120,9 +119,9 @@ void main() {
     testWidgets('the rail switches branches too', (tester) async {
       await pumpShell(tester, size: const Size(1024, 768));
 
-      await tester.tap(find.text('Settings'));
+      await tester.tap(find.text('Mesh'));
       await tester.pumpAndSettle();
-      expect(find.byType(SettingsScreen), findsOneWidget);
+      expect(find.byType(MeshScreen), findsOneWidget);
       expect(find.byType(ChannelsScreen), findsNothing);
 
       await disposeShell(tester);

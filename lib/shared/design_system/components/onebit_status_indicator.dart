@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:onebit/shared/design_system/accessibility/onebit_accessibility.dart';
 import 'package:onebit/shared/design_system/animations/onebit_motion.dart';
-import 'package:onebit/shared/design_system/colors/onebit_color_schemes.dart';
+import 'package:onebit/shared/design_system/themes/onebit_theme_extension.dart';
 import 'package:onebit/shared/design_system/tokens/onebit_component_tokens.dart';
 
 /// Semantic status for [OneBitStatusIndicator].

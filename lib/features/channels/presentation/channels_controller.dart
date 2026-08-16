@@ -11,8 +11,8 @@ import 'package:onebit/features/messaging/presentation/messaging_providers.dart'
 import 'package:onebit/shared/design_system/components/onebit_status_chip.dart';
 
 /// The last message of a channel (delivery/read presentation only).
-final channelLastMessageProvider =
-    StreamProvider.family.autoDispose<Result<List<Message>>, String>(
+final channelLastMessageProvider = StreamProvider.family
+    .autoDispose<Result<List<Message>>, String>(
       (ref, channelId) => ref
           .watch(messageRepositoryProvider)
           .watchChannel(channelId, limit: 1),

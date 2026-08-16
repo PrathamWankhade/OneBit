@@ -5,6 +5,7 @@ import 'package:onebit/core/navigation/app_route_paths.dart';
 import 'package:onebit/core/widgets/onebit_scaffold.dart';
 import 'package:onebit/shared/design_system/components/onebit_card.dart';
 import 'package:onebit/shared/design_system/components/onebit_panel.dart';
+import 'package:onebit/shared/design_system/components/onebit_scroll_clearance.dart';
 import 'package:onebit/shared/design_system/components/onebit_section_header.dart';
 import 'package:onebit/shared/design_system/components/onebit_terminal_line.dart';
 import 'package:onebit/shared/design_system/icons/onebit_icons.dart';
@@ -22,7 +23,12 @@ class DeveloperScreen extends StatelessWidget {
     return OneBitScaffold(
       appBar: AppBar(title: Text(l10n.devHubTitle)),
       body: ListView(
-        padding: const EdgeInsets.all(OneBitSpacing.m),
+        padding: EdgeInsets.fromLTRB(
+          OneBitSpacing.m,
+          OneBitSpacing.m,
+          OneBitSpacing.m,
+          OneBitScrollClearance.bottom(context),
+        ),
         children: [
           OneBitPanel(
             padding: const EdgeInsets.all(OneBitSpacing.m),

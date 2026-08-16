@@ -7,6 +7,7 @@ import 'package:onebit/features/bluetooth/domain/bluetooth_radio_state.dart';
 import 'package:onebit/features/bluetooth/domain/bluetooth_state.dart';
 import 'package:onebit/features/bluetooth/presentation/bluetooth_providers.dart';
 import 'package:onebit/shared/design_system/components/onebit_card.dart';
+import 'package:onebit/shared/design_system/components/onebit_scroll_clearance.dart';
 import 'package:onebit/shared/design_system/components/onebit_section_header.dart';
 import 'package:onebit/shared/design_system/components/onebit_status_chip.dart';
 import 'package:onebit/shared/design_system/icons/onebit_icons.dart';
@@ -27,7 +28,12 @@ class BluetoothSettingsScreen extends ConsumerWidget {
     return OneBitScaffold(
       appBar: AppBar(title: Text(l10n.settingsBluetoothTitle)),
       body: ListView(
-        padding: const EdgeInsets.all(OneBitSpacing.m),
+        padding: EdgeInsets.fromLTRB(
+          24,
+          OneBitSpacing.m,
+          24,
+          OneBitScrollClearance.bottom(context),
+        ),
         children: [
           OneBitSectionHeader(title: l10n.settingsBluetoothStateLabel),
           radioAsync.when(

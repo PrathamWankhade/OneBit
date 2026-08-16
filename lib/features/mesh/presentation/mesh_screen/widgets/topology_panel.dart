@@ -3,12 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:onebit/core/extensions/build_context_extensions.dart';
 import 'package:onebit/features/mesh/domain/mesh_topology.dart';
 import 'package:onebit/features/mesh/presentation/mesh_providers.dart';
-import 'package:onebit/shared/design_system/colors/onebit_color_schemes.dart';
 import 'package:onebit/shared/design_system/components/onebit_card.dart';
-import 'package:onebit/shared/design_system/components/onebit_empty_state.dart';
 import 'package:onebit/shared/design_system/components/onebit_loading_indicator.dart';
-import 'package:onebit/shared/design_system/icons/onebit_icons.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
+import 'package:onebit/shared/design_system/themes/onebit_theme_extension.dart';
 import 'package:onebit/shared/design_system/typography/onebit_typography.dart';
 
 /// Topology visualization panel.
@@ -27,21 +25,11 @@ final class TopologyVisualizationPanel extends ConsumerWidget {
       ),
       data: (result) {
         if (result.isErr || result.value == null) {
-          return OneBitCard(
-            child: Text(
-              l10n.meshEmptyTopology,
-              style: context.textTheme.bodyMedium,
-            ),
-          );
+          return const SizedBox.shrink();
         }
         final topo = result.value!;
         if (topo.nodes.isEmpty) {
-          return OneBitCard(
-            child: OneBitEmptyState(
-              icon: OneBitIcons.node,
-              title: l10n.meshVisualizationEmpty,
-            ),
-          );
+          return const SizedBox.shrink();
         }
         return TopologyGraph(
           nodes: topo.nodes,
@@ -86,34 +74,35 @@ final class TopologyGraph extends StatelessWidget {
               ),
               Text(
                 '${nodes.length} nodes · ${links.length} links',
-                style: OneBitTypography.technicalStyle(
-                  fontSize: OneBitTypography.caption,
+                style: OneBitTypography.oneBitCaption(
                   color: scheme.onSurfaceVariant,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: OneBitSpacing.m),
+          const SizedBox(height: OneBitSpacing.sm),
           SizedBox(
-            height: 200,
-            child: CustomPaint(
-              size: const Size(double.infinity, 200),
-              painter: TopologyPainter(
-                nodes: nodes,
-                links: links,
-                nodeColor: scheme.onSurface,
-                linkColor: scheme.outlineVariant,
-                localNodeColor: colors.success,
-                qualityColor: colors.info,
+            height: 180,
+            child: Padding(
+              padding: const EdgeInsets.all(OneBitSpacing.xs),
+              child: CustomPaint(
+                size: const Size(double.infinity, 180),
+                painter: TopologyPainter(
+                  nodes: nodes,
+                  links: links,
+                  nodeColor: scheme.onSurface,
+                  linkColor: scheme.outlineVariant,
+                  localNodeColor: colors.success,
+                  qualityColor: colors.info,
+                ),
               ),
             ),
           ),
           if (partitions > 1) ...[
-            const SizedBox(height: OneBitSpacing.s),
+            const SizedBox(height: OneBitSpacing.xs),
             Text(
               '$partitions ${l10n.meshPartitionsLabel}',
-              style: OneBitTypography.technicalStyle(
-                fontSize: OneBitTypography.caption,
+              style: OneBitTypography.oneBitCaption(
                 color: colors.warning,
               ),
             ),

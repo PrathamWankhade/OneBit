@@ -10,6 +10,7 @@ import 'package:onebit/core/extensions/build_context_extensions.dart';
 import 'package:onebit/core/navigation/app_route_paths.dart';
 import 'package:onebit/core/widgets/onebit_scaffold.dart';
 import 'package:onebit/shared/design_system/components/onebit_card.dart';
+import 'package:onebit/shared/design_system/components/onebit_scroll_clearance.dart';
 import 'package:onebit/shared/design_system/components/onebit_section_header.dart';
 import 'package:onebit/shared/design_system/components/onebit_settings_card.dart';
 import 'package:onebit/shared/design_system/components/onebit_snackbar.dart';
@@ -30,7 +31,12 @@ class AboutScreen extends ConsumerWidget {
     return OneBitScaffold(
       appBar: AppBar(title: Text(l10n.aboutTitle)),
       body: ListView(
-        padding: const EdgeInsets.all(OneBitSpacing.m),
+        padding: EdgeInsets.fromLTRB(
+          OneBitSpacing.xxl,
+          OneBitSpacing.lg,
+          OneBitSpacing.xxl,
+          OneBitScrollClearance.bottom(context),
+        ),
         children: [
           const SizedBox(height: OneBitSpacing.xl),
           Center(child: Image.asset('assets/icons/OneBit.png', width: 80)),

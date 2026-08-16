@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:onebit/shared/design_system/typography/onebit_typography.dart';
 
 /// Section card used by every packet developer tab.
 class PacketDevSection extends StatelessWidget {
@@ -81,7 +82,11 @@ class PacketHexDump extends StatelessWidget {
     if (lines.isEmpty) lines.add('(empty)');
     return SelectableText(
       lines.join('\n'),
-      style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+      style: const TextStyle(
+        fontFamily: OneBitTypography.technicalFamily,
+        fontFamilyFallback: OneBitTypography.technicalFallback,
+        fontSize: 11,
+      ),
     );
   }
 }

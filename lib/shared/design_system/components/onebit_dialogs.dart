@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:onebit/shared/design_system/colors/onebit_color_schemes.dart';
 import 'package:onebit/shared/design_system/components/onebit_button.dart';
 import 'package:onebit/shared/design_system/icons/onebit_icons.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
+import 'package:onebit/shared/design_system/themes/onebit_theme_extension.dart';
 import 'package:onebit/shared/design_system/tokens/onebit_component_tokens.dart';
 
 /// Dialog emphasis, controlling the leading glyph.

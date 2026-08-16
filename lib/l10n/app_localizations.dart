@@ -203,7 +203,7 @@ abstract class AppLocalizations {
   /// No description provided for @routeComingSoon.
   ///
   /// In en, this message translates to:
-  /// **'This area is not built yet.'**
+  /// **'This feature is not yet available.'**
   String get routeComingSoon;
 
   /// No description provided for @routeDeepLinkParameters.
@@ -247,6 +247,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Loading…'**
   String get commonLoading;
+
+  /// No description provided for @commonGoBack.
+  ///
+  /// In en, this message translates to:
+  /// **'Go back'**
+  String get commonGoBack;
 
   /// No description provided for @commonEmpty.
   ///
@@ -719,7 +725,7 @@ abstract class AppLocalizations {
   /// No description provided for @nodesEmptyMessage.
   ///
   /// In en, this message translates to:
-  /// **'Trusted contacts and nearby nodes appear here.'**
+  /// **'Trusted nodes and nearby nodes appear here.'**
   String get nodesEmptyMessage;
 
   /// No description provided for @channelsTitle.
@@ -853,6 +859,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Channel archived'**
   String get channelsArchived;
+
+  /// No description provided for @channelsRestored.
+  ///
+  /// In en, this message translates to:
+  /// **'Channel restored'**
+  String get channelsRestored;
 
   /// No description provided for @channelsDraft.
   ///
@@ -1001,7 +1013,7 @@ abstract class AppLocalizations {
   /// No description provided for @nodesTrustedCount.
   ///
   /// In en, this message translates to:
-  /// **'{count} contacts'**
+  /// **'{count} nodes'**
   String nodesTrustedCount(Object count);
 
   /// No description provided for @nodesNearbyCount.
@@ -1055,7 +1067,7 @@ abstract class AppLocalizations {
   /// No description provided for @nodeNotInContacts.
   ///
   /// In en, this message translates to:
-  /// **'Not in your contacts'**
+  /// **'Not in your nodes'**
   String get nodeNotInContacts;
 
   /// No description provided for @nodeVerificationSection.
@@ -1313,25 +1325,25 @@ abstract class AppLocalizations {
   /// No description provided for @nodeRemoveContact.
   ///
   /// In en, this message translates to:
-  /// **'Remove from contacts'**
+  /// **'Remove from nodes'**
   String get nodeRemoveContact;
 
   /// No description provided for @nodeRemoveContactTitle.
   ///
   /// In en, this message translates to:
-  /// **'Remove contact?'**
+  /// **'Remove node?'**
   String get nodeRemoveContactTitle;
 
   /// No description provided for @nodeRemoveContactMessage.
   ///
   /// In en, this message translates to:
-  /// **'This removes the contact from your device. Existing conversations are kept.'**
+  /// **'This removes the node from your device. Existing conversations are kept.'**
   String get nodeRemoveContactMessage;
 
   /// No description provided for @nodeContactRemoved.
   ///
   /// In en, this message translates to:
-  /// **'Contact removed'**
+  /// **'Node removed'**
   String get nodeContactRemoved;
 
   /// No description provided for @nodeNotNearby.
@@ -1403,7 +1415,7 @@ abstract class AppLocalizations {
   /// No description provided for @nodeIdentityNote.
   ///
   /// In en, this message translates to:
-  /// **'Identity material is only available for contacts you added.'**
+  /// **'Identity material is only available for nodes you added.'**
   String get nodeIdentityNote;
 
   /// No description provided for @nodeUnknownNode.
@@ -2093,13 +2105,13 @@ abstract class AppLocalizations {
   /// No description provided for @qrScannerAddContact.
   ///
   /// In en, this message translates to:
-  /// **'Add to contacts'**
+  /// **'Add to nodes'**
   String get qrScannerAddContact;
 
   /// No description provided for @qrScannerContactAdded.
   ///
   /// In en, this message translates to:
-  /// **'Contact added'**
+  /// **'Node added'**
   String get qrScannerContactAdded;
 
   /// No description provided for @qrScannerFingerprintMatches.
@@ -4061,7 +4073,7 @@ abstract class AppLocalizations {
   /// No description provided for @settingsPrivacyVerificationDescription.
   ///
   /// In en, this message translates to:
-  /// **'Verify contact identities by comparing fingerprints. This ensures you\'re talking to the right person.'**
+  /// **'Verify node identities by comparing fingerprints. This ensures you\'re talking to the right person.'**
   String get settingsPrivacyVerificationDescription;
 
   /// No description provided for @settingsPrivacySecureStorage.
@@ -4213,6 +4225,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'OneBit application'**
   String get licensesOneBitTitle;
+
+  /// No description provided for @licensesSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'View all open-source packages used by OneBit and their respective licenses.'**
+  String get licensesSubtitle;
+
+  /// No description provided for @licensesCopyright.
+  ///
+  /// In en, this message translates to:
+  /// **'Copyright (c) 2026 OneBit contributors'**
+  String get licensesCopyright;
+
+  /// No description provided for @settingsReducedMotion.
+  ///
+  /// In en, this message translates to:
+  /// **'Reduced motion'**
+  String get settingsReducedMotion;
+
+  /// No description provided for @settingsReducedMotionOn.
+  ///
+  /// In en, this message translates to:
+  /// **'System setting: animations are reduced'**
+  String get settingsReducedMotionOn;
+
+  /// No description provided for @settingsReducedMotionOff.
+  ///
+  /// In en, this message translates to:
+  /// **'System setting: full animations enabled'**
+  String get settingsReducedMotionOff;
+
+  /// No description provided for @settingsReducedMotionDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Controlled by your device accessibility settings. OneBit respects the system reduced-motion preference.'**
+  String get settingsReducedMotionDescription;
+
+  /// No description provided for @settingsTerminalPreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Terminal preview'**
+  String get settingsTerminalPreview;
+
+  /// No description provided for @settingsTerminalPreviewSample.
+  ///
+  /// In en, this message translates to:
+  /// **'Hello, World!'**
+  String get settingsTerminalPreviewSample;
 }
 
 class _AppLocalizationsDelegate

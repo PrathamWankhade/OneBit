@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:onebit/core/extensions/build_context_extensions.dart';
 import 'package:onebit/core/widgets/onebit_scaffold.dart';
-import 'package:onebit/shared/design_system/components/onebit_card.dart';
+import 'package:onebit/shared/design_system/components/onebit_scroll_clearance.dart';
 import 'package:onebit/shared/design_system/components/onebit_section_header.dart';
+import 'package:onebit/shared/design_system/components/onebit_settings_card.dart';
 import 'package:onebit/shared/design_system/icons/onebit_icons.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
 
@@ -18,100 +19,63 @@ class PrivacySettingsScreen extends StatelessWidget {
     return OneBitScaffold(
       appBar: AppBar(title: Text(l10n.settingsPrivacyTitle)),
       body: ListView(
-        padding: const EdgeInsets.all(OneBitSpacing.m),
+        padding: EdgeInsets.fromLTRB(
+          24,
+          OneBitSpacing.m,
+          24,
+          OneBitScrollClearance.bottom(context),
+        ),
         children: [
           OneBitSectionHeader(title: l10n.settingsPrivacyIdentityPrivacy),
-          _InfoTile(
+          OneBitSettingsCard(
             icon: OneBitIcons.security,
             title: l10n.settingsPrivacyE2eLabel,
-            message: l10n.settingsPrivacyE2eDescription,
+            subtitle: l10n.settingsPrivacyE2eDescription,
           ),
           const SizedBox(height: OneBitSpacing.s),
-          _InfoTile(
+          OneBitSettingsCard(
             icon: OneBitIcons.fingerprint,
             title: l10n.settingsPrivacyIdentityLabel,
-            message: l10n.settingsPrivacyIdentityDescription,
+            subtitle: l10n.settingsPrivacyIdentityDescription,
           ),
           const SizedBox(height: OneBitSpacing.s),
-          _InfoTile(
+          OneBitSettingsCard(
             icon: OneBitIcons.node,
             title: l10n.settingsPrivacySecureStorage,
-            message: l10n.settingsPrivacySecureStorageDescription,
+            subtitle: l10n.settingsPrivacySecureStorageDescription,
           ),
           const SizedBox(height: OneBitSpacing.xl),
           OneBitSectionHeader(title: l10n.settingsPrivacyMetadata),
-          _InfoTile(
+          OneBitSettingsCard(
             icon: OneBitIcons.info,
             title: l10n.settingsPrivacyMetadata,
-            message: l10n.settingsPrivacyMetadataDescription,
+            subtitle: l10n.settingsPrivacyMetadataDescription,
           ),
           const SizedBox(height: OneBitSpacing.s),
-          _InfoTile(
+          OneBitSettingsCard(
             icon: OneBitIcons.nodeActive,
             title: l10n.settingsPrivacyNodeVisibility,
-            message: l10n.settingsPrivacyNodeVisibilityDescription,
+            subtitle: l10n.settingsPrivacyNodeVisibilityDescription,
           ),
           const SizedBox(height: OneBitSpacing.xl),
           OneBitSectionHeader(title: l10n.settingsPrivacyVerification),
-          _InfoTile(
+          OneBitSettingsCard(
             icon: OneBitIcons.verified,
             title: l10n.settingsPrivacyVerification,
-            message: l10n.settingsPrivacyVerificationDescription,
+            subtitle: l10n.settingsPrivacyVerificationDescription,
           ),
           const SizedBox(height: OneBitSpacing.xl),
           OneBitSectionHeader(title: l10n.settingsStorage),
-          _InfoTile(
+          OneBitSettingsCard(
             icon: OneBitIcons.storage,
             title: l10n.settingsPrivacyLocalStorageLabel,
-            message: l10n.settingsPrivacyLocalStorageDescription,
+            subtitle: l10n.settingsPrivacyLocalStorageDescription,
           ),
           const SizedBox(height: OneBitSpacing.s),
-          _InfoTile(
+          OneBitSettingsCard(
             icon: OneBitIcons.cloudOff,
             title: l10n.settingsPrivacyNoServerLabel,
-            message: l10n.settingsPrivacyNoServerDescription,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _InfoTile extends StatelessWidget {
-  const _InfoTile({
-    required this.icon,
-    required this.title,
-    required this.message,
-  });
-
-  final IconData icon;
-  final String title;
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return OneBitCard(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 20, color: scheme.onSurfaceVariant),
-          const SizedBox(width: OneBitSpacing.m),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: context.textTheme.titleSmall),
-                const SizedBox(height: OneBitSpacing.xs),
-                Text(
-                  message,
-                  style: context.textTheme.bodySmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
+            subtitle: l10n.settingsPrivacyNoServerDescription,
           ),
         ],
       ),

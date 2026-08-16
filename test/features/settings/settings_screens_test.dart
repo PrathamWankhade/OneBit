@@ -15,6 +15,9 @@ import 'package:onebit/features/about/presentation/licenses_screen.dart';
 import 'package:onebit/features/bluetooth/domain/bluetooth_permission_state.dart';
 import 'package:onebit/features/bluetooth/domain/bluetooth_radio_state.dart';
 import 'package:onebit/features/bluetooth/domain/bluetooth_repository.dart';
+import 'package:onebit/features/bluetooth/domain/gatt_models.dart';
+import 'package:onebit/features/bluetooth/domain/mtu_negotiation_result.dart';
+import 'package:onebit/features/bluetooth/domain/rssi_reading.dart';
 import 'package:onebit/features/bluetooth/presentation/bluetooth_providers.dart';
 import 'package:onebit/features/media/storage/storage_statistics.dart';
 import 'package:onebit/features/settings/presentation/appearance_settings_screen.dart';
@@ -89,15 +92,32 @@ class _FakeBluetoothRepository implements BluetoothRepository {
   Future<Result<void>> disconnect(String deviceId) async => const Ok(null);
 
   @override
-  Future<Result<dynamic>> readRssi(String deviceId) async => const Ok(null);
+  Future<Result<RssiReading>> readRssi(String deviceId) async => Ok(
+    RssiReading(
+      deviceId: deviceId,
+      rssiDb: -50,
+      smoothedDb: -50,
+      timestamp: DateTime(2026),
+    ),
+  );
 
   @override
-  Future<Result<dynamic>> requestMtu(String deviceId, int mtu) async =>
-      const Ok(null);
+  Future<Result<MtuNegotiationResult>> requestMtu(
+    String deviceId,
+    int mtu,
+  ) async => Ok(
+    MtuNegotiationResult(
+      deviceId: deviceId,
+      requestedMtu: mtu,
+      actualMtu: mtu,
+      fellBack: false,
+    ),
+  );
 
   @override
-  Future<Result<List<dynamic>>> discoverServices(String deviceId) async =>
-      const Ok([]);
+  Future<Result<List<GattService>>> discoverServices(
+    String deviceId,
+  ) async => const Ok([]);
 
   @override
   Future<Result<List<int>>> readCharacteristic({

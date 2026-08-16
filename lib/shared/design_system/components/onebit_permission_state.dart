@@ -2,12 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:onebit/shared/design_system/components/onebit_button.dart';
 import 'package:onebit/shared/design_system/icons/onebit_icons.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
+import 'package:onebit/shared/design_system/themes/onebit_theme_extension.dart';
 import 'package:onebit/shared/design_system/tokens/onebit_component_tokens.dart';
 
 /// Permission request presentation.
 ///
 /// Renders the mandatory rationale, a request action and — when [denied] —
 /// an open-settings action. Permission state itself is never read here.
+///
+/// Content is vertically centered within the available region, consistent
+/// with [OneBitEmptyState].
 class OneBitPermissionState extends StatelessWidget {
   const OneBitPermissionState({
     required this.title,
@@ -19,6 +23,7 @@ class OneBitPermissionState extends StatelessWidget {
     this.settingsLabel = 'Open settings',
     this.requesting = false,
     this.icon = OneBitIcons.bluetoothDisabled,
+    this.secondaryInfo,
     super.key,
   });
 
@@ -49,43 +54,61 @@ class OneBitPermissionState extends StatelessWidget {
   /// Icon shown above the title; defaults to bluetooth disabled.
   final IconData icon;
 
+  /// Optional secondary information displayed below the actions.
+  final Widget? secondaryInfo;
+
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final colors = context.oneBitColors;
     final textTheme = Theme.of(context).textTheme;
 
     return Semantics(
       label: '$title. $message',
       child: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(OneBitSpacing.xxxxl),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(
+            horizontal: OneBitSpacing.xxxxl,
+            vertical: OneBitSpacing.xxxl,
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               ExcludeSemantics(
-                child: Icon(
-                  icon,
-                  size: OneBitIconSize.feature,
-                  color: scheme.onSurfaceVariant,
+                child: Container(
+                  width: OneBitIconSize.feature,
+                  height: OneBitIconSize.feature,
+                  decoration: BoxDecoration(
+                    color: colors.infoContainer,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    icon,
+                    size: OneBitIconSize.xl,
+                    color: colors.info,
+                  ),
                 ),
               ),
-              const SizedBox(height: OneBitSpacing.l),
+              const SizedBox(height: OneBitSpacing.xl),
               Text(
                 title,
-                style: textTheme.titleLarge,
+                style: textTheme.headlineMedium,
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: OneBitSpacing.s),
-              Text(
-                message,
-                style: textTheme.bodyMedium,
-                textAlign: TextAlign.center,
+              const SizedBox(height: OneBitSpacing.sm),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 320),
+                child: Text(
+                  message,
+                  style: textTheme.bodyMedium,
+                  textAlign: TextAlign.center,
+                ),
               ),
               const SizedBox(height: OneBitSpacing.xl),
               OneBitButton(
                 label: requestLabel,
                 onPressed: requesting ? null : onRequest,
                 loading: requesting,
+                size: OneBitButtonSize.large,
               ),
               if (denied) ...[
                 const SizedBox(height: OneBitSpacing.s),
@@ -94,6 +117,10 @@ class OneBitPermissionState extends StatelessWidget {
                   onPressed: onOpenSettings ?? () {},
                   icon: OneBitIcons.shellSettings,
                 ),
+              ],
+              if (secondaryInfo != null) ...[
+                const SizedBox(height: OneBitSpacing.s),
+                secondaryInfo!,
               ],
             ],
           ),

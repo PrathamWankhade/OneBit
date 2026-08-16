@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:onebit/shared/design_system/colors/onebit_color_schemes.dart';
+import 'package:onebit/shared/design_system/themes/onebit_theme_extension.dart';
 import 'package:onebit/shared/design_system/tokens/onebit_component_tokens.dart';
 
 /// Tokenized surface container.
@@ -46,7 +46,7 @@ class OneBitCard extends StatelessWidget {
     final colors = context.oneBitColors;
 
     final decoration = BoxDecoration(
-      color: outlined ? scheme.surfaceContainerHighest : colors.card,
+      color: outlined ? scheme.surfaceContainerHighest : colors.primarySurface,
       borderRadius: BorderRadius.circular(
         compact
             ? OneBitCardTokens.cornerRadiusCompact

@@ -9,6 +9,7 @@ import 'package:onebit/features/packet/engine/packet_engine.dart';
 import 'package:onebit/features/packet/fragmentation/packet_fragmenter.dart';
 import 'package:onebit/features/packet/presentation/packet_dev_widgets.dart';
 import 'package:onebit/features/packet/presentation/packet_providers.dart';
+import 'package:onebit/shared/design_system/components/onebit_scroll_clearance.dart';
 
 /// Packet inspector: assemble a packet from the form, then view the
 /// header fields, the payload, the full binary frame with its CRC, and a
@@ -83,7 +84,12 @@ final class _PacketInspectorTabState extends ConsumerState<PacketInspectorTab> {
   Widget build(BuildContext context) {
     final built = _built;
     return ListView(
-      padding: const EdgeInsets.all(12),
+      padding: EdgeInsets.fromLTRB(
+        12,
+        12,
+        12,
+        OneBitScrollClearance.bottom(context),
+      ),
       children: [
         PacketDevSection(
           title: 'Compose',

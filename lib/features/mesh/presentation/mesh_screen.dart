@@ -11,15 +11,18 @@ import 'package:onebit/features/mesh/presentation/mesh_screen/widgets/network_he
 import 'package:onebit/features/mesh/presentation/mesh_screen/widgets/routes_panel.dart';
 import 'package:onebit/features/mesh/presentation/mesh_screen/widgets/stats_panel.dart';
 import 'package:onebit/features/mesh/presentation/mesh_screen/widgets/topology_panel.dart';
+import 'package:onebit/shared/design_system/components/onebit_button.dart';
 import 'package:onebit/shared/design_system/components/onebit_card.dart';
 import 'package:onebit/shared/design_system/components/onebit_error_state.dart';
 import 'package:onebit/shared/design_system/components/onebit_icon_button.dart';
 import 'package:onebit/shared/design_system/components/onebit_loading_indicator.dart';
+import 'package:onebit/shared/design_system/components/onebit_page_header.dart';
+import 'package:onebit/shared/design_system/components/onebit_scroll_clearance.dart';
 import 'package:onebit/shared/design_system/components/onebit_status_chip.dart';
 import 'package:onebit/shared/design_system/icons/onebit_icons.dart';
-import 'package:onebit/shared/design_system/responsive/onebit_master_detail.dart';
 import 'package:onebit/shared/design_system/responsive/onebit_responsive.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
+import 'package:onebit/shared/design_system/themes/onebit_theme_extension.dart';
 
 /// Mesh overview tab: network health, topology visualization, active nodes,
 /// routes, and statistics — all wired to the live mesh engine providers.
@@ -32,16 +35,6 @@ class MeshScreen extends ConsumerWidget {
     final stateAsync = ref.watch(meshStateProvider);
 
     return OneBitScaffold(
-      appBar: AppBar(
-        title: Text(l10n.meshTitle),
-        actions: [
-          OneBitIconButton(
-            icon: OneBitIcons.shellSettings,
-            tooltip: l10n.settingsTitle,
-            onPressed: () => context.push(AppRoutePaths.settings),
-          ),
-        ],
-      ),
       body: stateAsync.when(
         loading: () => const OneBitLoadingIndicator(label: ''),
         error: (e, _) => OneBitErrorState(
@@ -74,22 +67,51 @@ class _MeshBody extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.oneBitColors;
     return context.isTablet
         ? _TabletMeshLayout(engineState: engineState)
-        : ListView(
-            padding: const EdgeInsets.all(OneBitSpacing.m),
+        : Column(
             children: [
-              _EnginePanel(engineState: engineState),
-              const SizedBox(height: OneBitSpacing.m),
-              const NetworkHealthPanel(),
-              const SizedBox(height: OneBitSpacing.m),
-              const TopologyVisualizationPanel(),
-              const SizedBox(height: OneBitSpacing.m),
-              const ActiveNodesPanel(),
-              const SizedBox(height: OneBitSpacing.m),
-              const RoutesPanel(),
-              const SizedBox(height: OneBitSpacing.m),
-              const StatsPanel(),
+              OneBitPageHeader.status(
+                title: context.l10n.meshTitle,
+                status: engineState.name,
+                statusColor: switch (engineState) {
+                  MeshEngineState.running => colors.success,
+                  MeshEngineState.starting => colors.warning,
+                  MeshEngineState.degraded => colors.warning,
+                  MeshEngineState.stopped => colors.textMuted,
+                },
+                actions: [
+                  OneBitIconButton(
+                    icon: OneBitIcons.shellSettings,
+                    tooltip: context.l10n.settingsTitle,
+                    onPressed: () => context.push(AppRoutePaths.settings),
+                  ),
+                ],
+              ),
+              Expanded(
+                child: ListView(
+                  padding: EdgeInsets.fromLTRB(
+                    OneBitSpacing.lg,
+                    OneBitSpacing.sm,
+                    OneBitSpacing.lg,
+                    OneBitScrollClearance.bottom(context),
+                  ),
+                  children: [
+                    _EnginePanel(engineState: engineState),
+                    const SizedBox(height: OneBitSpacing.md),
+                    const NetworkHealthPanel(),
+                    const SizedBox(height: OneBitSpacing.md),
+                    const TopologyVisualizationPanel(),
+                    const SizedBox(height: OneBitSpacing.md),
+                    const ActiveNodesPanel(),
+                    const SizedBox(height: OneBitSpacing.md),
+                    const RoutesPanel(),
+                    const SizedBox(height: OneBitSpacing.md),
+                    const StatsPanel(),
+                  ],
+                ),
+              ),
             ],
           );
   }
@@ -132,7 +154,11 @@ class _EnginePanel extends ConsumerWidget {
               ],
             ),
           ),
-          FilledButton.tonal(
+          OneBitButton(
+            label: engineState == MeshEngineState.stopped
+                ? l10n.meshEngineStart
+                : l10n.meshEngineStop,
+            variant: OneBitButtonVariant.tonal,
             onPressed: engineState == MeshEngineState.stopped
                 ? () =>
                       ref.read(meshLifecycleControllerProvider.notifier).start()
@@ -140,11 +166,6 @@ class _EnginePanel extends ConsumerWidget {
                 ? () =>
                       ref.read(meshLifecycleControllerProvider.notifier).stop()
                 : null,
-            child: Text(
-              engineState == MeshEngineState.stopped
-                  ? l10n.meshEngineStart
-                  : l10n.meshEngineStop,
-            ),
           ),
         ],
       ),
@@ -152,7 +173,7 @@ class _EnginePanel extends ConsumerWidget {
   }
 }
 
-/// Tablet-optimized mesh layout with two-column grid.
+/// Tablet-optimized mesh layout with summary + topology side-by-side.
 class _TabletMeshLayout extends StatelessWidget {
   const _TabletMeshLayout({required this.engineState});
 
@@ -160,26 +181,82 @@ class _TabletMeshLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.oneBitColors;
     return Padding(
-      padding: const EdgeInsets.all(OneBitSpacing.m),
+      padding: const EdgeInsets.fromLTRB(
+        OneBitSpacing.lg,
+        0,
+        OneBitSpacing.lg,
+        0,
+      ),
       child: Column(
         children: [
+          OneBitPageHeader.status(
+            title: context.l10n.meshTitle,
+            status: engineState.name,
+            statusColor: switch (engineState) {
+              MeshEngineState.running => colors.success,
+              MeshEngineState.starting => colors.warning,
+              MeshEngineState.degraded => colors.warning,
+              MeshEngineState.stopped => colors.textMuted,
+            },
+            actions: [
+              OneBitIconButton(
+                icon: OneBitIcons.shellSettings,
+                tooltip: context.l10n.settingsTitle,
+                onPressed: () => context.push(AppRoutePaths.settings),
+              ),
+            ],
+          ),
+          const SizedBox(height: OneBitSpacing.md),
           _EnginePanel(engineState: engineState),
-          const SizedBox(height: OneBitSpacing.m),
-          const Expanded(
-            child: OneBitResponsiveGrid(
-              compactColumns: 1,
-              mediumColumns: 2,
-              expandedColumns: 2,
+          const SizedBox(height: OneBitSpacing.md),
+          Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                NetworkHealthPanel(),
-                TopologyVisualizationPanel(),
-                ActiveNodesPanel(),
-                RoutesPanel(),
-                StatsPanel(),
+                Expanded(
+                  child: ListView(
+                    padding: EdgeInsets.fromLTRB(
+                      0,
+                      0,
+                      0,
+                      OneBitScrollClearance.bottom(context),
+                    ),
+                    children: const [
+                      NetworkHealthPanel(),
+                      SizedBox(height: OneBitSpacing.md),
+                      StatsPanel(),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: OneBitSpacing.md),
+                Expanded(
+                  child: ListView(
+                    padding: EdgeInsets.fromLTRB(
+                      0,
+                      0,
+                      0,
+                      OneBitScrollClearance.bottom(context),
+                    ),
+                    children: const [
+                      TopologyVisualizationPanel(),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
+          const SizedBox(height: OneBitSpacing.md),
+          const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: ActiveNodesPanel()),
+              SizedBox(width: OneBitSpacing.md),
+              Expanded(child: RoutesPanel()),
+            ],
+          ),
+          const SizedBox(height: OneBitSpacing.xxxl),
         ],
       ),
     );

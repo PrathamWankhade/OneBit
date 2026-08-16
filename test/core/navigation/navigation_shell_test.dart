@@ -12,8 +12,7 @@ import 'package:onebit/features/identity/presentation/qr_hub_screen.dart';
 import 'package:onebit/features/mesh/presentation/mesh_screen.dart';
 import 'package:onebit/features/nearby/presentation/nearby_screen.dart';
 import 'package:onebit/features/nodes/presentation/nodes_screen.dart';
-import 'package:onebit/features/settings/presentation/settings_screen.dart';
-import 'package:onebit/shared/design_system/components/onebit_navigation_bar.dart';
+import 'package:onebit/shared/design_system/components/onebit_floating_navigation.dart';
 import 'package:onebit/shared/design_system/components/onebit_navigation_rail.dart';
 
 import '../../app/support/app_navigation_support.dart';
@@ -63,7 +62,7 @@ void main() {
       await tester.pumpWidget(oneBitApp(identity: testIdentity()));
       await tester.pumpAndSettle();
 
-      expect(find.byType(OneBitNavigationBar), findsOneWidget);
+      expect(find.byType(FloatingBottomNavigation), findsOneWidget);
       expect(find.byType(OneBitNavigationRail), findsNothing);
 
       await disposeApp(tester);
@@ -81,7 +80,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(OneBitNavigationRail), findsOneWidget);
-      expect(find.byType(OneBitNavigationBar), findsNothing);
+      expect(find.byType(FloatingBottomNavigation), findsNothing);
 
       await disposeApp(tester);
     });
@@ -105,7 +104,7 @@ void main() {
       await disposeApp(tester);
     });
 
-    testWidgets('bottom bar has five destinations', (tester) async {
+    testWidgets('bottom bar has four destinations', (tester) async {
       tester.view.physicalSize = const Size(400, 800);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
@@ -114,22 +113,21 @@ void main() {
       await tester.pumpWidget(oneBitApp(identity: testIdentity()));
       await tester.pumpAndSettle();
 
-      final bar = tester.widget<OneBitNavigationBar>(
-        find.byType(OneBitNavigationBar),
+      final bar = tester.widget<FloatingBottomNavigation>(
+        find.byType(FloatingBottomNavigation),
       );
-      expect(bar.destinations, hasLength(5));
+      expect(bar.destinations, hasLength(4));
       expect(bar.destinations.map((d) => d.id), [
         'channels',
         'nodes',
         'nearby',
         'mesh',
-        'settings',
       ]);
 
       await disposeApp(tester);
     });
 
-    testWidgets('rail has five destinations', (tester) async {
+    testWidgets('rail has four destinations', (tester) async {
       tester.view.physicalSize = const Size(700, 1000);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
@@ -141,13 +139,12 @@ void main() {
       final rail = tester.widget<OneBitNavigationRail>(
         find.byType(OneBitNavigationRail),
       );
-      expect(rail.destinations, hasLength(5));
+      expect(rail.destinations, hasLength(4));
       expect(rail.destinations.map((d) => d.id), [
         'channels',
         'nodes',
         'nearby',
         'mesh',
-        'settings',
       ]);
 
       await disposeApp(tester);
@@ -169,27 +166,22 @@ void main() {
       await tester.pumpWidget(oneBitApp(identity: testIdentity()));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Nodes'));
+      await tester.tap(find.byTooltip('Nodes'));
       await tester.pumpAndSettle();
       expect(find.byType(NodesScreen), findsOneWidget);
       expect(find.byType(ChannelsScreen), findsNothing);
 
-      await tester.tap(find.text('Nearby'));
+      await tester.tap(find.byTooltip('Nearby'));
       await tester.pumpAndSettle();
       expect(find.byType(NearbyScreen), findsOneWidget);
       expect(find.byType(NodesScreen), findsNothing);
 
-      await tester.tap(find.text('Mesh'));
+      await tester.tap(find.byTooltip('Mesh'));
       await tester.pumpAndSettle();
       expect(find.byType(MeshScreen), findsOneWidget);
       expect(find.byType(NearbyScreen), findsNothing);
 
-      await tester.tap(find.text('Settings'));
-      await tester.pumpAndSettle();
-      expect(find.byType(SettingsScreen), findsOneWidget);
-      expect(find.byType(MeshScreen), findsNothing);
-
-      await tester.tap(find.text('Channels'));
+      await tester.tap(find.byTooltip('Channels'));
       await tester.pumpAndSettle();
       expect(find.byType(ChannelsScreen), findsOneWidget);
 
@@ -260,10 +252,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(ChannelsScreen), findsOneWidget);
 
-      // Switch to Settings
-      await tester.tap(find.text('Settings'));
+      // Switch to Mesh
+      await tester.tap(find.byTooltip('Mesh'));
       await tester.pumpAndSettle();
-      expect(find.byType(SettingsScreen), findsOneWidget);
+      expect(find.byType(MeshScreen), findsOneWidget);
 
       // "Restart" with the same prefs
       await tester.pumpWidget(const SizedBox.shrink());
@@ -272,8 +264,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Settings should still be active
-      expect(find.byType(SettingsScreen), findsOneWidget);
+      // Mesh should still be active
+      expect(find.byType(MeshScreen), findsOneWidget);
       expect(find.byType(ChannelsScreen), findsNothing);
 
       await disposeApp(tester);

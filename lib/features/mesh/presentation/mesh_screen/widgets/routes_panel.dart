@@ -4,10 +4,8 @@ import 'package:onebit/core/extensions/build_context_extensions.dart';
 import 'package:onebit/features/mesh/domain/mesh_route.dart';
 import 'package:onebit/features/mesh/presentation/mesh_providers.dart';
 import 'package:onebit/shared/design_system/components/onebit_card.dart';
-import 'package:onebit/shared/design_system/components/onebit_empty_state.dart';
 import 'package:onebit/shared/design_system/components/onebit_loading_indicator.dart';
 import 'package:onebit/shared/design_system/components/onebit_status_chip.dart';
-import 'package:onebit/shared/design_system/icons/onebit_icons.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
 import 'package:onebit/shared/design_system/typography/onebit_typography.dart';
 
@@ -27,22 +25,11 @@ final class RoutesPanel extends ConsumerWidget {
       ),
       data: (result) {
         if (result.isErr) {
-          return OneBitCard(
-            child: Text(
-              l10n.meshEmptyRoutes,
-              style: context.textTheme.bodyMedium,
-            ),
-          );
+          return const SizedBox.shrink();
         }
         final routes = result.value ?? [];
         if (routes.isEmpty) {
-          return OneBitCard(
-            child: OneBitEmptyState(
-              icon: OneBitIcons.shellMesh,
-              title: l10n.meshEmptyRoutes,
-              message: l10n.meshEmptyRoutesMessage,
-            ),
-          );
+          return const SizedBox.shrink();
         }
         return RoutesList(routes: routes);
       },
@@ -59,7 +46,6 @@ final class RoutesList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final scheme = Theme.of(context).colorScheme;
 
     return OneBitCard(
       child: Column(
@@ -75,16 +61,17 @@ final class RoutesList extends StatelessWidget {
               ),
               Text(
                 '${routes.length}',
-                style: OneBitTypography.technicalStyle(
-                  color: scheme.onSurfaceVariant,
+                style: OneBitTypography.oneBitNumeric(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: OneBitSpacing.s),
+          const SizedBox(height: OneBitSpacing.xs),
           for (final route in routes) ...[
             RouteRow(route: route),
-            if (route != routes.last) const SizedBox(height: OneBitSpacing.s),
+            if (route != routes.last)
+              const SizedBox(height: OneBitSpacing.xxs),
           ],
         ],
       ),
@@ -113,7 +100,7 @@ final class RouteRow extends StatelessWidget {
                 children: [
                   Text(
                     route.destination,
-                    style: OneBitTypography.technicalStyle(
+                    style: OneBitTypography.oneBitNumeric(
                       color: scheme.onSurface,
                     ),
                     maxLines: 1,
@@ -128,7 +115,7 @@ final class RouteRow extends StatelessWidget {
                   ],
                 ],
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 1),
               Text(
                 '${l10n.meshRouteNextHop}: ${route.nextHop} · '
                 '${route.hopCount} ${route.hopCount == 1 ? 'hop' : 'hops'}',
@@ -144,15 +131,13 @@ final class RouteRow extends StatelessWidget {
           children: [
             Text(
               'Q: ${(route.quality * 100).round()}%',
-              style: OneBitTypography.technicalStyle(
-                fontSize: OneBitTypography.caption,
+              style: OneBitTypography.oneBitCaption(
                 color: scheme.onSurfaceVariant,
               ),
             ),
             Text(
               'R: ${(route.reliability * 100).round()}%',
-              style: OneBitTypography.technicalStyle(
-                fontSize: OneBitTypography.caption,
+              style: OneBitTypography.oneBitCaption(
                 color: scheme.onSurfaceVariant,
               ),
             ),

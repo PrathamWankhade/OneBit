@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:onebit/shared/design_system/components/onebit_card.dart';
 import 'package:onebit/shared/design_system/components/onebit_status_chip.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
+import 'package:onebit/shared/design_system/themes/onebit_theme_extension.dart';
 import 'package:onebit/shared/design_system/typography/onebit_typography.dart';
 
 /// Peer node summary card.
@@ -57,6 +58,7 @@ class OneBitNodeCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     final scheme = Theme.of(context).colorScheme;
+    final colors = context.oneBitColors;
 
     return OneBitCard(
       onTap: onTap,
@@ -65,12 +67,15 @@ class OneBitNodeCard extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Row 1: Name + connection chip
           Row(
             children: [
               Expanded(
                 child: Text(
                   name,
-                  style: textTheme.titleLarge,
+                  style: textTheme.titleMedium?.copyWith(
+                    fontWeight: OneBitTypography.semibold,
+                  ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -81,7 +86,8 @@ class OneBitNodeCard extends StatelessWidget {
               ],
             ],
           ),
-          const SizedBox(height: OneBitSpacing.xs),
+          // Row 2: Node ID
+          const SizedBox(height: 4),
           Text(
             nodeId,
             style: OneBitTypography.technicalStyle(
@@ -90,19 +96,21 @@ class OneBitNodeCard extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
+          // Row 3: Fingerprint
           if (fingerprint != null) ...[
-            const SizedBox(height: OneBitSpacing.xs),
+            const SizedBox(height: 2),
             Text(
               fingerprint!,
               style: OneBitTypography.technicalStyle(
                 fontSize: OneBitTypography.caption,
-                color: scheme.onSurfaceVariant,
+                color: colors.textMuted,
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ],
-          const SizedBox(height: OneBitSpacing.m),
+          // Row 4: Verification + route + signal + last seen
+          const SizedBox(height: 8),
           Row(
             children: [
               if (verification != null)
@@ -113,7 +121,7 @@ class OneBitNodeCard extends StatelessWidget {
                 const SizedBox(width: OneBitSpacing.s),
                 Text(
                   routeInfo!,
-                  style: textTheme.labelMedium?.copyWith(
+                  style: textTheme.labelSmall?.copyWith(
                     color: scheme.onSurfaceVariant,
                     fontFamily: OneBitTypography.technicalFamily,
                     fontFamilyFallback: OneBitTypography.technicalFallback,
@@ -124,19 +132,20 @@ class OneBitNodeCard extends StatelessWidget {
               if (rssi != null)
                 Text(
                   '$rssi dBm',
-                  style: textTheme.labelMedium?.copyWith(
+                  style: textTheme.labelSmall?.copyWith(
                     color: scheme.onSurfaceVariant,
                     fontFamily: OneBitTypography.technicalFamily,
                     fontFamilyFallback: OneBitTypography.technicalFallback,
+                    fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
               if (rssi != null && lastSeen != null)
-                const SizedBox(width: OneBitSpacing.m),
+                const SizedBox(width: OneBitSpacing.s),
               if (lastSeen != null)
                 Text(
                   lastSeen!,
-                  style: textTheme.labelMedium?.copyWith(
-                    color: scheme.onSurfaceVariant,
+                  style: textTheme.labelSmall?.copyWith(
+                    color: colors.textMuted,
                   ),
                 ),
             ],

@@ -22,7 +22,10 @@ NavigationDirection navigationDirection(int oldIndex, int newIndex) {
 ///
 /// For forward navigation: incoming page starts at (1, 0) and exits to (-1, 0).
 /// For backward navigation: incoming page starts at (-1, 0) and exits to (1, 0).
-Offset slideOffsetForDirection(NavigationDirection direction, {required bool isIncoming}) {
+Offset slideOffsetForDirection(
+  NavigationDirection direction, {
+  required bool isIncoming,
+}) {
   if (isIncoming) {
     return direction == NavigationDirection.forward
         ? const Offset(1, 0)
@@ -72,10 +75,7 @@ class _DirectionalSlideTransitionState extends State<DirectionalSlideTransition>
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: widget.duration,
-    );
+    _controller = AnimationController(vsync: this, duration: widget.duration);
 
     final beginOffset = slideOffsetForDirection(
       widget.direction,
@@ -85,19 +85,13 @@ class _DirectionalSlideTransitionState extends State<DirectionalSlideTransition>
     _slideAnimation = Tween<Offset>(
       begin: beginOffset,
       end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: widget.curve,
-    ));
+    ).animate(CurvedAnimation(parent: _controller, curve: widget.curve));
 
     // Subtle opacity: 0.96 → 1.0
     _fadeAnimation = Tween<double>(
       begin: 0.96,
       end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: widget.curve,
-    ));
+    ).animate(CurvedAnimation(parent: _controller, curve: widget.curve));
 
     _controller.forward();
   }
@@ -114,10 +108,7 @@ class _DirectionalSlideTransitionState extends State<DirectionalSlideTransition>
       _slideAnimation = Tween<Offset>(
         begin: beginOffset,
         end: Offset.zero,
-      ).animate(CurvedAnimation(
-        parent: _controller,
-        curve: widget.curve,
-      ));
+      ).animate(CurvedAnimation(parent: _controller, curve: widget.curve));
       _controller.forward();
     }
   }
@@ -132,10 +123,7 @@ class _DirectionalSlideTransitionState extends State<DirectionalSlideTransition>
   Widget build(BuildContext context) {
     return SlideTransition(
       position: _slideAnimation,
-      child: FadeTransition(
-        opacity: _fadeAnimation,
-        child: widget.child,
-      ),
+      child: FadeTransition(opacity: _fadeAnimation, child: widget.child),
     );
   }
 }

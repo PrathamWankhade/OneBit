@@ -14,5 +14,6 @@ export 'responsive/onebit_responsive.dart';
 export 'spacing/onebit_elevation.dart';
 export 'spacing/onebit_radius.dart';
 export 'spacing/onebit_spacing.dart';
+export 'themes/onebit_theme_extension.dart';
 export 'tokens/onebit_component_tokens.dart';
 export 'typography/onebit_typography.dart';

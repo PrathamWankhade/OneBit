@@ -176,15 +176,18 @@ final class AttachmentsBar extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: OneBitSpacing.s),
-                InkWell(
-                  onTap: () => onRemove(attachment.attachmentId),
-                  borderRadius: BorderRadius.circular(OneBitRadius.sm),
-                  child: Padding(
-                    padding: const EdgeInsets.all(OneBitSpacing.xs),
-                    child: Icon(
-                      OneBitIcons.close,
-                      size: 16,
-                      color: scheme.onSurfaceVariant,
+                Semantics(
+                  button: true,
+                  label: context.l10n.commonDelete,
+                  child: InkWell(
+                    onTap: () => onRemove(attachment.attachmentId),
+                    borderRadius: BorderRadius.circular(OneBitRadius.sm),
+                    child: const Padding(
+                      padding: EdgeInsets.all(OneBitSpacing.s),
+                      child: Icon(
+                        OneBitIcons.close,
+                        size: 16,
+                      ),
                     ),
                   ),
                 ),
@@ -238,15 +241,18 @@ final class VoiceNoteBar extends StatelessWidget {
               ],
             ),
           ),
-          InkWell(
-            onTap: onRemove,
-            borderRadius: BorderRadius.circular(OneBitRadius.sm),
-            child: Padding(
-              padding: const EdgeInsets.all(OneBitSpacing.xs),
-              child: Icon(
-                OneBitIcons.close,
-                size: 20,
-                color: scheme.onSurfaceVariant,
+          Semantics(
+            button: true,
+            label: context.l10n.commonDelete,
+            child: InkWell(
+              onTap: onRemove,
+              borderRadius: BorderRadius.circular(OneBitRadius.sm),
+              child: const Padding(
+                padding: EdgeInsets.all(OneBitSpacing.s),
+                child: Icon(
+                  OneBitIcons.close,
+                  size: 20,
+                ),
               ),
             ),
           ),
@@ -360,15 +366,19 @@ final class EmojiSheet extends StatelessWidget {
           runSpacing: OneBitSpacing.xs,
           children: [
             for (final emoji in _emoji)
-              InkWell(
-                onTap: () {
-                  onSelected(emoji);
-                  Navigator.of(context).pop();
-                },
-                borderRadius: BorderRadius.circular(OneBitRadius.md),
-                child: Padding(
-                  padding: const EdgeInsets.all(OneBitSpacing.s),
-                  child: Text(emoji, style: const TextStyle(fontSize: 24)),
+              Semantics(
+                button: true,
+                label: emoji,
+                child: InkWell(
+                  onTap: () {
+                    onSelected(emoji);
+                    Navigator.of(context).pop();
+                  },
+                  borderRadius: BorderRadius.circular(OneBitRadius.md),
+                  child: Padding(
+                    padding: const EdgeInsets.all(OneBitSpacing.s),
+                    child: Text(emoji, style: const TextStyle(fontSize: 24)),
+                  ),
                 ),
               ),
           ],

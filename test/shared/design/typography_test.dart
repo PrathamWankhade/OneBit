@@ -17,15 +17,16 @@ void main() {
     test('scale tokens match the design spec', () {
       expect(OneBitTypography.display, 32);
       expect(OneBitTypography.headline, 24);
-      expect(OneBitTypography.title, 20);
+      expect(OneBitTypography.pageTitle, 28);
       expect(OneBitTypography.sectionTitle, 18);
       expect(OneBitTypography.body, 16);
-      expect(OneBitTypography.bodyLarge, 18);
-      expect(OneBitTypography.bodySmall, 13);
-      expect(OneBitTypography.label, 14);
+      expect(OneBitTypography.cardTitle, 17);
+      expect(OneBitTypography.bodySecondary, 14);
       expect(OneBitTypography.caption, 12);
       expect(OneBitTypography.overline, 10);
-      expect(OneBitTypography.technical, 13);
+      expect(OneBitTypography.terminal, 16);
+      expect(OneBitTypography.numeric, 13);
+      expect(OneBitTypography.button, 14);
     });
 
     test('technical sizes are declared', () {
@@ -33,7 +34,7 @@ void main() {
       expect(OneBitTypography.fingerprint, 12);
       expect(OneBitTypography.packetId, 12);
       expect(OneBitTypography.log, 12);
-      expect(OneBitTypography.diagnostic, 11);
+      expect(OneBitTypography.diagnostic, 10);
     });
 
     test('weights are declared', () {
@@ -53,7 +54,7 @@ void main() {
   });
 
   group('OneBitTypography.buildTextTheme', () {
-    final scheme = OneBitColorSchemes.dark();
+    const scheme = OneBitColorSchemes.dark;
 
     test('every style carries the Consolas family', () {
       final theme = OneBitTypography.buildTextTheme(scheme);
@@ -65,8 +66,8 @@ void main() {
     test('scale values are honored', () {
       final theme = OneBitTypography.buildTextTheme(scheme);
       expect(theme.displayLarge?.fontSize, OneBitTypography.display);
-      expect(theme.titleLarge?.fontSize, OneBitTypography.title);
-      expect(theme.bodyLarge?.fontSize, OneBitTypography.bodyLarge);
+      expect(theme.titleLarge?.fontSize, OneBitTypography.cardTitle);
+      expect(theme.bodyMedium?.fontSize, OneBitTypography.bodySecondary);
       expect(theme.labelSmall?.fontSize, 10);
     });
 
@@ -78,61 +79,37 @@ void main() {
 
     test('overline labels carry tracking', () {
       final theme = OneBitTypography.buildTextTheme(scheme);
-      expect(theme.labelSmall?.letterSpacing, OneBitTypography.overlineSpacing);
-    });
-  });
-
-  group('OneBitTypography.technicalStyle', () {
-    test('uses Consolas with a monospace fallback', () {
-      final style = OneBitTypography.technicalStyle();
-      expect(style.fontFamily, OneBitTypography.technicalFamily);
-      expect(style.fontFamilyFallback, OneBitTypography.technicalFallback);
-      expect(style.fontSize, OneBitTypography.technical);
-    });
-
-    test('overrides are honored', () {
-      final style = OneBitTypography.technicalStyle(
-        fontSize: 11,
-        weight: OneBitTypography.bold,
-        color: const Color(0xFFA8A8A8),
+      expect(
+        theme.labelSmall?.letterSpacing,
+        OneBitTypography.overlineSpacing,
       );
-      expect(style.fontSize, 11);
-      expect(style.fontWeight, OneBitTypography.bold);
-      expect(style.color, const Color(0xFFA8A8A8));
     });
   });
 
   group('OneBitTypography named style helpers', () {
-    test('sectionTitleStyle uses sectionTitle size', () {
-      final style = OneBitTypography.sectionTitleStyle();
-      expect(style.fontSize, OneBitTypography.sectionTitle);
+    test('oneBitDisplay returns correct properties', () {
+      final style = OneBitTypography.oneBitDisplay();
+      expect(style.fontSize, OneBitTypography.display);
       expect(style.fontWeight, OneBitTypography.semibold);
+      expect(style.letterSpacing, OneBitTypography.displaySpacing);
     });
 
-    test('nodeIdStyle uses nodeId size with technical spacing', () {
-      final style = OneBitTypography.nodeIdStyle();
-      expect(style.fontSize, OneBitTypography.nodeId);
+    test('oneBitBody returns correct properties', () {
+      final style = OneBitTypography.oneBitBody();
+      expect(style.fontSize, OneBitTypography.body);
+      expect(style.fontWeight, OneBitTypography.regular);
+    });
+
+    test('oneBitTerminal uses technical family', () {
+      final style = OneBitTypography.oneBitTerminal();
+      expect(style.fontFamily, OneBitTypography.technicalFamily);
       expect(style.letterSpacing, OneBitTypography.technicalSpacing);
     });
 
-    test('fingerprintStyle uses fingerprint size', () {
-      final style = OneBitTypography.fingerprintStyle();
-      expect(style.fontSize, OneBitTypography.fingerprint);
-    });
-
-    test('packetIdStyle uses packetId size', () {
-      final style = OneBitTypography.packetIdStyle();
-      expect(style.fontSize, OneBitTypography.packetId);
-    });
-
-    test('logStyle uses log size', () {
-      final style = OneBitTypography.logStyle();
-      expect(style.fontSize, OneBitTypography.log);
-    });
-
-    test('diagnosticStyle uses diagnostic size', () {
-      final style = OneBitTypography.diagnosticStyle();
-      expect(style.fontSize, OneBitTypography.diagnostic);
+    test('oneBitTitle matches oneBitPageTitle', () {
+      final style = OneBitTypography.oneBitTitle();
+      expect(style.fontSize, OneBitTypography.pageTitle);
+      expect(style.fontWeight, OneBitTypography.semibold);
     });
   });
 }

@@ -5,7 +5,7 @@ import 'package:onebit/core/extensions/build_context_extensions.dart';
 import 'package:onebit/core/widgets/onebit_scaffold.dart';
 import 'package:onebit/features/launch/presentation/launch_providers.dart';
 import 'package:onebit/features/launch/presentation/launch_theme.dart';
-import 'package:onebit/shared/design_system/colors/onebit_color_schemes.dart';
+import 'package:onebit/shared/design_system/colors/onebit_palette.dart';
 import 'package:onebit/shared/design_system/components/onebit_button.dart';
 import 'package:onebit/shared/design_system/components/onebit_inline_error.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
@@ -51,7 +51,6 @@ final class _IntroScreenState extends ConsumerState<IntroScreen> {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final version = ref.watch(appConfigProvider).version;
-    final colors = context.oneBitColors;
 
     return LaunchTheme(
       child: OneBitScaffold(
@@ -74,7 +73,7 @@ final class _IntroScreenState extends ConsumerState<IntroScreen> {
                 l10n.introPrinciples,
                 textAlign: TextAlign.center,
                 style: context.textTheme.bodyLarge?.copyWith(
-                  color: colors.ansiWhite,
+                  color: OneBitPalette.ansiWhite,
                 ),
               ),
               const Spacer(flex: 2),
@@ -82,7 +81,7 @@ final class _IntroScreenState extends ConsumerState<IntroScreen> {
                 l10n.introInitLine(version),
                 style: OneBitTypography.technicalStyle(
                   fontSize: OneBitTypography.caption,
-                  color: colors.ansiBrightBlack,
+                  color: OneBitPalette.ansiBrightBlack,
                 ),
               ),
               const SizedBox(height: OneBitSpacing.m),

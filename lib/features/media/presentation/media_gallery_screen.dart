@@ -12,6 +12,7 @@ import 'package:onebit/l10n/app_localizations.dart';
 import 'package:onebit/shared/design_system/components/onebit_empty_state.dart';
 import 'package:onebit/shared/design_system/components/onebit_error_state.dart';
 import 'package:onebit/shared/design_system/components/onebit_loading_indicator.dart';
+import 'package:onebit/shared/design_system/components/onebit_scroll_clearance.dart';
 import 'package:onebit/shared/design_system/formatting/onebit_formatters.dart';
 import 'package:onebit/shared/design_system/icons/onebit_icons.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_radius.dart';
@@ -107,11 +108,11 @@ final class _GalleryBody extends ConsumerWidget {
         const SizedBox(height: OneBitSpacing.s),
         Expanded(
           child: GridView.builder(
-            padding: const EdgeInsets.fromLTRB(
+            padding: EdgeInsets.fromLTRB(
               OneBitSpacing.m,
               OneBitSpacing.xs,
               OneBitSpacing.m,
-              OneBitSpacing.m,
+              OneBitScrollClearance.bottom(context),
             ),
             gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
               maxCrossAxisExtent: 180,

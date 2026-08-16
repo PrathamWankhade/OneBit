@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:onebit/shared/design_system/components/onebit_card.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
 import 'package:onebit/shared/design_system/tokens/onebit_component_tokens.dart';
+import 'package:onebit/shared/design_system/typography/onebit_typography.dart';
 
 /// Settings-style row: leading icon, title, optional subtitle and trailing
 /// control or action.
@@ -37,43 +38,69 @@ class OneBitSettingsCard extends StatelessWidget {
   /// Disables the row: dims content and blocks taps.
   final bool enabled;
 
+  /// Fixed width for the leading icon column to ensure label alignment.
+  static const double _iconColumnWidth = 32;
+
+  /// Minimum height for the settings tile.
+  static const double _minTileHeight = 64;
+
   @override
   Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
     final scheme = Theme.of(context).colorScheme;
 
     return Opacity(
       opacity: enabled ? 1.0 : 0.38,
       child: OneBitCard(
         onTap: enabled ? onTap : null,
-        child: Row(
-          children: [
-            if (icon != null) ...[
-              Icon(
-                icon,
-                size: OneBitIconSize.s,
-                color: scheme.onSurfaceVariant,
-              ),
-              const SizedBox(width: OneBitSpacing.m),
-            ],
-            Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: textTheme.titleMedium),
-                  if (subtitle != null) ...[
-                    const SizedBox(height: OneBitSpacing.xs),
-                    Text(subtitle!, style: textTheme.bodySmall),
+        padding: const EdgeInsets.symmetric(
+          horizontal: OneBitSpacing.m,
+          vertical: OneBitSpacing.sm,
+        ),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: _minTileHeight),
+          child: Row(
+            children: [
+              if (icon != null)
+                SizedBox(
+                  width: _iconColumnWidth,
+                  child: Icon(
+                    icon,
+                    size: OneBitIconSize.s,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                )
+              else
+                const SizedBox(width: _iconColumnWidth),
+              const SizedBox(width: OneBitSpacing.xs),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: OneBitTypography.oneBitCardTitle(
+                        color: scheme.onSurface,
+                      ),
+                    ),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle!,
+                        style: OneBitTypography.oneBitCaption(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
-            ),
-            if (trailing != null) ...[
-              const SizedBox(width: OneBitSpacing.m),
-              trailing!,
+              if (trailing != null) ...[
+                const SizedBox(width: OneBitSpacing.s),
+                trailing!,
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

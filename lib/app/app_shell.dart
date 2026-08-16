@@ -8,24 +8,30 @@ import 'package:onebit/app/shell_controller.dart';
 import 'package:onebit/app/shell_tabs.dart';
 import 'package:onebit/core/navigation/app_router_provider.dart';
 import 'package:onebit/core/theme/onebit_theme.dart';
+import 'package:onebit/core/theme/theme_preference.dart';
 import 'package:onebit/core/theme/theme_preference_provider.dart';
 import 'package:onebit/features/dtn/dtn_providers.dart';
 import 'package:onebit/l10n/app_localizations.dart';
-import 'package:onebit/shared/design_system/components/onebit_navigation_bar.dart';
+import 'package:onebit/shared/design_system/components/onebit_floating_navigation.dart';
 import 'package:onebit/shared/design_system/components/onebit_navigation_rail.dart';
+import 'package:onebit/shared/design_system/navigation/onebit_directional_shell_body.dart';
 import 'package:onebit/shared/design_system/responsive/onebit_responsive.dart';
 import 'package:onebit/shared/localization/locale_controller.dart';
 
 /// Root shell hosting the active tab's navigator.
 ///
 /// Chrome is responsive and derived from the viewport width:
-/// * compact (phones) — bottom [OneBitNavigationBar];
+/// * compact (phones) — floating bottom [FloatingBottomNavigation];
 /// * medium/expanded (tablets, landscape) — [OneBitNavigationRail].
 ///
 /// Both layouts consume the same [shellTabs] list — navigation logic is
 /// never duplicated. Switching tabs preserves every branch's stack and
 /// scroll state ([StatefulShellRoute.indexedStack]) and persists the
 /// current tab for the next launch.
+///
+/// Tab switching applies directional slide transitions via
+/// [DirectionalShellBody]: forward navigation (left→right) slides content
+/// left, backward slides right. Under reduced motion the slide is skipped.
 class AppShell extends StatelessWidget {
   const AppShell({required this.navigationShell, super.key});
 
@@ -36,15 +42,8 @@ class AppShell extends StatelessWidget {
   Widget build(BuildContext context) {
     final tabs = shellTabs(AppLocalizations.of(context));
     return OneBitResponsiveLayout(
-      compact: (context) => _ShellScaffold(
-        navigationShell: navigationShell,
-        tabs: tabs,
-        chrome: (selectedIndex, onSelected) => OneBitNavigationBar(
-          destinations: _destinations(tabs),
-          selectedIndex: selectedIndex,
-          onDestinationSelected: onSelected,
-        ),
-      ),
+      compact: (context) =>
+          _ShellScaffold(navigationShell: navigationShell, tabs: tabs),
       medium: (context) => _RailShell(
         navigationShell: navigationShell,
         tabs: tabs,
@@ -57,31 +56,39 @@ class AppShell extends StatelessWidget {
       ),
     );
   }
-
-  static List<OneBitNavigationDestination> _destinations(List<ShellTab> tabs) =>
-      [for (final tab in tabs) tab.destination];
 }
 
-/// Compact layout: bottom navigation bar under the branch navigator.
+/// Compact layout: floating bottom navigation bar over the branch navigator.
+///
+/// Uses a [Stack] so page content fills the entire body while the navigation
+/// bar floats at the bottom with proper safe-area insets.
 final class _ShellScaffold extends ConsumerWidget {
-  const _ShellScaffold({
-    required this.navigationShell,
-    required this.tabs,
-    required this.chrome,
-  });
+  const _ShellScaffold({required this.navigationShell, required this.tabs});
 
   final StatefulNavigationShell navigationShell;
   final List<ShellTab> tabs;
-  final Widget Function(int selectedIndex, ValueChanged<int> onSelected) chrome;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final index = navigationShell.currentIndex;
     return Scaffold(
-      body: SafeArea(child: navigationShell),
-      bottomNavigationBar: chrome(
-        index,
-        (selected) => _selectBranch(ref, navigationShell, tabs, selected),
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: DirectionalShellBody(navigationShell: navigationShell),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: FloatingBottomNavigation(
+              destinations: [for (final tab in tabs) tab.destination],
+              selectedIndex: index,
+              onDestinationSelected: (selected) =>
+                  _selectBranch(ref, navigationShell, tabs, selected),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -114,7 +121,9 @@ final class _RailShell extends ConsumerWidget {
                   _selectBranch(ref, navigationShell, tabs, selected),
             ),
             const VerticalDivider(width: 1, thickness: 1),
-            Expanded(child: navigationShell),
+            Expanded(
+              child: DirectionalShellBody(navigationShell: navigationShell),
+            ),
           ],
         ),
       ),
@@ -157,13 +166,23 @@ final class _AppView extends ConsumerWidget {
     // Startup touch: restores persisted DTN envelopes and arms the
     // scheduler before the first frame renders.
     ref.watch(dtnEngineProvider);
+
+    final isDark =
+        preference == ThemePreference.dark ||
+        (preference == ThemePreference.system &&
+            MediaQuery.platformBrightnessOf(context) == Brightness.dark);
+
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: const SystemUiOverlayStyle(
+      value: SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
-        statusBarIconBrightness: Brightness.light,
-        statusBarBrightness: Brightness.dark,
-        systemNavigationBarColor: Colors.black,
-        systemNavigationBarIconBrightness: Brightness.light,
+        statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+        statusBarBrightness: isDark ? Brightness.dark : Brightness.light,
+        systemNavigationBarColor: isDark
+            ? const Color(0xFF000000)
+            : const Color(0xFFFFFFFF),
+        systemNavigationBarIconBrightness: isDark
+            ? Brightness.light
+            : Brightness.dark,
         systemNavigationBarDividerColor: Colors.transparent,
       ),
       child: MaterialApp.router(

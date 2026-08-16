@@ -6,15 +6,16 @@ import 'package:onebit/core/widgets/onebit_qr_code.dart';
 import 'package:onebit/core/widgets/onebit_scaffold.dart';
 import 'package:onebit/features/identity/domain/node_identity.dart';
 import 'package:onebit/features/identity/presentation/qr_identity_controller.dart';
-import 'package:onebit/shared/design_system/colors/onebit_color_schemes.dart';
 import 'package:onebit/shared/design_system/components/onebit_button.dart';
 import 'package:onebit/shared/design_system/components/onebit_error_state.dart';
 import 'package:onebit/shared/design_system/components/onebit_loading_indicator.dart';
+import 'package:onebit/shared/design_system/components/onebit_scroll_clearance.dart';
 import 'package:onebit/shared/design_system/components/onebit_status_chip.dart';
 import 'package:onebit/shared/design_system/components/onebit_technical_card.dart';
 import 'package:onebit/shared/design_system/icons/onebit_icons.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_radius.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
+import 'package:onebit/shared/design_system/themes/onebit_theme_extension.dart';
 import 'package:onebit/shared/design_system/typography/onebit_typography.dart';
 
 /// This node's identity QR card: a signed pattern another node can scan to
@@ -73,7 +74,12 @@ final class _IdentityCard extends ConsumerWidget {
     final colors = context.oneBitColors;
 
     return ListView(
-      padding: const EdgeInsets.all(OneBitSpacing.m),
+      padding: EdgeInsets.fromLTRB(
+        OneBitSpacing.m,
+        OneBitSpacing.m,
+        OneBitSpacing.m,
+        OneBitScrollClearance.bottom(context),
+      ),
       children: [
         Center(
           child: Column(

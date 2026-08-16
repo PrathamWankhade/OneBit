@@ -8,6 +8,7 @@ import 'package:onebit/shared/design_system/components/onebit_card.dart';
 import 'package:onebit/shared/design_system/components/onebit_empty_state.dart';
 import 'package:onebit/shared/design_system/components/onebit_error_state.dart';
 import 'package:onebit/shared/design_system/components/onebit_loading_indicator.dart';
+import 'package:onebit/shared/design_system/components/onebit_scroll_clearance.dart';
 import 'package:onebit/shared/design_system/components/onebit_section_header.dart';
 import 'package:onebit/shared/design_system/components/onebit_status_chip.dart';
 import 'package:onebit/shared/design_system/icons/onebit_icons.dart';
@@ -72,7 +73,12 @@ class _RouteList extends StatelessWidget {
     final alternatives = routes.where((r) => !r.preferred).toList();
 
     return ListView(
-      padding: const EdgeInsets.all(OneBitSpacing.m),
+      padding: EdgeInsets.fromLTRB(
+        OneBitSpacing.m,
+        OneBitSpacing.m,
+        OneBitSpacing.m,
+        OneBitScrollClearance.bottom(context),
+      ),
       children: [
         if (primary.isNotEmpty) ...[
           OneBitSectionHeader(title: l10n.meshRoutePrimary),

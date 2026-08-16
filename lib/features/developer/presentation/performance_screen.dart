@@ -6,6 +6,7 @@ import 'package:onebit/core/widgets/onebit_scaffold.dart';
 import 'package:onebit/features/mesh/presentation/mesh_providers.dart';
 import 'package:onebit/l10n/app_localizations.dart';
 import 'package:onebit/shared/design_system/components/onebit_diagnostic_card.dart';
+import 'package:onebit/shared/design_system/components/onebit_scroll_clearance.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
 
 /// Performance screen: displays available system metrics — FPS estimate,
@@ -21,7 +22,12 @@ class PerformanceScreen extends ConsumerWidget {
     return OneBitScaffold(
       appBar: AppBar(title: Text(l10n.perfTitle)),
       body: ListView(
-        padding: const EdgeInsets.all(OneBitSpacing.m),
+        padding: EdgeInsets.fromLTRB(
+          OneBitSpacing.m,
+          OneBitSpacing.m,
+          OneBitSpacing.m,
+          OneBitScrollClearance.bottom(context),
+        ),
         children: [
           _FpsSection(l10n: l10n),
           const SizedBox(height: OneBitSpacing.m),

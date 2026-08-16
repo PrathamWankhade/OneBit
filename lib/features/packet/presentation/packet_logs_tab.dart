@@ -6,6 +6,8 @@ import 'package:onebit/core/logger/log_record.dart';
 import 'package:onebit/core/logger/log_tags.dart';
 import 'package:onebit/core/logger/logger_providers.dart';
 import 'package:onebit/features/packet/presentation/packet_dev_widgets.dart';
+import 'package:onebit/shared/design_system/components/onebit_scroll_clearance.dart';
+import 'package:onebit/shared/design_system/typography/onebit_typography.dart';
 
 /// Developer logs: the in-memory ring buffer filtered to packet-protocol
 /// records (`LogTags.packet`), refreshed once a second like the other
@@ -47,7 +49,12 @@ final class _PacketLogsTabState extends ConsumerState<PacketLogsTab> {
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.all(12),
+      padding: EdgeInsets.fromLTRB(
+        12,
+        12,
+        12,
+        OneBitScrollClearance.bottom(context),
+      ),
       children: <Widget>[
         PacketDevSection(
           title: 'Packet log lines (log buffer)',
@@ -60,7 +67,9 @@ final class _PacketLogsTabState extends ConsumerState<PacketLogsTab> {
                       SelectableText(
                         record.toLine(),
                         style: const TextStyle(
-                          fontFamily: 'monospace',
+                          fontFamily: OneBitTypography.technicalFamily,
+                          fontFamilyFallback:
+                              OneBitTypography.technicalFallback,
                           fontSize: 10,
                         ),
                       ),

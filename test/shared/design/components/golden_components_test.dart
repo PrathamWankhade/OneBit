@@ -66,7 +66,9 @@ void main() {
           theme: OneBitTheme.dark,
         ),
       );
-      await tester.pumpAndSettle();
+      // The loading button spins indefinitely; pump a fixed duration instead
+      // of pumpAndSettle.
+      await tester.pump(const Duration(seconds: 1));
       await expectLater(
         find.byType(MaterialApp),
         matchesGoldenFile('golden/components/dark/onebit_buttons.png'),
@@ -116,7 +118,9 @@ void main() {
           theme: OneBitTheme.light,
         ),
       );
-      await tester.pumpAndSettle();
+      // The loading button spins indefinitely; pump a fixed duration instead
+      // of pumpAndSettle.
+      await tester.pump(const Duration(seconds: 1));
       await expectLater(
         find.byType(MaterialApp),
         matchesGoldenFile('golden/components/light/onebit_buttons.png'),
@@ -347,7 +351,9 @@ void main() {
           theme: OneBitTheme.dark,
         ),
       );
-      await tester.pumpAndSettle();
+      // The spinner spins indefinitely; pump a fixed duration instead of
+      // pumpAndSettle.
+      await tester.pump(const Duration(seconds: 1));
       await expectLater(
         find.byType(MaterialApp),
         matchesGoldenFile(
@@ -366,7 +372,9 @@ void main() {
           theme: OneBitTheme.light,
         ),
       );
-      await tester.pumpAndSettle();
+      // The spinner spins indefinitely; pump a fixed duration instead of
+      // pumpAndSettle.
+      await tester.pump(const Duration(seconds: 1));
       await expectLater(
         find.byType(MaterialApp),
         matchesGoldenFile(

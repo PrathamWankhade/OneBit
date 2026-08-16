@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:onebit/shared/design_system/colors/onebit_color_schemes.dart';
 import 'package:onebit/shared/design_system/components/onebit_status_chip.dart';
+import 'package:onebit/shared/design_system/themes/onebit_theme_extension.dart';
 
 /// Reusable snackbar emitter.
 ///

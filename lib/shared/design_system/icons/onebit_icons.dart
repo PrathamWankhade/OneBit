@@ -46,7 +46,7 @@ abstract final class OneBitIcons {
   static const IconData retry = Icons.refresh_rounded;
   static const IconData close = Icons.close_rounded;
   static const IconData error = Icons.error_outline_rounded;
-  static const IconData security = Icons.lock_outline_rounded;
+  static const IconData security = Icons.shield_outlined;
   static const IconData search = Icons.search_rounded;
   static const IconData chevronRight = Icons.chevron_right_rounded;
   static const IconData check = Icons.check_rounded;
@@ -94,11 +94,11 @@ abstract final class OneBitIcons {
   static const IconData image = Icons.image_outlined;
   static const IconData video = Icons.videocam_outlined;
   static const IconData audio = Icons.audiotrack_rounded;
-  static const IconData voiceNote = Icons.mic_rounded;
-  static const IconData document = Icons.description_outlined;
+  static const IconData voiceNote = Icons.record_voice_over_rounded;
+  static const IconData document = Icons.article_outlined;
   static const IconData archiveFile = Icons.folder_zip_outlined;
   static const IconData binaryFile = Icons.insert_drive_file_outlined;
-  static const IconData file = Icons.insert_drive_file_outlined;
+  static const IconData file = Icons.description_outlined;
 
   // Identity vocabulary
   static const IconData fingerprint = Icons.fingerprint_rounded;

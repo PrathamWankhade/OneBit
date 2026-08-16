@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:onebit/shared/design_system/components/onebit_card.dart';
 import 'package:onebit/shared/design_system/components/onebit_channel_card.dart';
 import 'package:onebit/shared/design_system/components/onebit_empty_state.dart';
 import 'package:onebit/shared/design_system/components/onebit_error_state.dart';
-import 'package:onebit/shared/design_system/components/onebit_icon_button.dart';
 import 'package:onebit/shared/design_system/components/onebit_list_item.dart';
 import 'package:onebit/shared/design_system/components/onebit_node_card.dart';
 import 'package:onebit/shared/design_system/components/onebit_terminal_states.dart';
-import 'package:onebit/shared/design_system/icons/onebit_icons.dart';
 import 'support/design_support.dart';
 
 void main() {

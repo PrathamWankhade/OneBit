@@ -7,10 +7,8 @@ import 'package:onebit/core/extensions/build_context_extensions.dart';
 import 'package:onebit/core/navigation/app_route_paths.dart';
 import 'package:onebit/core/widgets/onebit_scaffold.dart';
 import 'package:onebit/features/identity/domain/trust_level.dart';
-import 'package:onebit/features/nodes/presentation/node_details_controller.dart';
 import 'package:onebit/features/nodes/presentation/node_details/widgets/node_info_sections.dart';
-import 'package:onebit/features/nodes/presentation/nodes_controller.dart';
-import 'package:onebit/shared/design_system/typography/onebit_typography.dart';
+import 'package:onebit/features/nodes/presentation/node_details_controller.dart';
 import 'package:onebit/shared/design_system/components/onebit_bottom_sheets.dart';
 import 'package:onebit/shared/design_system/components/onebit_button.dart';
 import 'package:onebit/shared/design_system/components/onebit_dialogs.dart';
@@ -19,8 +17,10 @@ import 'package:onebit/shared/design_system/components/onebit_error_state.dart';
 import 'package:onebit/shared/design_system/components/onebit_icon_button.dart';
 import 'package:onebit/shared/design_system/components/onebit_loading_indicator.dart';
 import 'package:onebit/shared/design_system/components/onebit_offline_banner.dart';
+import 'package:onebit/shared/design_system/components/onebit_scroll_clearance.dart';
 import 'package:onebit/shared/design_system/icons/onebit_icons.dart';
 import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
+import 'package:onebit/shared/design_system/typography/onebit_typography.dart';
 
 /// Node details: identity, verification, connection and available actions.
 ///
@@ -94,7 +94,12 @@ class NodeDetailsScreen extends ConsumerWidget {
           ),
         Expanded(
           child: ListView(
-            padding: const EdgeInsets.all(OneBitSpacing.m),
+            padding: EdgeInsets.fromLTRB(
+              OneBitSpacing.m,
+              OneBitSpacing.m,
+              OneBitSpacing.m,
+              OneBitScrollClearance.bottom(context),
+            ),
             children: [
               // ---- Identity ----
               NodeIdentitySection(model: model, l10n: l10n),

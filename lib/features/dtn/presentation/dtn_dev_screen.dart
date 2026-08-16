@@ -6,6 +6,7 @@ import 'package:onebit/features/dtn/domain/dtn_priority.dart';
 import 'package:onebit/features/dtn/dtn_providers.dart';
 import 'package:onebit/features/dtn/presentation/dtn_dev_screen/widgets/dtn_more_panels.dart';
 import 'package:onebit/features/dtn/presentation/dtn_dev_screen/widgets/dtn_panels.dart';
+import 'package:onebit/shared/design_system/components/onebit_scroll_clearance.dart';
 
 /// Developer dashboard for the DTN (store-and-forward) layer.
 ///
@@ -59,7 +60,12 @@ final class _DtnDevScreenState extends ConsumerState<DtnDevScreen> {
     return OneBitScaffold(
       appBar: AppBar(title: const Text('DTN Engine')),
       body: ListView(
-        padding: const EdgeInsets.all(12),
+        padding: EdgeInsets.fromLTRB(
+          12,
+          12,
+          12,
+          OneBitScrollClearance.bottom(context),
+        ),
         children: [
           const ConnectivityPanel(),
           const SizedBox(height: 12),

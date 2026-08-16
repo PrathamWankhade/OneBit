@@ -16,6 +16,8 @@ import 'package:onebit/shared/design_system/components/onebit_loading_indicator.
 import 'package:onebit/shared/design_system/components/onebit_node_card.dart';
 import 'package:onebit/shared/design_system/components/onebit_offline_banner.dart';
 import 'package:onebit/shared/design_system/components/onebit_offline_state.dart';
+import 'package:onebit/shared/design_system/components/onebit_page_header.dart';
+import 'package:onebit/shared/design_system/components/onebit_scroll_clearance.dart';
 import 'package:onebit/shared/design_system/components/onebit_section_header.dart';
 import 'package:onebit/shared/design_system/components/onebit_status_chip.dart';
 import 'package:onebit/shared/design_system/icons/onebit_icons.dart';
@@ -33,20 +35,9 @@ class NodesScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final l10n = context.l10n;
     final view = ref.watch(nodesViewProvider);
 
     return OneBitScaffold(
-      appBar: AppBar(
-        title: Text(l10n.nodesTitle),
-        actions: [
-          OneBitIconButton(
-            icon: OneBitIcons.shellSettings,
-            tooltip: l10n.settingsTitle,
-            onPressed: () => context.push(AppRoutePaths.settings),
-          ),
-        ],
-      ),
       body: _body(context, ref, view),
     );
   }
@@ -95,6 +86,17 @@ class NodesScreen extends ConsumerWidget {
     }
     return Column(
       children: [
+        OneBitPageHeader.status(
+          title: l10n.nodesTitle,
+          status: '${value.trusted.length + value.nearby.length}',
+          actions: [
+            OneBitIconButton(
+              icon: OneBitIcons.shellSettings,
+              tooltip: l10n.settingsTitle,
+              onPressed: () => context.push(AppRoutePaths.settings),
+            ),
+          ],
+        ),
         if (value.offline)
           OneBitOfflineBanner(
             title: l10n.nodesOfflineTitle,
@@ -108,7 +110,12 @@ class NodesScreen extends ConsumerWidget {
                   l10n: l10n,
                 )
               : ListView(
-                  padding: const EdgeInsets.all(OneBitSpacing.m),
+                  padding: EdgeInsets.fromLTRB(
+                    OneBitSpacing.m,
+                    OneBitSpacing.m,
+                    OneBitSpacing.m,
+                    OneBitScrollClearance.bottom(context),
+                  ),
                   children: [
                     if (value.trusted.isNotEmpty) ...[
                       OneBitSectionHeader(
@@ -117,8 +124,9 @@ class NodesScreen extends ConsumerWidget {
                       ),
                       for (final row in value.trusted)
                         Padding(
-                          padding:
-                              const EdgeInsets.only(bottom: OneBitSpacing.s),
+                          padding: const EdgeInsets.only(
+                            bottom: OneBitSpacing.s,
+                          ),
                           child: _TrustedNodeCard(row: row),
                         ),
                       if (value.nearby.isNotEmpty)
@@ -131,8 +139,9 @@ class NodesScreen extends ConsumerWidget {
                       ),
                       for (final row in value.nearby)
                         Padding(
-                          padding:
-                              const EdgeInsets.only(bottom: OneBitSpacing.s),
+                          padding: const EdgeInsets.only(
+                            bottom: OneBitSpacing.s,
+                          ),
                           child: _NearbyNodeCard(row: row),
                         ),
                     ],
