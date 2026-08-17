@@ -30,11 +30,19 @@ import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
 /// Renders exclusively from [nodesViewProvider]; trusted contacts and live
 /// neighbors arrive already merged by the controller. Rows are
 /// [OneBitNodeCard]s with technical identifiers in the Consolas family.
-class NodesScreen extends ConsumerWidget {
+class NodesScreen extends ConsumerStatefulWidget {
   const NodesScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<NodesScreen> createState() => _NodesScreenState();
+}
+
+class _NodesScreenState extends ConsumerState<NodesScreen> {
+  bool _showSearch = false;
+  String _searchQuery = '';
+
+  @override
+  Widget build(BuildContext context) {
     final view = ref.watch(nodesViewProvider);
 
     return OneBitScaffold(
@@ -71,85 +79,134 @@ class NodesScreen extends ConsumerWidget {
     if (!value.loaded) {
       return const OneBitLoadingIndicator(label: '');
     }
+
+    final totalNodes = value.trusted.length + value.nearby.length;
+
+    Widget body;
     if (value.offline && value.isEmpty) {
-      return OneBitOfflineState(
+      body = OneBitOfflineState(
         title: l10n.nodesOfflineTitle,
         message: l10n.nodesOfflineMessage,
       );
-    }
-    if (value.isEmpty) {
-      return OneBitEmptyState(
+    } else if (value.isEmpty) {
+      body = OneBitEmptyState(
         icon: OneBitIcons.shellNodes,
         title: l10n.nodesEmpty,
         message: l10n.nodesEmptyMessage,
       );
+    } else if (context.isTablet) {
+      body = _TabletNodeGrid(
+        trusted: _filteredTrusted(value.trusted),
+        nearby: _filteredNearby(value.nearby),
+        l10n: l10n,
+      );
+    } else {
+      body = ListView(
+        padding: EdgeInsets.fromLTRB(
+          OneBitSpacing.m,
+          OneBitSpacing.m,
+          OneBitSpacing.m,
+          OneBitScrollClearance.bottom(context),
+        ),
+        children: [
+          if (_filteredTrusted(value.trusted).isNotEmpty) ...[
+            OneBitSectionHeader(
+              title: l10n.nodesTrustedSection,
+              subtitle: l10n.nodesTrustedCount(
+                _filteredTrusted(value.trusted).length,
+              ),
+            ),
+            for (final row in _filteredTrusted(value.trusted))
+              Padding(
+                padding: const EdgeInsets.only(
+                  bottom: OneBitSpacing.s,
+                ),
+                child: _TrustedNodeCard(row: row),
+              ),
+            if (_filteredNearby(value.nearby).isNotEmpty)
+              const SizedBox(height: OneBitSpacing.l),
+          ],
+          if (_filteredNearby(value.nearby).isNotEmpty) ...[
+            OneBitSectionHeader(
+              title: l10n.nodesNearbySection,
+              subtitle: l10n.nodesNearbyCount(
+                _filteredNearby(value.nearby).length,
+              ),
+            ),
+            for (final row in _filteredNearby(value.nearby))
+              Padding(
+                padding: const EdgeInsets.only(
+                  bottom: OneBitSpacing.s,
+                ),
+                child: _NearbyNodeCard(row: row),
+              ),
+          ],
+        ],
+      );
     }
+
     return Column(
       children: [
         OneBitPageHeader.status(
           title: l10n.nodesTitle,
-          status: '${value.trusted.length + value.nearby.length}',
+          status: '$totalNodes',
           actions: [
+            OneBitIconButton(
+              icon: _showSearch ? OneBitIcons.close : OneBitIcons.search,
+              tooltip: _showSearch ? l10n.commonDone : l10n.nodesSearch,
+              onPressed: () => setState(() {
+                _showSearch = !_showSearch;
+                if (!_showSearch) _searchQuery = '';
+              }),
+            ),
             OneBitIconButton(
               icon: OneBitIcons.shellSettings,
               tooltip: l10n.settingsTitle,
-              onPressed: () => context.push(AppRoutePaths.settings),
+              onPressed: () => context.go(AppRoutePaths.nodesSettings),
             ),
           ],
         ),
+        if (_showSearch)
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: OneBitSpacing.m,
+            ),
+            child: TextField(
+              autofocus: true,
+              decoration: InputDecoration(
+                hintText: l10n.nodesSearchHint,
+                prefixIcon: const Icon(OneBitIcons.search, size: 20),
+                isDense: true,
+                border: const OutlineInputBorder(),
+              ),
+              onChanged: (value) => setState(() => _searchQuery = value),
+            ),
+          ),
         if (value.offline)
           OneBitOfflineBanner(
             title: l10n.nodesOfflineTitle,
             message: l10n.nodesOfflineMessage,
           ),
-        Expanded(
-          child: context.isTablet
-              ? _TabletNodeGrid(
-                  trusted: value.trusted,
-                  nearby: value.nearby,
-                  l10n: l10n,
-                )
-              : ListView(
-                  padding: EdgeInsets.fromLTRB(
-                    OneBitSpacing.m,
-                    OneBitSpacing.m,
-                    OneBitSpacing.m,
-                    OneBitScrollClearance.bottom(context),
-                  ),
-                  children: [
-                    if (value.trusted.isNotEmpty) ...[
-                      OneBitSectionHeader(
-                        title: l10n.nodesTrustedSection,
-                        subtitle: l10n.nodesTrustedCount(value.trusted.length),
-                      ),
-                      for (final row in value.trusted)
-                        Padding(
-                          padding: const EdgeInsets.only(
-                            bottom: OneBitSpacing.s,
-                          ),
-                          child: _TrustedNodeCard(row: row),
-                        ),
-                      if (value.nearby.isNotEmpty)
-                        const SizedBox(height: OneBitSpacing.l),
-                    ],
-                    if (value.nearby.isNotEmpty) ...[
-                      OneBitSectionHeader(
-                        title: l10n.nodesNearbySection,
-                        subtitle: l10n.nodesNearbyCount(value.nearby.length),
-                      ),
-                      for (final row in value.nearby)
-                        Padding(
-                          padding: const EdgeInsets.only(
-                            bottom: OneBitSpacing.s,
-                          ),
-                          child: _NearbyNodeCard(row: row),
-                        ),
-                    ],
-                  ],
-                ),
-        ),
+        Expanded(child: body),
       ],
     );
+  }
+
+  List<TrustedNodeRow> _filteredTrusted(List<TrustedNodeRow> rows) {
+    if (_searchQuery.isEmpty) return rows;
+    final query = _searchQuery.toLowerCase();
+    return rows.where((row) {
+      return row.name.toLowerCase().contains(query) ||
+          row.nodeId.toLowerCase().contains(query);
+    }).toList();
+  }
+
+  List<NearbyNodeRow> _filteredNearby(List<NearbyNodeRow> rows) {
+    if (_searchQuery.isEmpty) return rows;
+    final query = _searchQuery.toLowerCase();
+    return rows.where((row) {
+      return row.nodeId.toLowerCase().contains(query);
+    }).toList();
   }
 }
 

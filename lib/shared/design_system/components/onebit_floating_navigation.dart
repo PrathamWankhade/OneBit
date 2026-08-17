@@ -12,14 +12,14 @@ import 'package:onebit/shared/design_system/themes/onebit_theme_extension.dart';
 /// smoothly travels behind the active icon. Handles safe-area insets
 /// internally via [MediaQuery.paddingOf].
 ///
-/// On tablets, the bar uses a reasonable max width instead of stretching
-/// across the full display.
+/// The capsule fills the available screen width between horizontal margins,
+/// with each destination receiving an equal share (clamped to 48–72dp per
+/// item) so four balanced destinations occupy the pill without empty space.
 class FloatingBottomNavigation extends StatelessWidget {
   const FloatingBottomNavigation({
     required this.destinations,
     required this.selectedIndex,
     required this.onDestinationSelected,
-    this.maxWidth = 320,
     super.key,
   });
 
@@ -32,16 +32,12 @@ class FloatingBottomNavigation extends StatelessWidget {
   /// Callback when a destination is tapped.
   final ValueChanged<int> onDestinationSelected;
 
-  /// Maximum width of the bar on large screens.
-  final double maxWidth;
-
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.sizeOf(context).width;
     final safeAreaBottom = MediaQuery.paddingOf(context).bottom;
     const horizontalMargin = OneBitSpacing.lg;
     final availableWidth = screenWidth - (horizontalMargin * 2);
-    final effectiveWidth = availableWidth < maxWidth ? availableWidth : maxWidth;
 
     return Padding(
       padding: EdgeInsets.only(
@@ -49,13 +45,11 @@ class FloatingBottomNavigation extends StatelessWidget {
         right: horizontalMargin,
         bottom: OneBitSpacing.m + safeAreaBottom,
       ),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: effectiveWidth),
-        child: _FloatingBar(
-          destinations: destinations,
-          selectedIndex: selectedIndex,
-          onDestinationSelected: onDestinationSelected,
-        ),
+      child: _FloatingBar(
+        destinations: destinations,
+        selectedIndex: selectedIndex,
+        onDestinationSelected: onDestinationSelected,
+        availableWidth: availableWidth,
       ),
     );
   }
@@ -66,11 +60,13 @@ class _FloatingBar extends StatefulWidget {
     required this.destinations,
     required this.selectedIndex,
     required this.onDestinationSelected,
+    required this.availableWidth,
   });
 
   final List<OneBitNavigationDestination> destinations;
   final int selectedIndex;
   final ValueChanged<int> onDestinationSelected;
+  final double availableWidth;
 
   @override
   State<_FloatingBar> createState() => _FloatingBarState();
@@ -132,7 +128,9 @@ class _FloatingBarState extends State<_FloatingBar>
     if (ctx == null) return;
     final box = ctx.findRenderObject() as RenderBox?;
     if (box == null) return;
-    final pos = box.localToGlobal(Offset.zero, ancestor: null);
+    final stackBox = context.findRenderObject() as RenderBox?;
+    if (stackBox == null) return;
+    final pos = box.localToGlobal(Offset.zero, ancestor: stackBox);
     final rect = Rect.fromLTWH(pos.dx, pos.dy, box.size.width, box.size.height);
     _toRect = rect;
     _currentRect = rect;
@@ -151,52 +149,54 @@ class _FloatingBarState extends State<_FloatingBar>
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final dim = _FloatingNavDimensions.calculate(
       itemCount: widget.destinations.length,
+      availableWidth: widget.availableWidth,
     );
 
-    return Container(
+    return SizedBox(
+      width: widget.availableWidth,
       height: dim.capsuleHeight,
-      decoration: _barDecoration(colors, dim),
-      child: Stack(
-        children: [
-          // Animated selection pill
-          if (_currentRect != null && !reduceMotion)
-            Positioned(
-              left: _currentRect!.left,
-              top: _currentRect!.top,
-              width: _currentRect!.width,
-              height: _currentRect!.height,
-              child: _SelectionPill(colors: colors, dim: dim),
+      child: DecoratedBox(
+        decoration: _barDecoration(colors, dim),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            // Animated selection pill
+            if (_currentRect != null && !reduceMotion)
+              Positioned(
+                left: _currentRect!.left,
+                top: _currentRect!.top,
+                width: _currentRect!.width,
+                height: _currentRect!.height,
+                child: _SelectionPill(dim: dim),
+              ),
+            // Static pill for initial frame / reduced motion
+            if (_currentRect != null && reduceMotion)
+              Positioned(
+                left: _toRect?.left ?? _currentRect!.left,
+                top: _toRect?.top ?? _currentRect!.top,
+                width: _toRect?.width ?? _currentRect!.width,
+                height: _toRect?.height ?? _currentRect!.height,
+                child: _SelectionPill(dim: dim),
+              ),
+            // Nav items
+            Padding(
+              padding: EdgeInsets.all(dim.itemPadding),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (int i = 0; i < widget.destinations.length; i++)
+                    _FloatingNavItem(
+                      key: _itemKeys[i],
+                      destination: widget.destinations[i],
+                      isSelected: i == widget.selectedIndex,
+                      onTap: () => widget.onDestinationSelected(i),
+                      dim: dim,
+                    ),
+                ],
+              ),
             ),
-          // Static pill for initial frame / reduced motion
-          if (_currentRect != null && reduceMotion)
-            Positioned(
-              left: _toRect?.left ?? _currentRect!.left,
-              top: _toRect?.top ?? _currentRect!.top,
-              width: _toRect?.width ?? _currentRect!.width,
-              height: _toRect?.height ?? _currentRect!.height,
-              child: _SelectionPill(colors: colors, dim: dim),
-            ),
-          // Nav items
-          Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: dim.itemPadding,
-              vertical: dim.itemPadding,
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (int i = 0; i < widget.destinations.length; i++)
-                  _FloatingNavItem(
-                    key: _itemKeys[i],
-                    destination: widget.destinations[i],
-                    isSelected: i == widget.selectedIndex,
-                    onTap: () => widget.onDestinationSelected(i),
-                    dim: dim,
-                  ),
-              ],
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -215,19 +215,20 @@ class _FloatingBarState extends State<_FloatingBar>
 }
 
 class _SelectionPill extends StatelessWidget {
-  const _SelectionPill({required this.colors, required this.dim});
+  const _SelectionPill({required this.dim});
 
-  final OneBitThemeExtension colors;
   final _FloatingNavDimensions dim;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.all(dim.pillPadding),
-      child: Container(
-        decoration: BoxDecoration(
-          color: colors.selectedBackground.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(OneBitRadius.xxl),
+    final primary = Theme.of(context).colorScheme.primary;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: primary.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(OneBitRadius.xxl),
+        border: Border.all(
+          color: primary.withValues(alpha: 0.18),
+          width: 1.5,
         ),
       ),
     );
@@ -302,26 +303,23 @@ class _FloatingNavDimensions {
     required this.itemHeight,
     required this.itemPadding,
     required this.iconSize,
-    required this.pillPadding,
   });
 
-  /// Layout from item count.
+  /// Layout from item count and available width.
   factory _FloatingNavDimensions.calculate({
     required int itemCount,
+    required double availableWidth,
   }) {
     const capsuleHeight = 60.0;
     const capsuleRadius = 28.0;
     const iconSize = 24.0;
-    const pillPadding = 8.0;
-    const itemPadding = 8.0;
+    const itemPadding = 6.0;
     const minItemWidth = 48.0;
-    const maxCapsuleWidth = 320.0;
+    const maxItemWidth = 72.0;
 
-    final maxItemWidth = maxCapsuleWidth / itemCount;
-    final itemWidth = (minItemWidth > maxItemWidth
-            ? minItemWidth
-            : (maxItemWidth > 72 ? 72 : maxItemWidth))
-        .toDouble();
+    final innerWidth = availableWidth - (itemPadding * 2);
+    final rawItemWidth = innerWidth / itemCount;
+    final itemWidth = rawItemWidth.clamp(minItemWidth, maxItemWidth);
 
     return _FloatingNavDimensions(
       capsuleHeight: capsuleHeight,
@@ -330,7 +328,6 @@ class _FloatingNavDimensions {
       itemHeight: capsuleHeight - (itemPadding * 2),
       itemPadding: itemPadding,
       iconSize: iconSize,
-      pillPadding: pillPadding,
     );
   }
 
@@ -340,5 +337,4 @@ class _FloatingNavDimensions {
   final double itemHeight;
   final double itemPadding;
   final double iconSize;
-  final double pillPadding;
 }

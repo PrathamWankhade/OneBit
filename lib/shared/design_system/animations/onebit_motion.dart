@@ -30,8 +30,8 @@ abstract final class OneBitMotion {
   /// 150ms — quick responses (tap feedback, toggle, icon swap).
   static const Duration fast = Duration(milliseconds: 150);
 
-  /// 200ms — tab switching horizontal slide.
-  static const Duration pageSlide = Duration(milliseconds: 200);
+  /// 300ms — tab switching horizontal slide.
+  static const Duration pageSlide = Duration(milliseconds: 300);
 
   /// 240ms — settings subpage slide-from-right.
   static const Duration settingsSlide = Duration(milliseconds: 240);

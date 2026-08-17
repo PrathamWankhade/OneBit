@@ -628,6 +628,12 @@ class AppLocalizationsHi extends AppLocalizations {
   String get nodesLoadError => 'नोड लोड नहीं हो सके';
 
   @override
+  String get nodesSearch => 'नोड खोजें';
+
+  @override
+  String get nodesSearchHint => 'नाम या आईडी से खोजें';
+
+  @override
   String get nearbyLoadError => 'आस-पास के डिवाइस लोड नहीं हो सके';
 
   @override
@@ -2211,4 +2217,159 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get settingsTerminalPreviewSample => 'Hello, World!';
+
+  @override
+  String get channelsSettingsTitle => 'चैनल सेटिंग्स';
+
+  @override
+  String get channelsSettingsMessageBehavior => 'संदेश व्यवहार';
+
+  @override
+  String get channelsSettingsNotifications => 'चैनल सूचनाएँ';
+
+  @override
+  String get channelsSettingsNotificationsDescription =>
+      'चैनल में नए संदेशों के बारे में सूचित कैसे किया जाए।';
+
+  @override
+  String get channelsSettingsArchiveBehavior => 'आर्काइव व्यवहार';
+
+  @override
+  String get channelsSettingsArchiveBehaviorDescription =>
+      'आर्काइव किए गए चैनलों को कैसे संग्रहीत और प्रदर्शित किया जाए।';
+
+  @override
+  String get channelsSettingsDisplay => 'प्रदर्शन';
+
+  @override
+  String get channelsSettingsSearchBehavior => 'खोज व्यवहार';
+
+  @override
+  String get channelsSettingsSearchBehaviorDescription =>
+      'चैनलों में संदेश खोज कैसे काम करे।';
+
+  @override
+  String get channelsSettingsRetention => 'संदेश प्रतिधारण';
+
+  @override
+  String get channelsSettingsRetentionDescription =>
+      'स्वचालित सफाई से पहले संदेश कितने समय तक रखे जाएँ।';
+
+  @override
+  String get nodesSettingsTitle => 'नोड सेटिंग्स';
+
+  @override
+  String get nodesSettingsDiscovery => 'खोज';
+
+  @override
+  String get nodesSettingsDiscoveryBehavior => 'खोज व्यवहार';
+
+  @override
+  String get nodesSettingsDiscoveryBehaviorDescription =>
+      'आस-पास के नोड कैसे खोजे और सूचीबद्ध किए जाएँ।';
+
+  @override
+  String get nodesSettingsRefreshBehavior => 'रीफ्रेश व्यवहार';
+
+  @override
+  String get nodesSettingsRefreshBehaviorDescription =>
+      'नोड सूची कितनी बार रीफ्रेश और रीकनेक्ट हो।';
+
+  @override
+  String get nodesSettingsDisplay => 'प्रदर्शन';
+
+  @override
+  String get nodesSettingsVisibility => 'नोड दृश्यता';
+
+  @override
+  String get nodesSettingsVisibilityDescription =>
+      'प्रत्येक नोड के लिए कौन सी जानकारी दिखाई जाए।';
+
+  @override
+  String get nodesSettingsNaming => 'नोड नामकरण';
+
+  @override
+  String get nodesSettingsNamingDescription =>
+      'नोड नाम और पहचानकर्ता कैसे प्रदर्शित किए जाएँ।';
+
+  @override
+  String get nearbySettingsTitle => 'आस-पास सेटिंग्स';
+
+  @override
+  String get nearbySettingsDiscovery => 'खोज';
+
+  @override
+  String get nearbySettingsDiscoveryBehavior => 'खोज व्यवहार';
+
+  @override
+  String get nearbySettingsDiscoveryBehaviorDescription =>
+      'ब्लूटूथ आस-पास के डिवाइस कैसे खोजता है।';
+
+  @override
+  String get nearbySettingsScanBehavior => 'स्कैन व्यवहार';
+
+  @override
+  String get nearbySettingsScanBehaviorDescription =>
+      'आस-पास के डिवाइस के लिए स्कैन अवधि और आवृत्ति नियंत्रित करें।';
+
+  @override
+  String get nearbySettingsVisibility => 'दृश्यता';
+
+  @override
+  String get nearbySettingsNearbyVisibility => 'आस-पास दृश्यता';
+
+  @override
+  String get nearbySettingsNearbyVisibilityDescription =>
+      'नियंत्रित करें कि आपका डिवाइस अन्य आस-पास के नोड्स को कौन सी जानकारी घोषित करता है।';
+
+  @override
+  String get nearbySettingsAnnouncementBehavior => 'घोषणा व्यवहार';
+
+  @override
+  String get nearbySettingsAnnouncementBehaviorDescription =>
+      'कॉन्फ़िगर करें कि आपका डिवाइस अन्य आस-पास के नोड्स को कैसे दिखता है।';
+
+  @override
+  String get meshSettingsTitle => 'मेश सेटिंग्स';
+
+  @override
+  String get meshSettingsNetwork => 'नेटवर्क';
+
+  @override
+  String get meshSettingsDiscovery => 'मेश खोज';
+
+  @override
+  String get meshSettingsDiscoveryDescription =>
+      'मेश अन्य नोड्स को कैसे खोजता और कनेक्ट करता है।';
+
+  @override
+  String get meshSettingsRelayBehavior => 'रिले व्यवहार';
+
+  @override
+  String get meshSettingsRelayBehaviorDescription =>
+      'मेश नेटवर्क में संदेश कैसे रिले किए जाएँ।';
+
+  @override
+  String get meshSettingsRouting => 'रूटिंग';
+
+  @override
+  String get meshSettingsRoutingDescription =>
+      'मेश अन्य नोड्स तक पहुँचने के लिए मार्ग कैसे निर्धारित करता है।';
+
+  @override
+  String get meshSettingsEngine => 'इंजन';
+
+  @override
+  String get meshSettingsEngineBehavior => 'इंजन व्यवहार';
+
+  @override
+  String get meshSettingsEngineBehaviorDescription =>
+      'मेश इंजन स्टार्ट, स्टॉप और रिकवरी व्यवहार नियंत्रित करें।';
+
+  @override
+  String get meshSettingsDiagnostics => 'डायग्नोस्टिक्स';
+
+  @override
+  String get meshSettingsDiagnosticsDescription =>
+      'नेटवर्क डायग्नोस्टिक्स और मेश स्वास्थ्य जानकारी देखें।';
 }

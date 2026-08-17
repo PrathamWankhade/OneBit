@@ -62,7 +62,7 @@ class _ChannelsScreenState extends ConsumerState<ChannelsScreen> {
       OneBitIconButton(
         icon: OneBitIcons.shellSettings,
         tooltip: l10n.settingsTitle,
-        onPressed: () => context.push(AppRoutePaths.settings),
+        onPressed: () => context.go(AppRoutePaths.channelsSettings),
       ),
     ];
 
@@ -100,23 +100,47 @@ class _ChannelsScreenState extends ConsumerState<ChannelsScreen> {
         onRetry: () => ref.read(channelsViewProvider.notifier).retry(),
       );
     }
+
+    Widget body;
     if (value.offline && value.isEmpty) {
-      return OneBitOfflineState(
+      body = OneBitOfflineState(
         title: l10n.channelsOfflineTitle,
         message: l10n.channelsOfflineMessage,
       );
-    }
-    if (value.isEmpty) {
-      return OneBitEmptyState(
+    } else if (value.isEmpty) {
+      body = OneBitEmptyState(
         icon: OneBitIcons.shellChannels,
         title: l10n.channelsEmpty,
         message: l10n.channelsEmptyMessage,
       );
+    } else {
+      body = context.isTablet
+          ? _TabletChannelList(
+              summaries: value.summaries,
+              selectedId: _selectedChannelId,
+              onSelect: (id) => setState(() => _selectedChannelId = id),
+            )
+          : ListView.separated(
+              padding: EdgeInsets.fromLTRB(
+                OneBitSpacing.m,
+                OneBitSpacing.m,
+                OneBitSpacing.m,
+                OneBitScrollClearance.bottom(context),
+              ),
+              itemCount: value.summaries.length,
+              separatorBuilder: (_, _) =>
+                  const SizedBox(height: OneBitSpacing.s),
+              itemBuilder: (context, index) => _ChannelRow(
+                summary: value.summaries[index],
+                archivedView: false,
+              ),
+            );
     }
+
     return Column(
       children: [
         OneBitPageHeader.status(
-          title: _showArchived ? l10n.channelsArchivedTitle : l10n.channelsTitle,
+          title: l10n.channelsTitle,
           status: '${value.summaries.length}',
           actions: headerActions,
         ),
@@ -125,29 +149,7 @@ class _ChannelsScreenState extends ConsumerState<ChannelsScreen> {
             title: l10n.channelsOfflineTitle,
             message: l10n.channelsOfflineMessage,
           ),
-        Expanded(
-          child: context.isTablet
-              ? _TabletChannelList(
-                  summaries: value.summaries,
-                  selectedId: _selectedChannelId,
-                  onSelect: (id) => setState(() => _selectedChannelId = id),
-                )
-              : ListView.separated(
-                  padding: EdgeInsets.fromLTRB(
-                    OneBitSpacing.m,
-                    OneBitSpacing.m,
-                    OneBitSpacing.m,
-                    OneBitScrollClearance.bottom(context),
-                  ),
-                  itemCount: value.summaries.length,
-                  separatorBuilder: (_, _) =>
-                      const SizedBox(height: OneBitSpacing.s),
-                  itemBuilder: (context, index) => _ChannelRow(
-                    summary: value.summaries[index],
-                    archivedView: false,
-                  ),
-                ),
-        ),
+        Expanded(child: body),
       ],
     );
   }
@@ -182,44 +184,37 @@ class _ChannelsScreenState extends ConsumerState<ChannelsScreen> {
       );
     }
     final summaries = result.value!.where((s) => s.archived).toList();
+
+    Widget body;
     if (summaries.isEmpty) {
-      return Column(
-        children: [
-          OneBitPageHeader.minimal(
-            title: l10n.channelsArchivedTitle,
-            actions: headerActions,
-          ),
-          Expanded(
-            child: OneBitEmptyState(
-              icon: OneBitIcons.archive,
-              title: l10n.channelsArchivedEmpty,
-              message: l10n.channelsArchivedEmptyMessage,
-            ),
-          ),
-        ],
+      body = OneBitEmptyState(
+        icon: OneBitIcons.archive,
+        title: l10n.channelsArchivedEmpty,
+        message: l10n.channelsArchivedEmptyMessage,
+      );
+    } else {
+      body = ListView.separated(
+        padding: EdgeInsets.fromLTRB(
+          OneBitSpacing.m,
+          OneBitSpacing.m,
+          OneBitSpacing.m,
+          OneBitScrollClearance.bottom(context),
+        ),
+        itemCount: summaries.length,
+        separatorBuilder: (_, _) =>
+            const SizedBox(height: OneBitSpacing.s),
+        itemBuilder: (context, index) =>
+            _ChannelRow(summary: summaries[index], archivedView: true),
       );
     }
+
     return Column(
       children: [
         OneBitPageHeader.minimal(
           title: l10n.channelsArchivedTitle,
           actions: headerActions,
         ),
-        Expanded(
-          child: ListView.separated(
-            padding: EdgeInsets.fromLTRB(
-              OneBitSpacing.m,
-              OneBitSpacing.m,
-              OneBitSpacing.m,
-              OneBitScrollClearance.bottom(context),
-            ),
-            itemCount: summaries.length,
-            separatorBuilder: (_, _) =>
-                const SizedBox(height: OneBitSpacing.s),
-            itemBuilder: (context, index) =>
-                _ChannelRow(summary: summaries[index], archivedView: true),
-          ),
-        ),
+        Expanded(child: body),
       ],
     );
   }

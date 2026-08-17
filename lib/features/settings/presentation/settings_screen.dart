@@ -42,7 +42,7 @@ class SettingsScreen extends ConsumerWidget {
       appBar: AppBar(
         title: Text(l10n.settingsTitle),
         leading: OneBitIconButton(
-          icon: Icons.arrow_back_rounded,
+          icon: OneBitIcons.arrowBack,
           tooltip: l10n.commonGoBack,
           onPressed: () => context.pop(),
         ),

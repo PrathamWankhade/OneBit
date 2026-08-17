@@ -79,28 +79,45 @@ class NearbyScreen extends ConsumerWidget {
       );
     }
 
-    switch (value.radio) {
-      case BluetoothRadioState.off:
-        return OneBitOfflineState(
-          title: l10n.nearbyRadioOffTitle,
-          message: l10n.nearbyRadioOffMessage,
-        );
-      case BluetoothRadioState.unavailable:
-        return OneBitOfflineState(
-          title: l10n.nearbyRadioUnavailableTitle,
-          message: l10n.nearbyRadioUnavailableMessage,
-        );
-      case BluetoothRadioState.unknown:
-      case BluetoothRadioState.initializing:
-      case BluetoothRadioState.ready:
-        break;
-    }
+    final headerActions = [
+      OneBitIconButton(
+        icon: OneBitIcons.radar,
+        tooltip: l10n.nearbyScanToggle,
+        onPressed: scanning
+            ? () => unawaited(
+                ref.read(nearbyViewProvider.notifier).stopScan(),
+              )
+            : () => unawaited(
+                ref.read(nearbyViewProvider.notifier).startScan(),
+              ),
+      ),
+      OneBitIconButton(
+        icon: OneBitIcons.shellSettings,
+        tooltip: l10n.settingsTitle,
+        onPressed: () => context.go(AppRoutePaths.nearbySettings),
+      ),
+    ];
 
-    if (!value.permission.isGranted) {
-      final permanentlyDenied =
-          value.permission == BluetoothPermissionState.denied ||
-          value.permission == BluetoothPermissionState.deniedForever;
-      return OneBitPermissionState(
+    Widget body;
+    final radioOff =
+        value.radio == BluetoothRadioState.off ||
+        value.radio == BluetoothRadioState.unavailable;
+    final permissionDenied = !value.permission.isGranted;
+    final permanentlyDenied =
+        value.permission == BluetoothPermissionState.denied ||
+        value.permission == BluetoothPermissionState.deniedForever;
+
+    if (radioOff) {
+      body = OneBitOfflineState(
+        title: value.radio == BluetoothRadioState.off
+            ? l10n.nearbyRadioOffTitle
+            : l10n.nearbyRadioUnavailableTitle,
+        message: value.radio == BluetoothRadioState.off
+            ? l10n.nearbyRadioOffMessage
+            : l10n.nearbyRadioUnavailableMessage,
+      );
+    } else if (permissionDenied) {
+      body = OneBitPermissionState(
         title: l10n.nearbyPermissionTitle,
         message: permanentlyDenied
             ? l10n.nearbyPermissionDeniedMessage
@@ -114,17 +131,29 @@ class NearbyScreen extends ConsumerWidget {
                 ref.read(nearbyViewProvider.notifier).requestPermission(),
               ),
       );
-    }
-
-    if (value.isEmpty) {
-      return OneBitEmptyState(
+    } else if (value.isEmpty) {
+      body = OneBitEmptyState(
         icon: OneBitIcons.shellNearby,
         title: l10n.nearbyEmpty,
         message: l10n.nearbyEmptyMessage,
         secondaryInfo: value.scanning ? const _ScanningPulse() : null,
       );
+    } else {
+      body = _peerList(context, ref, value, scanning);
     }
-    return _peerList(context, ref, value, scanning);
+
+    final colors = context.oneBitColors;
+    return Column(
+      children: [
+        OneBitPageHeader.status(
+          title: l10n.nearbyTitle,
+          status: value.scanning ? l10n.nearbyScanning : '${value.peers.length}',
+          statusColor: value.scanning ? colors.warning : colors.info,
+          actions: headerActions,
+        ),
+        Expanded(child: body),
+      ],
+    );
   }
 
   Widget _peerList(
@@ -134,33 +163,9 @@ class NearbyScreen extends ConsumerWidget {
     bool scanning,
   ) {
     final l10n = context.l10n;
-    final colors = context.oneBitColors;
     final links = ref.watch(bluetoothLinkControllerProvider);
     return Column(
       children: [
-        OneBitPageHeader.status(
-          title: l10n.nearbyTitle,
-          status: view.scanning ? l10n.nearbyScanning : '${view.peers.length}',
-          statusColor: view.scanning ? colors.warning : colors.info,
-          actions: [
-            OneBitIconButton(
-              icon: OneBitIcons.radar,
-              tooltip: l10n.nearbyScanToggle,
-              onPressed: scanning
-                  ? () => unawaited(
-                      ref.read(nearbyViewProvider.notifier).stopScan(),
-                    )
-                  : () => unawaited(
-                      ref.read(nearbyViewProvider.notifier).startScan(),
-                    ),
-            ),
-            OneBitIconButton(
-              icon: OneBitIcons.shellSettings,
-              tooltip: l10n.settingsTitle,
-              onPressed: () => context.push(AppRoutePaths.settings),
-            ),
-          ],
-        ),
         Padding(
           padding: const EdgeInsets.fromLTRB(
             OneBitSpacing.m,

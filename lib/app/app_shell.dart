@@ -172,14 +172,14 @@ final class _AppView extends ConsumerWidget {
         (preference == ThemePreference.system &&
             MediaQuery.platformBrightnessOf(context) == Brightness.dark);
 
+    final scheme = Theme.of(context).colorScheme;
+
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
         statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
         statusBarBrightness: isDark ? Brightness.dark : Brightness.light,
-        systemNavigationBarColor: isDark
-            ? const Color(0xFF000000)
-            : const Color(0xFFFFFFFF),
+        systemNavigationBarColor: scheme.surface,
         systemNavigationBarIconBrightness: isDark
             ? Brightness.light
             : Brightness.dark,

@@ -101,6 +101,20 @@ abstract final class AppRoutePaths {
   /// Routing table inspector.
   static const String routeInspector = '/mesh/routes';
 
+  // Page-specific settings -----------------------------------------------------
+
+  /// Channels-specific settings.
+  static const String channelsSettings = '/channels/settings';
+
+  /// Nodes-specific settings.
+  static const String nodesSettings = '/nodes/settings';
+
+  /// Nearby-specific settings.
+  static const String nearbySettings = '/nearby/settings';
+
+  /// Mesh-specific settings.
+  static const String meshSettings = '/mesh/settings';
+
   // Settings area -----------------------------------------------------------------
 
   static const String appearance = '/settings/appearance';

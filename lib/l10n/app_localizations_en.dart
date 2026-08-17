@@ -628,6 +628,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get nodesLoadError => 'Nodes could not be loaded';
 
   @override
+  String get nodesSearch => 'Search nodes';
+
+  @override
+  String get nodesSearchHint => 'Search by name or ID';
+
+  @override
   String get nearbyLoadError => 'Nearby devices could not be loaded';
 
   @override
@@ -2215,4 +2221,159 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsTerminalPreviewSample => 'Hello, World!';
+
+  @override
+  String get channelsSettingsTitle => 'Channels settings';
+
+  @override
+  String get channelsSettingsMessageBehavior => 'Message behavior';
+
+  @override
+  String get channelsSettingsNotifications => 'Channel notifications';
+
+  @override
+  String get channelsSettingsNotificationsDescription =>
+      'Configure how you are notified about new messages in channels.';
+
+  @override
+  String get channelsSettingsArchiveBehavior => 'Archive behavior';
+
+  @override
+  String get channelsSettingsArchiveBehaviorDescription =>
+      'Control how archived channels are stored and displayed.';
+
+  @override
+  String get channelsSettingsDisplay => 'Display';
+
+  @override
+  String get channelsSettingsSearchBehavior => 'Search behavior';
+
+  @override
+  String get channelsSettingsSearchBehaviorDescription =>
+      'Configure how message search works within channels.';
+
+  @override
+  String get channelsSettingsRetention => 'Message retention';
+
+  @override
+  String get channelsSettingsRetentionDescription =>
+      'Set how long messages are kept before automatic cleanup.';
+
+  @override
+  String get nodesSettingsTitle => 'Nodes settings';
+
+  @override
+  String get nodesSettingsDiscovery => 'Discovery';
+
+  @override
+  String get nodesSettingsDiscoveryBehavior => 'Discovery behavior';
+
+  @override
+  String get nodesSettingsDiscoveryBehaviorDescription =>
+      'Configure how nearby nodes are discovered and listed.';
+
+  @override
+  String get nodesSettingsRefreshBehavior => 'Refresh behavior';
+
+  @override
+  String get nodesSettingsRefreshBehaviorDescription =>
+      'Control how often the node list refreshes and reconnects.';
+
+  @override
+  String get nodesSettingsDisplay => 'Display';
+
+  @override
+  String get nodesSettingsVisibility => 'Node visibility';
+
+  @override
+  String get nodesSettingsVisibilityDescription =>
+      'Control what information is shown for each node.';
+
+  @override
+  String get nodesSettingsNaming => 'Node naming';
+
+  @override
+  String get nodesSettingsNamingDescription =>
+      'Configure how node names and identifiers are displayed.';
+
+  @override
+  String get nearbySettingsTitle => 'Nearby settings';
+
+  @override
+  String get nearbySettingsDiscovery => 'Discovery';
+
+  @override
+  String get nearbySettingsDiscoveryBehavior => 'Discovery behavior';
+
+  @override
+  String get nearbySettingsDiscoveryBehaviorDescription =>
+      'Configure how Bluetooth discovers nearby devices.';
+
+  @override
+  String get nearbySettingsScanBehavior => 'Scan behavior';
+
+  @override
+  String get nearbySettingsScanBehaviorDescription =>
+      'Control scan duration and frequency for nearby devices.';
+
+  @override
+  String get nearbySettingsVisibility => 'Visibility';
+
+  @override
+  String get nearbySettingsNearbyVisibility => 'Nearby visibility';
+
+  @override
+  String get nearbySettingsNearbyVisibilityDescription =>
+      'Control what information your device announces to nearby nodes.';
+
+  @override
+  String get nearbySettingsAnnouncementBehavior => 'Announcement behavior';
+
+  @override
+  String get nearbySettingsAnnouncementBehaviorDescription =>
+      'Configure how your device appears to other nearby nodes.';
+
+  @override
+  String get meshSettingsTitle => 'Mesh settings';
+
+  @override
+  String get meshSettingsNetwork => 'Network';
+
+  @override
+  String get meshSettingsDiscovery => 'Mesh discovery';
+
+  @override
+  String get meshSettingsDiscoveryDescription =>
+      'Configure how the mesh discovers and connects to other nodes.';
+
+  @override
+  String get meshSettingsRelayBehavior => 'Relay behavior';
+
+  @override
+  String get meshSettingsRelayBehaviorDescription =>
+      'Control how messages are relayed across the mesh network.';
+
+  @override
+  String get meshSettingsRouting => 'Routing';
+
+  @override
+  String get meshSettingsRoutingDescription =>
+      'Configure how the mesh determines routes to other nodes.';
+
+  @override
+  String get meshSettingsEngine => 'Engine';
+
+  @override
+  String get meshSettingsEngineBehavior => 'Engine behavior';
+
+  @override
+  String get meshSettingsEngineBehaviorDescription =>
+      'Control mesh engine start, stop, and recovery behavior.';
+
+  @override
+  String get meshSettingsDiagnostics => 'Diagnostics';
+
+  @override
+  String get meshSettingsDiagnosticsDescription =>
+      'View network diagnostics and mesh health information.';
 }

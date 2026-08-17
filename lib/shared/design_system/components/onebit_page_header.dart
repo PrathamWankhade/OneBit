@@ -100,53 +100,50 @@ class OneBitPageHeader extends StatelessWidget {
         OneBitSpacing.sm,
         OneBitSpacing.xs,
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Title + subtitle + status
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Title
+              Text(
+                title,
+                style: OneBitTypography.oneBitPageTitle(
+                  color: colors.textPrimary,
+                ),
+              ),
+              // Right actions
+              const Spacer(),
+              if (actions.isNotEmpty) ...actions,
+            ],
+          ),
+          if (subtitle != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              subtitle!,
+              style: OneBitTypography.oneBitCaption(
+                color: colors.textMuted,
+              ),
+            ),
+          ],
+          if (status != null) ...[
+            const SizedBox(height: OneBitSpacing.xxs),
+            Row(
               children: [
+                _StatusDot(
+                  color: statusColor ?? colors.info,
+                ),
+                const SizedBox(width: OneBitSpacing.xs),
                 Text(
-                  title,
-                  style: OneBitTypography.oneBitPageTitle(
-                    color: colors.textPrimary,
+                  status!,
+                  style: OneBitTypography.oneBitCaption(
+                    color: colors.textMuted,
                   ),
                 ),
-                if (subtitle != null) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle!,
-                    style: OneBitTypography.oneBitCaption(
-                      color: colors.textMuted,
-                    ),
-                  ),
-                ],
-                if (status != null) ...[
-                  const SizedBox(height: OneBitSpacing.xxs),
-                  Row(
-                    children: [
-                      _StatusDot(
-                        color: statusColor ?? colors.info,
-                      ),
-                      const SizedBox(width: OneBitSpacing.xs),
-                      Text(
-                        status!,
-                        style: OneBitTypography.oneBitCaption(
-                          color: colors.textMuted,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
               ],
             ),
-          ),
-          // Right actions
-          if (actions.isNotEmpty) ...[
-            const SizedBox(width: OneBitSpacing.s),
-            ...actions,
           ],
         ],
       ),

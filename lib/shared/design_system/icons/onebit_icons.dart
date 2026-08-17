@@ -43,6 +43,7 @@ abstract final class OneBitIcons {
   static const IconData signal = Icons.signal_cellular_alt_rounded;
 
   // Common actions
+  static const IconData arrowBack = Icons.arrow_back_outlined;
   static const IconData retry = Icons.refresh_rounded;
   static const IconData close = Icons.close_rounded;
   static const IconData error = Icons.error_outline_rounded;

@@ -85,7 +85,7 @@ class _MeshBody extends ConsumerWidget {
                   OneBitIconButton(
                     icon: OneBitIcons.shellSettings,
                     tooltip: context.l10n.settingsTitle,
-                    onPressed: () => context.push(AppRoutePaths.settings),
+                    onPressed: () => context.go(AppRoutePaths.meshSettings),
                   ),
                 ],
               ),
@@ -204,7 +204,7 @@ class _TabletMeshLayout extends StatelessWidget {
               OneBitIconButton(
                 icon: OneBitIcons.shellSettings,
                 tooltip: context.l10n.settingsTitle,
-                onPressed: () => context.push(AppRoutePaths.settings),
+                onPressed: () => context.go(AppRoutePaths.meshSettings),
               ),
             ],
           ),

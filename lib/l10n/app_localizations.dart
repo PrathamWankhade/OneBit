@@ -1274,6 +1274,18 @@ abstract class AppLocalizations {
   /// **'Nodes could not be loaded'**
   String get nodesLoadError;
 
+  /// No description provided for @nodesSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Search nodes'**
+  String get nodesSearch;
+
+  /// No description provided for @nodesSearchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Search by name or ID'**
+  String get nodesSearchHint;
+
   /// No description provided for @nearbyLoadError.
   ///
   /// In en, this message translates to:
@@ -4273,6 +4285,282 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Hello, World!'**
   String get settingsTerminalPreviewSample;
+
+  /// No description provided for @channelsSettingsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Channels settings'**
+  String get channelsSettingsTitle;
+
+  /// No description provided for @channelsSettingsMessageBehavior.
+  ///
+  /// In en, this message translates to:
+  /// **'Message behavior'**
+  String get channelsSettingsMessageBehavior;
+
+  /// No description provided for @channelsSettingsNotifications.
+  ///
+  /// In en, this message translates to:
+  /// **'Channel notifications'**
+  String get channelsSettingsNotifications;
+
+  /// No description provided for @channelsSettingsNotificationsDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Configure how you are notified about new messages in channels.'**
+  String get channelsSettingsNotificationsDescription;
+
+  /// No description provided for @channelsSettingsArchiveBehavior.
+  ///
+  /// In en, this message translates to:
+  /// **'Archive behavior'**
+  String get channelsSettingsArchiveBehavior;
+
+  /// No description provided for @channelsSettingsArchiveBehaviorDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Control how archived channels are stored and displayed.'**
+  String get channelsSettingsArchiveBehaviorDescription;
+
+  /// No description provided for @channelsSettingsDisplay.
+  ///
+  /// In en, this message translates to:
+  /// **'Display'**
+  String get channelsSettingsDisplay;
+
+  /// No description provided for @channelsSettingsSearchBehavior.
+  ///
+  /// In en, this message translates to:
+  /// **'Search behavior'**
+  String get channelsSettingsSearchBehavior;
+
+  /// No description provided for @channelsSettingsSearchBehaviorDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Configure how message search works within channels.'**
+  String get channelsSettingsSearchBehaviorDescription;
+
+  /// No description provided for @channelsSettingsRetention.
+  ///
+  /// In en, this message translates to:
+  /// **'Message retention'**
+  String get channelsSettingsRetention;
+
+  /// No description provided for @channelsSettingsRetentionDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Set how long messages are kept before automatic cleanup.'**
+  String get channelsSettingsRetentionDescription;
+
+  /// No description provided for @nodesSettingsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Nodes settings'**
+  String get nodesSettingsTitle;
+
+  /// No description provided for @nodesSettingsDiscovery.
+  ///
+  /// In en, this message translates to:
+  /// **'Discovery'**
+  String get nodesSettingsDiscovery;
+
+  /// No description provided for @nodesSettingsDiscoveryBehavior.
+  ///
+  /// In en, this message translates to:
+  /// **'Discovery behavior'**
+  String get nodesSettingsDiscoveryBehavior;
+
+  /// No description provided for @nodesSettingsDiscoveryBehaviorDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Configure how nearby nodes are discovered and listed.'**
+  String get nodesSettingsDiscoveryBehaviorDescription;
+
+  /// No description provided for @nodesSettingsRefreshBehavior.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh behavior'**
+  String get nodesSettingsRefreshBehavior;
+
+  /// No description provided for @nodesSettingsRefreshBehaviorDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Control how often the node list refreshes and reconnects.'**
+  String get nodesSettingsRefreshBehaviorDescription;
+
+  /// No description provided for @nodesSettingsDisplay.
+  ///
+  /// In en, this message translates to:
+  /// **'Display'**
+  String get nodesSettingsDisplay;
+
+  /// No description provided for @nodesSettingsVisibility.
+  ///
+  /// In en, this message translates to:
+  /// **'Node visibility'**
+  String get nodesSettingsVisibility;
+
+  /// No description provided for @nodesSettingsVisibilityDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Control what information is shown for each node.'**
+  String get nodesSettingsVisibilityDescription;
+
+  /// No description provided for @nodesSettingsNaming.
+  ///
+  /// In en, this message translates to:
+  /// **'Node naming'**
+  String get nodesSettingsNaming;
+
+  /// No description provided for @nodesSettingsNamingDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Configure how node names and identifiers are displayed.'**
+  String get nodesSettingsNamingDescription;
+
+  /// No description provided for @nearbySettingsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Nearby settings'**
+  String get nearbySettingsTitle;
+
+  /// No description provided for @nearbySettingsDiscovery.
+  ///
+  /// In en, this message translates to:
+  /// **'Discovery'**
+  String get nearbySettingsDiscovery;
+
+  /// No description provided for @nearbySettingsDiscoveryBehavior.
+  ///
+  /// In en, this message translates to:
+  /// **'Discovery behavior'**
+  String get nearbySettingsDiscoveryBehavior;
+
+  /// No description provided for @nearbySettingsDiscoveryBehaviorDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Configure how Bluetooth discovers nearby devices.'**
+  String get nearbySettingsDiscoveryBehaviorDescription;
+
+  /// No description provided for @nearbySettingsScanBehavior.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan behavior'**
+  String get nearbySettingsScanBehavior;
+
+  /// No description provided for @nearbySettingsScanBehaviorDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Control scan duration and frequency for nearby devices.'**
+  String get nearbySettingsScanBehaviorDescription;
+
+  /// No description provided for @nearbySettingsVisibility.
+  ///
+  /// In en, this message translates to:
+  /// **'Visibility'**
+  String get nearbySettingsVisibility;
+
+  /// No description provided for @nearbySettingsNearbyVisibility.
+  ///
+  /// In en, this message translates to:
+  /// **'Nearby visibility'**
+  String get nearbySettingsNearbyVisibility;
+
+  /// No description provided for @nearbySettingsNearbyVisibilityDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Control what information your device announces to nearby nodes.'**
+  String get nearbySettingsNearbyVisibilityDescription;
+
+  /// No description provided for @nearbySettingsAnnouncementBehavior.
+  ///
+  /// In en, this message translates to:
+  /// **'Announcement behavior'**
+  String get nearbySettingsAnnouncementBehavior;
+
+  /// No description provided for @nearbySettingsAnnouncementBehaviorDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Configure how your device appears to other nearby nodes.'**
+  String get nearbySettingsAnnouncementBehaviorDescription;
+
+  /// No description provided for @meshSettingsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Mesh settings'**
+  String get meshSettingsTitle;
+
+  /// No description provided for @meshSettingsNetwork.
+  ///
+  /// In en, this message translates to:
+  /// **'Network'**
+  String get meshSettingsNetwork;
+
+  /// No description provided for @meshSettingsDiscovery.
+  ///
+  /// In en, this message translates to:
+  /// **'Mesh discovery'**
+  String get meshSettingsDiscovery;
+
+  /// No description provided for @meshSettingsDiscoveryDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Configure how the mesh discovers and connects to other nodes.'**
+  String get meshSettingsDiscoveryDescription;
+
+  /// No description provided for @meshSettingsRelayBehavior.
+  ///
+  /// In en, this message translates to:
+  /// **'Relay behavior'**
+  String get meshSettingsRelayBehavior;
+
+  /// No description provided for @meshSettingsRelayBehaviorDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Control how messages are relayed across the mesh network.'**
+  String get meshSettingsRelayBehaviorDescription;
+
+  /// No description provided for @meshSettingsRouting.
+  ///
+  /// In en, this message translates to:
+  /// **'Routing'**
+  String get meshSettingsRouting;
+
+  /// No description provided for @meshSettingsRoutingDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Configure how the mesh determines routes to other nodes.'**
+  String get meshSettingsRoutingDescription;
+
+  /// No description provided for @meshSettingsEngine.
+  ///
+  /// In en, this message translates to:
+  /// **'Engine'**
+  String get meshSettingsEngine;
+
+  /// No description provided for @meshSettingsEngineBehavior.
+  ///
+  /// In en, this message translates to:
+  /// **'Engine behavior'**
+  String get meshSettingsEngineBehavior;
+
+  /// No description provided for @meshSettingsEngineBehaviorDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Control mesh engine start, stop, and recovery behavior.'**
+  String get meshSettingsEngineBehaviorDescription;
+
+  /// No description provided for @meshSettingsDiagnostics.
+  ///
+  /// In en, this message translates to:
+  /// **'Diagnostics'**
+  String get meshSettingsDiagnostics;
+
+  /// No description provided for @meshSettingsDiagnosticsDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'View network diagnostics and mesh health information.'**
+  String get meshSettingsDiagnosticsDescription;
 }
 
 class _AppLocalizationsDelegate

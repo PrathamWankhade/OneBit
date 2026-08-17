@@ -42,6 +42,10 @@ import 'package:onebit/features/nodes/presentation/nodes_screen.dart';
 import 'package:onebit/features/packet/presentation/packet_dev_screen.dart';
 import 'package:onebit/features/settings/presentation/appearance_settings_screen.dart';
 import 'package:onebit/features/settings/presentation/bluetooth_settings_screen.dart';
+import 'package:onebit/features/settings/presentation/channels_settings_screen.dart';
+import 'package:onebit/features/settings/presentation/mesh_settings_screen.dart';
+import 'package:onebit/features/settings/presentation/nearby_settings_screen.dart';
+import 'package:onebit/features/settings/presentation/nodes_settings_screen.dart';
 import 'package:onebit/features/settings/presentation/notifications_settings_screen.dart';
 import 'package:onebit/features/settings/presentation/privacy_settings_screen.dart';
 import 'package:onebit/features/settings/presentation/settings_screen.dart';
@@ -107,81 +111,6 @@ abstract final class AppRouter {
           path: AppRoutePaths.splash,
           builder: (context, state) => const SplashScreen(),
         ),
-        // Global settings — top-level route, not a shell branch.
-        GoRoute(
-          path: AppRoutePaths.settings,
-          builder: (context, state) => const SettingsScreen(),
-          routes: [
-            _settingsRoute(
-              AppRoutePaths.appearance,
-              const AppearanceSettingsScreen(),
-            ),
-            _settingsRoute(
-              AppRoutePaths.privacy,
-              const PrivacySettingsScreen(),
-            ),
-            _settingsRoute(
-              AppRoutePaths.storage,
-              const StorageSettingsScreen(),
-            ),
-            _settingsRoute(
-              AppRoutePaths.notifications,
-              const NotificationsSettingsScreen(),
-            ),
-            _settingsRoute(
-              AppRoutePaths.bluetooth,
-              const BluetoothSettingsScreen(),
-            ),
-            _settingsRoute(
-              AppRoutePaths.about,
-              const AboutScreen(),
-            ),
-            _settingsRoute(
-              AppRoutePaths.licenses,
-              const LicensesScreen(),
-            ),
-          ],
-        ),
-        GoRoute(
-          path: AppRoutePaths.developer,
-          builder: (context, state) => const DeveloperScreen(),
-        ),
-        GoRoute(
-          path: AppRoutePaths.diagnostics,
-          builder: (context, state) => const DiagnosticsScreen(),
-        ),
-        GoRoute(
-          path: AppRoutePaths.logs,
-          builder: (context, state) => const LogsScreen(),
-        ),
-        GoRoute(
-          path: AppRoutePaths.databaseViewer,
-          builder: (context, state) => const DatabaseViewerScreen(),
-        ),
-        GoRoute(
-          path: AppRoutePaths.statistics,
-          builder: (context, state) => const StatisticsScreen(),
-        ),
-        GoRoute(
-          path: AppRoutePaths.performance,
-          builder: (context, state) => const PerformanceScreen(),
-        ),
-        GoRoute(
-          path: AppRoutePaths.bluetoothDebug,
-          builder: (context, state) => const BluetoothDevScreen(),
-        ),
-        GoRoute(
-          path: AppRoutePaths.meshDebug,
-          builder: (context, state) => const MeshDevScreen(),
-        ),
-        GoRoute(
-          path: AppRoutePaths.packetDebug,
-          builder: (context, state) => const PacketDevScreen(),
-        ),
-        GoRoute(
-          path: AppRoutePaths.dtnDebug,
-          builder: (context, state) => const DtnDevScreen(),
-        ),
         StatefulShellRoute.indexedStack(
           restorationScopeId: 'onebit-shell',
           builder: (context, state, navigationShell) =>
@@ -238,6 +167,11 @@ abstract final class AppRouter {
                 editMessageId: state.uri.queryParameters['edit'],
               ),
             ),
+            _simpleRoute(
+              AppRoutePaths.channels,
+              AppRoutePaths.channelsSettings,
+              const ChannelsSettingsScreen(),
+            ),
           ],
         ),
         // Flat routes in the branch: /search and the media area are not
@@ -256,6 +190,83 @@ abstract final class AppRouter {
           path: AppRoutePaths.mediaGallery,
           builder: (context, state) => const MediaGalleryScreen(),
         ),
+        // Global settings — nested under the channels branch so they are
+        // accessible from within the shell.
+        GoRoute(
+          path: AppRoutePaths.settings,
+          builder: (context, state) => const SettingsScreen(),
+          routes: [
+            _settingsRoute(
+              AppRoutePaths.appearance,
+              const AppearanceSettingsScreen(),
+            ),
+            _settingsRoute(
+              AppRoutePaths.privacy,
+              const PrivacySettingsScreen(),
+            ),
+            _settingsRoute(
+              AppRoutePaths.storage,
+              const StorageSettingsScreen(),
+            ),
+            _settingsRoute(
+              AppRoutePaths.notifications,
+              const NotificationsSettingsScreen(),
+            ),
+            _settingsRoute(
+              AppRoutePaths.bluetooth,
+              const BluetoothSettingsScreen(),
+            ),
+            _settingsRoute(
+              AppRoutePaths.about,
+              const AboutScreen(),
+            ),
+            _settingsRoute(
+              AppRoutePaths.licenses,
+              const LicensesScreen(),
+            ),
+          ],
+        ),
+        // Developer area — nested under the channels branch.
+        GoRoute(
+          path: AppRoutePaths.developer,
+          builder: (context, state) => const DeveloperScreen(),
+        ),
+        GoRoute(
+          path: AppRoutePaths.diagnostics,
+          builder: (context, state) => const DiagnosticsScreen(),
+        ),
+        GoRoute(
+          path: AppRoutePaths.logs,
+          builder: (context, state) => const LogsScreen(),
+        ),
+        GoRoute(
+          path: AppRoutePaths.databaseViewer,
+          builder: (context, state) => const DatabaseViewerScreen(),
+        ),
+        GoRoute(
+          path: AppRoutePaths.statistics,
+          builder: (context, state) => const StatisticsScreen(),
+        ),
+        GoRoute(
+          path: AppRoutePaths.performance,
+          builder: (context, state) => const PerformanceScreen(),
+        ),
+        GoRoute(
+          path: AppRoutePaths.bluetoothDebug,
+          builder: (context, state) => const BluetoothDevScreen(),
+        ),
+        GoRoute(
+          path: AppRoutePaths.meshDebug,
+          builder: (context, state) => const MeshDevScreen(),
+        ),
+        GoRoute(
+          path: AppRoutePaths.packetDebug,
+          builder: (context, state) => const PacketDevScreen(),
+        ),
+        GoRoute(
+          path: AppRoutePaths.dtnDebug,
+          builder: (context, state) => const DtnDevScreen(),
+        ),
       ],
     ),
     StatefulShellBranch(
@@ -271,6 +282,11 @@ abstract final class AppRouter {
               (state) => NodeDetailsScreen(
                 nodeId: state.pathParameters[AppRouteParameters.nodeId]!,
               ),
+            ),
+            _simpleRoute(
+              AppRoutePaths.nodes,
+              AppRoutePaths.nodesSettings,
+              const NodesSettingsScreen(),
             ),
           ],
         ),
@@ -298,6 +314,13 @@ abstract final class AppRouter {
         GoRoute(
           path: AppRoutePaths.nearby,
           builder: (context, state) => const NearbyScreen(),
+          routes: [
+            _simpleRoute(
+              AppRoutePaths.nearby,
+              AppRoutePaths.nearbySettings,
+              const NearbySettingsScreen(),
+            ),
+          ],
         ),
       ],
     ),
@@ -312,6 +335,11 @@ abstract final class AppRouter {
               AppRoutePaths.mesh,
               AppRoutePaths.routeInspector,
               const RouteInspectorScreen(),
+            ),
+            _simpleRoute(
+              AppRoutePaths.mesh,
+              AppRoutePaths.meshSettings,
+              const MeshSettingsScreen(),
             ),
           ],
         ),

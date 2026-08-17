@@ -81,6 +81,10 @@ abstract final class OneBitNavigationTokens {
 ///
 /// These dimensions match the rendered layout of [FloatingBottomNavigation]
 /// and must stay in sync with any changes to that widget.
+///
+/// The capsule width is dynamic — it fills the available screen width between
+/// horizontal margins, with each item receiving an equal share (clamped to
+/// 48–72dp per item).
 abstract final class OneBitFloatingNavigationTokens {
   /// Icon size inside each nav item (24dp).
   static const double itemIconSize = 24;
@@ -91,8 +95,8 @@ abstract final class OneBitFloatingNavigationTokens {
   /// Capsule corner radius (28dp, ~half the height for a pill shape).
   static const double capsuleRadius = 28;
 
-  /// Inner padding between capsule edge and item edge (8dp).
-  static const double itemPadding = 8;
+  /// Inner padding between capsule edge and item edge (6dp).
+  static const double itemPadding = 6;
 
   /// Selection pill padding around the icon (8dp each side → 40dp pill).
   static const double pillPadding = 8;
@@ -103,8 +107,11 @@ abstract final class OneBitFloatingNavigationTokens {
   /// Horizontal margin around the floating bar (18dp).
   static const double barHorizontalMargin = 18;
 
-  /// Additional comfortable reading space above the navigation bar (32dp).
-  static const double readingGap = 32;
+  /// Comfortable reading space above the navigation bar (48dp).
+  ///
+  /// Ensures the final scrollable element is fully visible above the
+  /// floating navigation capsule on all devices.
+  static const double readingGap = 48;
 
   /// Total rendered height including bottom margin.
   static const double barHeight = capsuleHeight + barBottomMargin;

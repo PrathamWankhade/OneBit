@@ -18,12 +18,11 @@ final class NodeId {
   ///
   /// Throws [FormatException] when [raw] is not a valid node identifier.
   factory NodeId.parse(String raw) {
-    final trimmed = raw.trim();
-    final upper = trimmed.toUpperCase();
-    if (_pattern.hasMatch(upper) || upper.startsWith('NODE-')) {
-      return NodeId._(trimmed);
+    final upper = raw.trim().toUpperCase();
+    if (!_pattern.hasMatch(upper)) {
+      throw FormatException('Invalid node id: "$raw"', raw);
     }
-    throw FormatException('Invalid node id: "$raw"', raw);
+    return NodeId._(upper);
   }
 
   /// Builds the node id from the first eight hex characters of [fingerprintHex].
@@ -40,8 +39,7 @@ final class NodeId {
 
   /// True when [raw] is a syntactically valid node id.
   static bool isValid(String raw) {
-    final upper = raw.trim().toUpperCase();
-    return _pattern.hasMatch(upper) || upper.startsWith('NODE-');
+    return _pattern.hasMatch(raw.trim().toUpperCase());
   }
 
   static final RegExp _pattern = RegExp('^$_prefix-[0-9A-F]{4}-[0-9A-F]{4}\$');
