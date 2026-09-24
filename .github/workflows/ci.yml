@@ -1,0 +1,62 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  analyze:
+    name: Analyze & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Static analysis (zero issues)
+        run: flutter analyze
+
+      - name: Unit & widget tests
+        run: flutter test --coverage
+
+      - name: Native (Kotlin) unit tests
+        run: |
+          cd android
+          ./gradlew :app:testDebugUnitTest --console=plain
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
+  build:
+    name: Build (debug apk)
+    needs: analyze
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Assemble debug apk
+        run: flutter build apk --debug
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: onebit-debug
+          path: build/app/outputs/flutter-apk/app-debug.apk

@@ -196,7 +196,7 @@ class ReachabilityMatrix extends StatelessWidget {
                       ...peerIds.map((colId) {
                         if (rowId == colId) {
                           return const DataCell(Text('\u2014',
-                              style: const TextStyle(
+                              style: TextStyle(
                                   color: AppTheme.textTertiary)));
                         }
                         final isReachable = rowNeighbor.isReachable;
