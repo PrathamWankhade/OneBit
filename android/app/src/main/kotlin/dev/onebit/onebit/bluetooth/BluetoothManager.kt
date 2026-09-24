@@ -291,6 +291,17 @@ class BluetoothManager(private val activity: Activity) {
         return emptyMap()
     }
 
+    /** Open the system Bluetooth settings screen. */
+    fun openBluetoothSettings() {
+        try {
+            val intent = Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS)
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            appContext.startActivity(intent)
+        } catch (e: Exception) {
+            BleLog.e("Failed to open Bluetooth settings", throwable = e)
+        }
+    }
+
     fun connect(args: Map<*, *>): Map<String, Any> {
         requireRadioReady()
         val deviceId = args["deviceId"] as? String ?: throw BleException(

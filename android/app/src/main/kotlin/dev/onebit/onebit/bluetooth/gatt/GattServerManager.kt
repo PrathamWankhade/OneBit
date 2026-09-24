@@ -43,6 +43,9 @@ class GattServerManager(context: Context) {
     /** Peer address → `true` when the echo characteristic is an indication. */
     private val subscribers = mutableMapOf<String, Boolean>()
 
+    /** Peer address → `true` when the communication characteristic is an indication. */
+    private val commSubscribers = mutableMapOf<String, Boolean>()
+
     /** Opens the server and registers the probe service (idempotent). */
     fun start(deviceId: String): Boolean {
         if (running) return true
@@ -59,6 +62,7 @@ class GattServerManager(context: Context) {
         }
         server = opened ?: return false
         registerProbeService()
+        registerCommunicationService()
         running = true
         return true
     }
@@ -66,6 +70,7 @@ class GattServerManager(context: Context) {
     fun stop() {
         if (!running) return
         subscribers.clear()
+        commSubscribers.clear()
         runCatching { server?.clearServices() }
         runCatching { server?.close() }
         server = null
@@ -104,6 +109,31 @@ class GattServerManager(context: Context) {
             .onSuccess { BleLog.d("probe service registered") }
     }
 
+    private fun registerCommunicationService() {
+        val service = BluetoothGattService(
+            UUID.fromString(Uuids.ONEBIT_SERVICE),
+            BluetoothGattService.SERVICE_TYPE_PRIMARY,
+        )
+        val commChar = BluetoothGattCharacteristic(
+            UUID.fromString(Uuids.COMMUNICATION_CHARACTERISTIC),
+            BluetoothGattCharacteristic.PROPERTY_WRITE or
+                BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE or
+                BluetoothGattCharacteristic.PROPERTY_NOTIFY or
+                BluetoothGattCharacteristic.PROPERTY_INDICATE,
+            BluetoothGattCharacteristic.PERMISSION_WRITE,
+        )
+        commChar.addDescriptor(
+            BluetoothGattDescriptor(
+                CharacteristicProfile.CCCD_UUID,
+                BluetoothGattDescriptor.PERMISSION_READ or
+                    BluetoothGattDescriptor.PERMISSION_WRITE,
+            ),
+        )
+        service.addCharacteristic(commChar)
+        runCatching { server?.addService(service) }
+            .onSuccess { BleLog.d("communication service registered") }
+    }
+
     private val serverCallback = object : BluetoothGattServerCallback() {
         override fun onCharacteristicReadRequest(
             device: BluetoothDevice,
@@ -130,16 +160,23 @@ class GattServerManager(context: Context) {
             offset: Int,
             value: ByteArray,
         ) {
-            val accepted = characteristic.uuid == UUID.fromString(Uuids.ECHO_CHARACTERISTIC)
-            if (accepted && !preparedWrite) {
+            val isEcho = characteristic.uuid == UUID.fromString(Uuids.ECHO_CHARACTERISTIC)
+            val isComm = characteristic.uuid == UUID.fromString(Uuids.COMMUNICATION_CHARACTERISTIC)
+            if ((isEcho || isComm) && !preparedWrite) {
                 characteristic.value = value
-                emitEcho(device, value, indications = false)
-                notifySubscribers(device, value)
+                if (isEcho) {
+                    emitEcho(device, value, indications = false)
+                    notifySubscribers(device, value)
+                }
+                if (isComm) {
+                    emitCommunication(device, value, indications = false)
+                    notifyCommSubscribers(device, value)
+                }
             }
             server?.sendResponse(
                 device,
                 requestId,
-                if (accepted) BluetoothGatt.GATT_SUCCESS
+                if (isEcho || isComm) BluetoothGatt.GATT_SUCCESS
                 else BluetoothGatt.GATT_REQUEST_NOT_SUPPORTED,
                 offset,
                 null,
@@ -170,9 +207,11 @@ class GattServerManager(context: Context) {
             if (descriptor.uuid == CharacteristicProfile.CCCD_UUID) {
                 if (value.contentEquals(BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE)) {
                     subscribers.remove(device.address)
+                    commSubscribers.remove(device.address)
                 } else {
-                    subscribers[device.address] =
-                        value.contentEquals(BluetoothGattDescriptor.ENABLE_INDICATION_VALUE)
+                    val isIndication = value.contentEquals(BluetoothGattDescriptor.ENABLE_INDICATION_VALUE)
+                    subscribers[device.address] = isIndication
+                    commSubscribers[device.address] = isIndication
                 }
             }
             server?.sendResponse(
@@ -187,6 +226,7 @@ class GattServerManager(context: Context) {
         ) {
             if (newState == BluetoothGattServer.STATE_DISCONNECTED) {
                 subscribers.remove(device.address)
+                commSubscribers.remove(device.address)
             }
             BleLog.d(
                 "server ${if (newState == BluetoothGattServer.STATE_CONNECTED) "connected" else "disconnected"} " +
@@ -223,5 +263,35 @@ class GattServerManager(context: Context) {
                 "indication" to indications,
             ),
         )
+    }
+
+    private fun emitCommunication(device: BluetoothDevice, value: ByteArray, indications: Boolean) {
+        emitter?.send(
+            "characteristicChanged",
+            mapOf(
+                "deviceId" to device.address,
+                "serviceUuid" to Uuids.ONEBIT_SERVICE,
+                "characteristicUuid" to Uuids.COMMUNICATION_CHARACTERISTIC,
+                "value" to value.toList(),
+                "indication" to indications,
+            ),
+        )
+    }
+
+    /** Pushes [value] to every peer that enabled the communication CCCD. */
+    private fun notifyCommSubscribers(device: BluetoothDevice, value: ByteArray) {
+        val gattServer = server ?: return
+        val commChar = gattServer
+            .getService(UUID.fromString(Uuids.ONEBIT_SERVICE))
+            ?.getCharacteristic(UUID.fromString(Uuids.COMMUNICATION_CHARACTERISTIC)) ?: return
+        commChar.value = value
+        commSubscribers.forEach { (address, indications) ->
+            val peer = gattServer.connectedDevices.firstOrNull { it.address == address } ?: return@forEach
+            BleLog.d("notifying comm $address (indications=$indications)")
+            runCatching {
+                gattServer.notifyCharacteristicChanged(peer, commChar, indications, value)
+            }
+        }
+        emitCommunication(device, value, indications = true)
     }
 }

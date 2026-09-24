@@ -21,4 +21,10 @@ object Uuids {
 
     /** Device identity characteristic (read-only). */
     const val ID_CHARACTERISTIC = "A1A00002-0000-1000-8000-00805F9B34FB"
+
+    /** OneBit application service UUID (advertised by all OneBit devices). */
+    const val ONEBIT_SERVICE = "D1A00000-0000-1000-8000-00805F9B34FB"
+
+    /** Communication characteristic: bidirectional write+notify for raw payloads. */
+    const val COMMUNICATION_CHARACTERISTIC = "D1A00001-0000-1000-8000-00805F9B34FB"
 }

@@ -1,6 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
-    <!-- Per-flavor label set in build.gradle.kts, e.g. "OneBit", "OneBit Beta". -->
 
     <!-- Legacy (API 29-30) pre-scoped Bluetooth usage. -->
     <uses-permission
@@ -32,13 +31,17 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Camera for QR code scanning. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 
     <uses-feature
         android:name="android.hardware.bluetooth_le"
         android:required="true" />
 
     <application
-        android:label="${onBitFlavorLabel}"
+        android:label="OneBit"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round">

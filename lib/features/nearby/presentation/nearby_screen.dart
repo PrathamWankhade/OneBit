@@ -2,387 +2,367 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
-import 'package:onebit/core/extensions/build_context_extensions.dart';
-import 'package:onebit/core/extensions/date_time_extensions.dart';
-import 'package:onebit/core/navigation/app_route_paths.dart';
-import 'package:onebit/core/widgets/onebit_scaffold.dart';
-import 'package:onebit/features/bluetooth/domain/bluetooth_connection_state.dart';
-import 'package:onebit/features/bluetooth/domain/bluetooth_permission_state.dart';
-import 'package:onebit/features/bluetooth/domain/bluetooth_radio_state.dart';
-import 'package:onebit/features/bluetooth/domain/bluetooth_views.dart';
-import 'package:onebit/features/bluetooth/presentation/bluetooth_providers.dart';
-import 'package:onebit/features/nearby/domain/nearby_peer.dart';
-import 'package:onebit/features/nearby/presentation/nearby_controller.dart';
-import 'package:onebit/l10n/app_localizations.dart';
-import 'package:onebit/shared/design_system/animations/onebit_motion.dart';
-import 'package:onebit/shared/design_system/components/onebit_card.dart';
-import 'package:onebit/shared/design_system/components/onebit_empty_state.dart';
-import 'package:onebit/shared/design_system/components/onebit_error_state.dart';
-import 'package:onebit/shared/design_system/components/onebit_icon_button.dart';
-import 'package:onebit/shared/design_system/components/onebit_loading_indicator.dart';
-import 'package:onebit/shared/design_system/components/onebit_offline_state.dart';
-import 'package:onebit/shared/design_system/components/onebit_page_header.dart';
-import 'package:onebit/shared/design_system/components/onebit_permission_state.dart';
-import 'package:onebit/shared/design_system/components/onebit_scroll_clearance.dart';
-import 'package:onebit/shared/design_system/components/onebit_section_header.dart';
-import 'package:onebit/shared/design_system/components/onebit_status_chip.dart';
-import 'package:onebit/shared/design_system/icons/onebit_icons.dart';
-import 'package:onebit/shared/design_system/responsive/onebit_responsive.dart';
-import 'package:onebit/shared/design_system/spacing/onebit_spacing.dart';
-import 'package:onebit/shared/design_system/themes/onebit_theme_extension.dart';
-import 'package:onebit/shared/design_system/typography/onebit_typography.dart';
+import 'package:onebit/core/theme/app_theme.dart';
+import 'package:onebit/features/ble/ble_providers.dart';
+import 'package:onebit/features/ble/ble_state.dart';
+import 'package:onebit/features/identity/identity_association_resolver.dart';
+import 'package:onebit/features/identity/identity_providers.dart';
+import 'package:onebit/features/nearby/presentation/peer_card.dart';
+import 'package:onebit/features/ui/components/one_bit_components.dart';
 
-/// Nearby tab: live Bluetooth discovery.
+/// F5 — Peer Discovery / BLE Mesh Experience.
 ///
-/// Renders exclusively from [nearbyViewProvider]; scan and permission
-/// actions delegate to the existing Bluetooth controllers. Peer identifiers
-/// and signal values render in the technical family.
-class NearbyScreen extends ConsumerWidget {
+/// Shows nearby OneBit nodes, signal strength, connection state,
+/// and mesh topology. Communicates decentralized peer discovery.
+class NearbyScreen extends ConsumerStatefulWidget {
   const NearbyScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final view = ref.watch(nearbyViewProvider);
-    final scanning = view.value?.scanning ?? false;
-
-    return OneBitScaffold(
-      body: _body(context, ref, view, scanning),
-    );
-  }
-
-  Widget _body(
-    BuildContext context,
-    WidgetRef ref,
-    AsyncValue<NearbyView> view,
-    bool scanning,
-  ) {
-    final l10n = context.l10n;
-    if (view.hasError) {
-      return OneBitErrorState(
-        message: l10n.nearbyLoadError,
-        detail: view.error.toString(),
-        retryLabel: l10n.commonRetry,
-        onRetry: () => ref.invalidate(nearbyViewProvider),
-      );
-    }
-    final value = view.value;
-    if (value == null) {
-      return const OneBitLoadingIndicator(label: '');
-    }
-    if (value.error != null && value.isEmpty) {
-      return OneBitErrorState(
-        message: l10n.nearbyLoadError,
-        detail: value.error.toString(),
-        retryLabel: l10n.commonRetry,
-        onRetry: () => ref.read(nearbyViewProvider.notifier).retry(),
-      );
-    }
-
-    final headerActions = [
-      OneBitIconButton(
-        icon: OneBitIcons.radar,
-        tooltip: l10n.nearbyScanToggle,
-        onPressed: scanning
-            ? () => unawaited(
-                ref.read(nearbyViewProvider.notifier).stopScan(),
-              )
-            : () => unawaited(
-                ref.read(nearbyViewProvider.notifier).startScan(),
-              ),
-      ),
-      OneBitIconButton(
-        icon: OneBitIcons.shellSettings,
-        tooltip: l10n.settingsTitle,
-        onPressed: () => context.go(AppRoutePaths.nearbySettings),
-      ),
-    ];
-
-    Widget body;
-    final radioOff =
-        value.radio == BluetoothRadioState.off ||
-        value.radio == BluetoothRadioState.unavailable;
-    final permissionDenied = !value.permission.isGranted;
-    final permanentlyDenied =
-        value.permission == BluetoothPermissionState.denied ||
-        value.permission == BluetoothPermissionState.deniedForever;
-
-    if (radioOff) {
-      body = OneBitOfflineState(
-        title: value.radio == BluetoothRadioState.off
-            ? l10n.nearbyRadioOffTitle
-            : l10n.nearbyRadioUnavailableTitle,
-        message: value.radio == BluetoothRadioState.off
-            ? l10n.nearbyRadioOffMessage
-            : l10n.nearbyRadioUnavailableMessage,
-      );
-    } else if (permissionDenied) {
-      body = OneBitPermissionState(
-        title: l10n.nearbyPermissionTitle,
-        message: permanentlyDenied
-            ? l10n.nearbyPermissionDeniedMessage
-            : l10n.nearbyPermissionMessage,
-        requestLabel: permanentlyDenied ? l10n.commonRetry : l10n.nearbyScan,
-        onRequest: permanentlyDenied
-            ? () => unawaited(
-                ref.read(nearbyViewProvider.notifier).recoverPermission(),
-              )
-            : () => unawaited(
-                ref.read(nearbyViewProvider.notifier).requestPermission(),
-              ),
-      );
-    } else if (value.isEmpty) {
-      body = OneBitEmptyState(
-        icon: OneBitIcons.shellNearby,
-        title: l10n.nearbyEmpty,
-        message: l10n.nearbyEmptyMessage,
-        secondaryInfo: value.scanning ? const _ScanningPulse() : null,
-      );
-    } else {
-      body = _peerList(context, ref, value, scanning);
-    }
-
-    final colors = context.oneBitColors;
-    return Column(
-      children: [
-        OneBitPageHeader.status(
-          title: l10n.nearbyTitle,
-          status: value.scanning ? l10n.nearbyScanning : '${value.peers.length}',
-          statusColor: value.scanning ? colors.warning : colors.info,
-          actions: headerActions,
-        ),
-        Expanded(child: body),
-      ],
-    );
-  }
-
-  Widget _peerList(
-    BuildContext context,
-    WidgetRef ref,
-    NearbyView view,
-    bool scanning,
-  ) {
-    final l10n = context.l10n;
-    final links = ref.watch(bluetoothLinkControllerProvider);
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(
-            OneBitSpacing.m,
-            OneBitSpacing.m,
-            OneBitSpacing.m,
-            0,
-          ),
-          child: OneBitSectionHeader(
-            title: l10n.nearbyPeersTitle,
-            subtitle: view.scanning
-                ? l10n.nearbyScanning
-                : l10n.nearbyPeerCount(view.peers.length),
-            trailing: view.scanning ? const _ScanningPulse() : null,
-          ),
-        ),
-        Expanded(
-          child: context.isTablet
-              ? _tabletPeerGrid(context, view, links)
-              : _phonePeerList(context, view, links, scanning),
-        ),
-      ],
-    );
-  }
-
-  Widget _phonePeerList(
-    BuildContext context,
-    NearbyView view,
-    BluetoothLinksView links,
-    bool scanning,
-  ) {
-    return ListView.builder(
-      padding: EdgeInsets.fromLTRB(
-        OneBitSpacing.m,
-        OneBitSpacing.m,
-        OneBitSpacing.m,
-        OneBitScrollClearance.bottom(context),
-      ),
-      itemCount: view.peers.length,
-      itemBuilder: (context, index) {
-        final peer = view.peers[index];
-        return Padding(
-          padding: const EdgeInsets.only(bottom: OneBitSpacing.s),
-          child: _AnimatedPeerCard(
-            peer: peer,
-            connection: links.connections[peer.peerId],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _tabletPeerGrid(
-    BuildContext context,
-    NearbyView view,
-    BluetoothLinksView links,
-  ) {
-    return GridView.builder(
-      padding: EdgeInsets.fromLTRB(
-        OneBitSpacing.m,
-        OneBitSpacing.m,
-        OneBitSpacing.m,
-        OneBitScrollClearance.bottom(context),
-      ),
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 400,
-        childAspectRatio: 2.5,
-        crossAxisSpacing: OneBitSpacing.m,
-        mainAxisSpacing: OneBitSpacing.s,
-      ),
-      itemCount: view.peers.length,
-      itemBuilder: (context, index) {
-        final peer = view.peers[index];
-        return _AnimatedPeerCard(
-          peer: peer,
-          connection: links.connections[peer.peerId],
-        );
-      },
-    );
-  }
+  ConsumerState<NearbyScreen> createState() => _NearbyScreenState();
 }
 
-/// Animated wrapper around [_PeerCard] that plays a subtle slide+fade
-/// entrance when a new peer appears. Duration: 200ms (within 180–240ms).
-///
-/// Each card owns its own [AnimationController] so new entries animate
-/// independently without affecting existing items.
-class _AnimatedPeerCard extends StatefulWidget {
-  const _AnimatedPeerCard({required this.peer, this.connection});
-
-  final NearbyPeer peer;
-  final BluetoothConnectionState? connection;
-
-  @override
-  State<_AnimatedPeerCard> createState() => _AnimatedPeerCardState();
-}
-
-class _AnimatedPeerCardState extends State<_AnimatedPeerCard>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final Animation<double> _fade;
-  late final Animation<Offset> _slide;
-  late final bool _reduceMotion;
+class _NearbyScreenState extends ConsumerState<NearbyScreen>
+    with TickerProviderStateMixin {
+  final Map<String, ResolvedBleDevice> _resolvedDevices = {};
+  StreamSubscription<ResolvedBleDevice>? _resolvedSub;
+  BleStateNotifier? _notifier;
+  late AnimationController _pulseController;
 
   @override
   void initState() {
     super.initState();
-    _reduceMotion = MediaQuery.disableAnimationsOf(context);
-    _controller = AnimationController(
+    _notifier = ref.read(bleStateProvider.notifier);
+    _pulseController = AnimationController(
       vsync: this,
-      duration: _reduceMotion ? Duration.zero : const Duration(milliseconds: 200),
-    );
-    _fade = CurvedAnimation(
-      parent: _controller,
-      curve: OneBitMotion.emphasized,
-    );
-    _slide = Tween<Offset>(
-      begin: const Offset(0, 0.08),
-      end: Offset.zero,
-    ).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: OneBitMotion.emphasized,
-      ),
-    );
-    if (!_reduceMotion) {
-      _controller.forward();
-    }
+      duration: const Duration(seconds: 2),
+    )..repeat();
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _resolvedSub?.cancel();
+    _notifier?.stopScan();
+    _notifier?.stopAdvertising();
+    _pulseController.dispose();
     super.dispose();
+  }
+
+  void _startListening() {
+    _resolvedSub?.cancel();
+    setState(() => _resolvedDevices.clear());
+    final resolver = ref.read(bleIdentityResolverProvider);
+    _resolvedSub = resolver.resolvedStream.listen((resolved) {
+      if (!mounted) return;
+      setState(() {
+        _resolvedDevices[resolved.device.deviceId] = resolved;
+      });
+    });
+  }
+
+  Future<void> _startScan() async {
+    final notifier = ref.read(bleStateProvider.notifier);
+    try {
+      await notifier.startScan();
+      _startListening();
+    } on BleScanException {
+      // Error state is reflected via bleStateProvider.
+    }
+  }
+
+  Future<void> _stopScan() async {
+    final notifier = ref.read(bleStateProvider.notifier);
+    await notifier.stopScan();
+    _resolvedSub?.cancel();
+    _resolvedSub = null;
+  }
+
+  Future<void> _startAdvertising() async {
+    final notifier = ref.read(bleStateProvider.notifier);
+    final identityAsync = ref.read(localIdentityProvider);
+    final identity = identityAsync.valueOrNull;
+    try {
+      await notifier.startAdvertising(
+        identityPublicKeyBytes: identity?.publicKeyBytes,
+      );
+    } on BleAdvertisingException {
+      // Error state is reflected via bleStateProvider.
+    }
+  }
+
+  Future<void> _stopAdvertising() async {
+    final notifier = ref.read(bleStateProvider.notifier);
+    await notifier.stopAdvertising();
+  }
+
+  Future<void> _connectDevice(String deviceId) async {
+    final notifier = ref.read(bleStateProvider.notifier);
+    try {
+      await notifier.connect(deviceId);
+    } on BleConnectionException {
+      // Error state is reflected via bleStateProvider.
+    }
+  }
+
+  Future<void> _disconnectDevice(String deviceId) async {
+    final notifier = ref.read(bleStateProvider.notifier);
+    await notifier.disconnect(deviceId);
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_reduceMotion) {
-      return _PeerCard(
-        peer: widget.peer,
-        connection: widget.connection,
+    final bleState = ref.watch(bleStateProvider);
+    final isScanning = bleState.isScanning;
+    final devices = _resolvedDevices.values.toList();
+
+    return Scaffold(
+      appBar: _NearbyAppBar(
+        isScanning: isScanning,
+        deviceCount: devices.length,
+        onRefresh: isScanning ? _stopScan : _startScan,
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: _buildBody(bleState, isScanning, devices),
+          ),
+          _BottomActions(
+            isAdvertising: bleState.isAdvertising,
+            onStartAdvertising: _startAdvertising,
+            onStopAdvertising: _stopAdvertising,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBody(
+    BleState bleState,
+    bool isScanning,
+    List<ResolvedBleDevice> devices,
+  ) {
+    if (bleState.needsBluetoothEnable) {
+      return _BluetoothDisabledState(
+        onOpenSettings: () =>
+            ref.read(bleStateProvider.notifier).openBluetoothSettings(),
       );
     }
-    return FadeTransition(
-      opacity: _fade,
-      child: SlideTransition(
-        position: _slide,
-        child: _PeerCard(
-          peer: widget.peer,
-          connection: widget.connection,
-        ),
-      ),
+
+    if (bleState.needsPermissionRequest || bleState.needsManualRecovery) {
+      return _PermissionRequiredState(
+        onRequest: () =>
+            ref.read(bleStateProvider.notifier).requestPermissions(),
+        onRecover: bleState.needsManualRecovery
+            ? () => ref.read(bleStateProvider.notifier).recoverPermissions()
+            : null,
+      );
+    }
+
+    if (bleState.scan == BleScanState.error) {
+      return _ErrorState(onRetry: _startScan);
+    }
+
+    if (isScanning) {
+      return _ScanningState(
+        devices: devices,
+        pulseController: _pulseController,
+        connections: bleState.connections,
+        onConnect: _connectDevice,
+        onDisconnect: _disconnectDevice,
+      );
+    }
+
+    if (devices.isEmpty) {
+      return _NoPeersState(onScan: _startScan);
+    }
+
+    return _PeersFoundState(
+      devices: devices,
+      connections: bleState.connections,
+      onConnect: _connectDevice,
+      onDisconnect: _disconnectDevice,
+      onScan: _startScan,
     );
   }
 }
 
-/// One discovered device: technical id, RSSI, link stage and last seen.
-final class _PeerCard extends ConsumerWidget {
-  const _PeerCard({required this.peer, this.connection});
+// ── App Bar ────────────────────────────────────────────────────────
 
-  final NearbyPeer peer;
+class _NearbyAppBar extends StatelessWidget implements PreferredSizeWidget {
+  const _NearbyAppBar({
+    required this.isScanning,
+    required this.onRefresh,
+    this.deviceCount = 0,
+  });
 
-  /// Latest known link stage; `null` when the transport never connected.
-  final BluetoothConnectionState? connection;
+  final bool isScanning;
+  final VoidCallback onRefresh;
+  final int deviceCount;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final l10n = context.l10n;
-    final scheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
+  Size get preferredSize => const Size.fromHeight(56);
 
-    return OneBitCard(
-      onTap: () => context.go(AppRoutePaths.nodeOf(peer.peerId)),
-      child: Column(
+  @override
+  Widget build(BuildContext context) {
+    return AppBar(
+      title: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  peer.peerId,
-                  style: OneBitTypography.technicalStyle(
-                    color: scheme.onSurface,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              if (connection != null) ...[
-                const SizedBox(width: OneBitSpacing.s),
-                OneBitStatusChip.preset(connectionPresetFor(connection!)),
-              ],
-            ],
+          const Text('Nearby'),
+          if (deviceCount > 0)
+            Text(
+              '$deviceCount device${deviceCount == 1 ? '' : 's'} found',
+              style: AppTheme.caption.copyWith(color: AppTheme.textTertiary),
+            ),
+        ],
+      ),
+      actions: [
+        if (isScanning)
+          const Padding(
+            padding: EdgeInsets.all(12),
+            child: SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          )
+        else
+          IconButton(
+            icon: const Icon(Icons.refresh, size: 24, color: AppTheme.textSecondary),
+            onPressed: onRefresh,
+            tooltip: 'Scan again',
           ),
-          const SizedBox(height: OneBitSpacing.m),
-          Row(
-            children: [
-              Icon(
-                OneBitIcons.signal,
-                size: 16,
-                color: scheme.onSurfaceVariant,
-              ),
-              const SizedBox(width: OneBitSpacing.s),
-              Text(
-                '${peer.rssiDb} dBm',
-                style: OneBitTypography.technicalStyle(
-                  color: scheme.onSurfaceVariant,
+      ],
+    );
+  }
+}
+
+// ── Scanning State ─────────────────────────────────────────────────
+
+class _ScanningState extends StatelessWidget {
+  const _ScanningState({
+    required this.devices,
+    required this.pulseController,
+    required this.connections,
+    required this.onConnect,
+    required this.onDisconnect,
+  });
+
+  final List<ResolvedBleDevice> devices;
+  final AnimationController pulseController;
+  final Map<String, BleConnectionInfo> connections;
+  final void Function(String) onConnect;
+  final void Function(String) onDisconnect;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        if (devices.isEmpty)
+          Expanded(
+            child: _ScanningAnimation(pulseController: pulseController),
+          )
+        else ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Row(
+              children: [
+                Text(
+                  '${devices.length} nearby',
+                  style: AppTheme.labelMedium.copyWith(
+                    color: AppTheme.textSecondary,
+                  ),
                 ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: _PeerList(
+              devices: devices,
+              connections: connections,
+              onConnect: onConnect,
+              onDisconnect: onDisconnect,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+// ── Scanning Animation ─────────────────────────────────────────────
+
+class _ScanningAnimation extends StatelessWidget {
+  const _ScanningAnimation({required this.pulseController});
+
+  final AnimationController pulseController;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          RepaintBoundary(
+            child: SizedBox(
+              width: 120,
+              height: 120,
+              child: AnimatedBuilder(
+                animation: pulseController,
+                builder: (context, _) {
+                  return CustomPaint(
+                    painter: _PulsePainter(
+                      progress: pulseController.value,
+                      color: AppTheme.accent,
+                    ),
+                    child: const Center(
+                      child: Icon(
+                        Icons.wifi_tethering,
+                        size: 48,
+                        color: AppTheme.accent,
+                      ),
+                    ),
+                  );
+                },
               ),
-              const Spacer(),
-              Text(
-                '${l10n.nodeLastSeen} ${relativeTimeLabel(l10n, peer.lastSeen)}',
-                style: textTheme.labelMedium?.copyWith(
-                  color: scheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: AppTheme.space24),
+          const Text(
+            'Scanning for peers',
+            style: AppTheme.titleLarge,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: AppTheme.space8),
+          Text(
+            'Looking for nearby OneBit devices via Bluetooth',
+            style: AppTheme.bodyMedium.copyWith(
+              color: AppTheme.textSecondary,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: AppTheme.space16),
+          // Mesh hint
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppTheme.meshMuted,
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+              border: Border.all(
+                color: AppTheme.mesh.withValues(alpha: 0.3),
+                width: 0.5,
+              ),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.wifi_tethering, size: 14, color: AppTheme.mesh),
+                SizedBox(width: 6),
+                Text(
+                  'No internet required — mesh only',
+                  style: AppTheme.caption,
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
@@ -390,75 +370,280 @@ final class _PeerCard extends ConsumerWidget {
   }
 }
 
-/// Pulsing scanning indicator — a small animated dot that communicates
-/// active discovery without dominating the screen.
-class _ScanningPulse extends StatefulWidget {
-  const _ScanningPulse();
+/// Custom painter for pulse rings animation.
+class _PulsePainter extends CustomPainter {
+  _PulsePainter({required this.progress, required this.color});
+
+  final double progress;
+  final Color color;
 
   @override
-  State<_ScanningPulse> createState() => _ScanningPulseState();
-}
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
 
-class _ScanningPulseState extends State<_ScanningPulse>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final Animation<double> _pulse;
-  late final bool _reduceMotion;
-
-  @override
-  void initState() {
-    super.initState();
-    _reduceMotion = MediaQuery.disableAnimationsOf(context);
-    _controller = AnimationController(
-      vsync: this,
-      duration: _reduceMotion ? Duration.zero : OneBitMotion.statusPulse,
-    );
-    _pulse = Tween<double>(begin: 0.4, end: 1.0).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
-    if (!_reduceMotion) {
-      _controller.repeat(reverse: true);
+    for (var i = 0; i < 3; i++) {
+      final t = (progress + i * 0.33) % 1.0;
+      final radius = 20.0 + (t * 40.0);
+      final opacity = (1.0 - t).clamp(0.0, 1.0);
+      paint.color = color.withValues(alpha: opacity * 0.3);
+      canvas.drawCircle(center, radius, paint);
     }
   }
 
   @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
+  bool shouldRepaint(_PulsePainter oldDelegate) =>
+      oldDelegate.progress != progress;
+}
+
+// ── Peers Found State ──────────────────────────────────────────────
+
+class _PeersFoundState extends StatelessWidget {
+  const _PeersFoundState({
+    required this.devices,
+    required this.connections,
+    required this.onConnect,
+    required this.onDisconnect,
+    required this.onScan,
+  });
+
+  final List<ResolvedBleDevice> devices;
+  final Map<String, BleConnectionInfo> connections;
+  final void Function(String) onConnect;
+  final void Function(String) onDisconnect;
+  final VoidCallback onScan;
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.oneBitColors;
-    if (_reduceMotion) {
-      return Container(
-        width: 8,
-        height: 8,
-        decoration: BoxDecoration(
-          color: colors.info,
-          shape: BoxShape.circle,
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: Row(
+            children: [
+              Text(
+                '${devices.length} nearby',
+                style: AppTheme.labelMedium.copyWith(
+                  color: AppTheme.textSecondary,
+                ),
+              ),
+            ],
+          ),
         ),
-      );
-    }
-    return AnimatedBuilder(
-      animation: _pulse,
-      builder: (context, child) {
-        return Opacity(
-          opacity: _pulse.value,
-          child: Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(
-              color: colors.info,
-              shape: BoxShape.circle,
-            ),
+        Expanded(
+          child: _PeerList(
+            devices: devices,
+            connections: connections,
+            onConnect: onConnect,
+            onDisconnect: onDisconnect,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── No Peers State ─────────────────────────────────────────────────
+
+class _NoPeersState extends StatelessWidget {
+  const _NoPeersState({required this.onScan});
+
+  final VoidCallback onScan;
+
+  @override
+  Widget build(BuildContext context) {
+    return OneBitEmptyState(
+      icon: Icons.wifi_tethering_off,
+      title: 'No peers nearby',
+      subtitle: 'Make sure other OneBit users are nearby and scanning. '
+          'Devices must be within Bluetooth range (~10m).',
+      actionLabel: 'Scan again',
+      onAction: onScan,
+    );
+  }
+}
+
+// ── Peer List ──────────────────────────────────────────────────────
+
+class _PeerList extends StatelessWidget {
+  const _PeerList({
+    required this.devices,
+    required this.connections,
+    required this.onConnect,
+    required this.onDisconnect,
+  });
+
+  final List<ResolvedBleDevice> devices;
+  final Map<String, BleConnectionInfo> connections;
+  final void Function(String) onConnect;
+  final void Function(String) onDisconnect;
+
+  @override
+  Widget build(BuildContext context) {
+    final sorted = List<ResolvedBleDevice>.from(devices)
+      ..sort((a, b) {
+        if (a.status == BlePeerStatus.knownPeer &&
+            b.status != BlePeerStatus.knownPeer) {
+          return -1;
+        }
+        if (a.status != BlePeerStatus.knownPeer &&
+            b.status == BlePeerStatus.knownPeer) {
+          return 1;
+        }
+        return b.device.rssi.compareTo(a.device.rssi);
+      });
+
+    return ListView.separated(
+      padding: const EdgeInsets.only(bottom: 8),
+      itemCount: sorted.length,
+      separatorBuilder: (_, _) => const Divider(height: 1, indent: 76),
+      itemBuilder: (context, index) {
+        final resolved = sorted[index];
+        final connState =
+            connections[resolved.device.deviceId]?.state ?? BleConnectionState.disconnected;
+        final isConnected = connState == BleConnectionState.connected;
+        final isVerified =
+            resolved.status == BlePeerStatus.knownPeer;
+
+        return RepaintBoundary(
+          key: ValueKey(resolved.device.deviceId),
+          child: PeerCard(
+            name: resolved.displayName,
+            initials: resolved.displayName.isNotEmpty
+                ? resolved.displayName[0].toUpperCase()
+                : '?',
+            rssi: resolved.device.rssi,
+            isVerified: isVerified,
+            isConnected: isConnected,
+            lastSeen: _formatLastSeen(resolved.device.timestamp),
+            onTap: () {
+              if (!isConnected) {
+                onConnect(resolved.device.deviceId);
+              }
+            },
           ),
         );
       },
     );
   }
+
+  String _formatLastSeen(int timestampMs) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final diff = now - timestampMs;
+    if (diff < 5000) return 'Just now';
+    if (diff < 60000) return '${diff ~/ 1000}s ago';
+    if (diff < 3600000) return '${diff ~/ 60000}m ago';
+    return 'A while ago';
+  }
 }
 
-/// Relative "last seen" text ("just now", "5 min ago", …).
-String relativeTimeLabel(AppLocalizations l10n, DateTime time) =>
-    RelativeTime.of(time).label(l10n);
+// ── Bottom Actions ─────────────────────────────────────────────────
+
+class _BottomActions extends StatelessWidget {
+  const _BottomActions({
+    required this.isAdvertising,
+    required this.onStartAdvertising,
+    required this.onStopAdvertising,
+  });
+
+  final bool isAdvertising;
+  final VoidCallback onStartAdvertising;
+  final VoidCallback onStopAdvertising;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 12,
+        bottom: MediaQuery.of(context).padding.bottom + 12,
+      ),
+      decoration: const BoxDecoration(
+        color: AppTheme.bgBase,
+        border: Border(
+          top: BorderSide(color: AppTheme.divider, width: 0.5),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: isAdvertising ? onStopAdvertising : onStartAdvertising,
+              icon: Icon(
+                isAdvertising ? Icons.stop_circle_outlined : Icons.wifi_tethering,
+                size: 18,
+              ),
+              label: Text(isAdvertising ? 'Stop advertising' : 'Advertise'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Error State ────────────────────────────────────────────────────
+
+class _ErrorState extends StatelessWidget {
+  const _ErrorState({required this.onRetry});
+
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return OneBitEmptyState(
+      icon: Icons.error_outline,
+      title: 'Scan failed',
+      subtitle: 'Bluetooth scanning encountered an error. '
+          'Check that Bluetooth is enabled and try again.',
+      actionLabel: 'Retry',
+      onAction: onRetry,
+    );
+  }
+}
+
+// ── Bluetooth Disabled State ───────────────────────────────────────
+
+class _BluetoothDisabledState extends StatelessWidget {
+  const _BluetoothDisabledState({required this.onOpenSettings});
+
+  final VoidCallback onOpenSettings;
+
+  @override
+  Widget build(BuildContext context) {
+    return OneBitEmptyState(
+      icon: Icons.bluetooth_disabled,
+      title: 'Bluetooth is off',
+      subtitle: 'Enable Bluetooth to discover and connect to nearby OneBit peers.',
+      actionLabel: 'Open settings',
+      onAction: onOpenSettings,
+    );
+  }
+}
+
+// ── Permission Required State ──────────────────────────────────────
+
+class _PermissionRequiredState extends StatelessWidget {
+  const _PermissionRequiredState({
+    required this.onRequest,
+    this.onRecover,
+  });
+
+  final VoidCallback onRequest;
+  final VoidCallback? onRecover;
+
+  @override
+  Widget build(BuildContext context) {
+    return OneBitEmptyState(
+      icon: Icons.bluetooth_searching,
+      title: 'Permission needed',
+      subtitle: 'Bluetooth permission is required to discover nearby OneBit devices. '
+          'This is used only for peer-to-peer mesh communication.',
+      actionLabel: 'Grant permission',
+      onAction: onRecover ?? onRequest,
+    );
+  }
+}

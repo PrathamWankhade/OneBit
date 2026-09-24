@@ -47,6 +47,7 @@ class BluetoothChannel(
         const val SET_NOTIFY = "setNotify"
         const val START_FOREGROUND_SERVICE = "startForegroundService"
         const val STOP_FOREGROUND_SERVICE = "stopForegroundService"
+        const val OPEN_BLUETOOTH_SETTINGS = "openBluetoothSettings"
     }
 
     private val methodChannel = MethodChannel(messenger, METHODS_CHANNEL)
@@ -98,6 +99,10 @@ class BluetoothChannel(
                 SET_NOTIFY -> result.success(manager.setNotify(args(call)))
                 START_FOREGROUND_SERVICE -> result.success(manager.startForegroundService(args(call)))
                 STOP_FOREGROUND_SERVICE -> result.success(manager.stopForegroundService())
+                OPEN_BLUETOOTH_SETTINGS -> {
+                    manager.openBluetoothSettings()
+                    result.success(emptyMap<String, Any>())
+                }
                 else -> result.notImplemented()
             }
         } catch (e: BleException) {

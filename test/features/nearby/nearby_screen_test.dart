@@ -1,247 +1,396 @@
-import 'dart:async';
-
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:go_router/go_router.dart';
-import 'package:onebit/app/app_shell.dart';
-import 'package:onebit/core/database/connection/connection_factory.dart';
-import 'package:onebit/core/database/database_providers.dart'
-    show databaseConnectionFactoryProvider;
-import 'package:onebit/core/errors/failure.dart';
-import 'package:onebit/core/navigation/app_route_paths.dart';
-import 'package:onebit/core/result/result.dart';
-import 'package:onebit/features/bluetooth/presentation/bluetooth_providers.dart';
-import 'package:onebit/features/identity/presentation/identity_providers.dart';
-import 'package:onebit/features/nearby/domain/nearby_peer.dart';
+import 'package:onebit/features/ble/ble_providers.dart';
+import 'package:onebit/features/ble/discovered_device.dart';
 import 'package:onebit/features/nearby/presentation/nearby_screen.dart';
-import 'package:onebit/shared/design_system/components/onebit_error_state.dart';
-import 'package:onebit/shared/design_system/components/onebit_loading_indicator.dart';
-import 'package:onebit/shared/design_system/components/onebit_offline_state.dart';
-import 'package:onebit/shared/design_system/components/onebit_permission_state.dart';
-import 'package:onebit/shared/design_system/icons/onebit_icons.dart';
 
-import '../../app/support/app_navigation_support.dart';
-import '../bluetooth/support/fake_bluetooth_platform.dart';
-
-/// The nearby tab: radio/permission gating, live peer feed, scan lifecycle
-/// and the loading/error/empty state machine.
 void main() {
-  Future<void> pumpNearby(
-    WidgetTester tester,
-    FakeBluetoothPlatform platform,
-  ) async {
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          identityRepositoryProvider.overrideWithValue(
-            FakeIdentityRepository(identity: testIdentity()),
-          ),
-          databaseConnectionFactoryProvider.overrideWithValue(
-            const InMemoryConnectionFactory(),
-          ),
-          bluetoothPlatformProvider.overrideWithValue(platform),
-        ],
-        child: const OneBitApp(),
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  const testChannel = MethodChannel('dev.onebit.onebit/ble');
+
+  setUp(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(testChannel, (call) async {
+      if (call.method == 'getState') {
+        return <String, dynamic>{
+          'state': 'ready',
+          'permission': 'granted',
+          'batterySaver': false,
+          'recoveryRequired': false,
+        };
+      }
+      if (call.method == 'startScan') {
+        return <String, dynamic>{'id': 'scan-1'};
+      }
+      if (call.method == 'stopScan') {
+        return <String, dynamic>{};
+      }
+      if (call.method == 'startAdvertising') {
+        return <String, dynamic>{'id': 'adv-1'};
+      }
+      if (call.method == 'stopAdvertising') {
+        return <String, dynamic>{};
+      }
+      if (call.method == 'connect') {
+        return <String, dynamic>{'status': 'connecting'};
+      }
+      if (call.method == 'disconnect') {
+        return <String, dynamic>{};
+      }
+      return null;
+    });
+  });
+
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(testChannel, null);
+  });
+
+  Widget buildTestApp({List<Override> overrides = const []}) {
+    return ProviderScope(
+      overrides: overrides,
+      child: const MaterialApp(
+        home: NearbyScreen(),
       ),
     );
-    await tester.pumpAndSettle();
-
-    GoRouter.of(tester.element(find.byType(AppShell))).go(AppRoutePaths.nearby);
-    await tester.pumpAndSettle();
   }
 
-  Map<String, Object?> peerResult(String id, int rssi) => {
-    'event': 'scanResult',
-    'result': {
-      'device': {'id': id, 'name': 'onebit-node'},
-      'rssiDb': rssi,
-      'timestamp': DateTime.now().millisecondsSinceEpoch,
-      'connectable': true,
-    },
-  };
+  group('NearbyScreen', () {
+    testWidgets('idle state shows no peers message', (tester) async {
+      await tester.pumpWidget(buildTestApp());
+      await tester.pump();
+      await tester.pump();
 
-  testWidgets('empty state greets a quiet air', (tester) async {
-    final platform = FakeBluetoothPlatform();
-    platform.enqueue('getState', Ok(readySnapshot()));
+      expect(find.text('No peers nearby'), findsOneWidget);
+      expect(find.text('Scan again'), findsOneWidget);
+    });
 
-    await pumpNearby(tester, platform);
+    testWidgets('scanning shows animation then peers', (tester) async {
+      await tester.pumpWidget(buildTestApp());
+      await tester.pump();
+      await tester.pump();
 
-    expect(find.byType(NearbyScreen), findsOneWidget);
-    expect(find.text('No devices nearby yet'), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.refresh));
+      await tester.pump();
+      await tester.pump();
 
-    await disposeApp(tester);
-    platform.dispose();
-  });
+      expect(
+        find.text('Scanning for peers'),
+        findsOneWidget,
+      );
+    });
 
-  testWidgets('discovered peers render id, rssi and last seen', (tester) async {
-    final platform = FakeBluetoothPlatform();
-    platform.enqueue('getState', Ok(readySnapshot()));
+    testWidgets('discovered device appears in list', (tester) async {
+      await tester.pumpWidget(buildTestApp());
+      await tester.pump();
+      await tester.pump();
 
-    await pumpNearby(tester, platform);
+      await tester.tap(find.byIcon(Icons.refresh));
+      await tester.pump();
+      await tester.pump();
 
-    platform.emit(peerResult('peer-1', -55));
-    await tester.pump();
-    await tester.pump();
-
-    expect(find.text('peer-1'), findsOneWidget);
-    expect(find.text('-55 dBm'), findsOneWidget);
-    expect(find.text('1 devices'), findsOneWidget);
-    expect(find.textContaining('Last seen'), findsOneWidget);
-
-    await disposeApp(tester);
-    platform.dispose();
-  });
-
-  testWidgets('scan toggle delegates to the scan controller', (tester) async {
-    final platform = FakeBluetoothPlatform();
-    platform.enqueue('getState', Ok(readySnapshot()));
-    platform.enqueue('startScan', const Ok({'started': true}));
-    platform.enqueue('stopScan', const Ok({'stopped': true}));
-
-    await pumpNearby(tester, platform);
-
-    await tester.tap(find.byIcon(OneBitIcons.radar));
-    await tester.pumpAndSettle();
-    expect(platform.invokedMethods, contains('startScan'));
-    expect(find.text('Scanning…'), findsOneWidget);
-
-    await tester.tap(find.byIcon(OneBitIcons.radar));
-    await tester.pumpAndSettle();
-    expect(platform.invokedMethods, contains('stopScan'));
-
-    await disposeApp(tester);
-    platform.dispose();
-  });
-
-  testWidgets('radio off shows the offline state', (tester) async {
-    final platform = FakeBluetoothPlatform();
-    platform.enqueue(
-      'getState',
-      const Ok({
-        'state': 'off',
-        'permission': 'granted',
-        'batterySaver': false,
-        'maxConcurrentConnections': 4,
-      }),
-    );
-
-    await pumpNearby(tester, platform);
-
-    expect(find.byType(OneBitOfflineState), findsOneWidget);
-    expect(find.text('Bluetooth is off'), findsOneWidget);
-
-    await disposeApp(tester);
-    platform.dispose();
-  });
-
-  testWidgets('denied permissions show the permission state', (tester) async {
-    final platform = FakeBluetoothPlatform();
-    platform.enqueue(
-      'getState',
-      const Ok({
-        'state': 'ready',
-        'permission': 'denied',
-        'batterySaver': false,
-        'maxConcurrentConnections': 4,
-      }),
-    );
-
-    await pumpNearby(tester, platform);
-
-    expect(find.byType(OneBitPermissionState), findsOneWidget);
-    expect(find.text('Bluetooth access needed'), findsOneWidget);
-
-    await disposeApp(tester);
-    platform.dispose();
-  });
-
-  testWidgets('peer feed failure shows the error state with retry', (
-    tester,
-  ) async {
-    final platform = FakeBluetoothPlatform();
-    platform.enqueue('getState', Ok(readySnapshot()));
-
-    final controller = StreamController<Result<List<NearbyPeer>>>();
-    addTearDown(controller.close);
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          identityRepositoryProvider.overrideWithValue(
-            FakeIdentityRepository(identity: testIdentity()),
-          ),
-          databaseConnectionFactoryProvider.overrideWithValue(
-            const InMemoryConnectionFactory(),
-          ),
-          bluetoothPlatformProvider.overrideWithValue(platform),
-          nearbyPeersProvider.overrideWith((_) => controller.stream),
-        ],
-        child: const OneBitApp(),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    GoRouter.of(tester.element(find.byType(AppShell))).go(AppRoutePaths.nearby);
-    await tester.pumpAndSettle();
-
-    controller.add(const Err(PlatformFailure(message: 'ble.stream')));
-    await tester.pumpAndSettle();
-
-    expect(find.byType(OneBitErrorState), findsOneWidget);
-    expect(find.text('Retry'), findsOneWidget);
-
-    controller.add(
-      Ok([
-        NearbyPeer(
-          peerId: 'peer-1',
-          firstSeen: DateTime.now(),
-          lastSeen: DateTime.now(),
-          rssiDb: -50,
+      final service = ProviderScope.containerOf(
+        tester.element(find.byType(NearbyScreen)),
+      ).read(bleServiceProvider);
+      service.pushDiscovery(
+        const DiscoveredOneBitDevice(
+          deviceId: 'AA:BB:CC:DD:EE:FF',
+          rssi: -55,
+          timestamp: 1700000000000,
+          name: 'OneBit-001',
+          serviceUuids: ['D1A00000-0000-1000-8000-00805F9B34FB'],
         ),
-      ]),
-    );
-    await tester.tap(find.text('Retry'));
-    await tester.pumpAndSettle();
+      );
+      await tester.pump();
+      await tester.pump();
 
-    expect(find.text('peer-1'), findsOneWidget);
-    expect(find.byType(OneBitErrorState), findsNothing);
+      expect(find.text('OneBit-001'), findsOneWidget);
+    });
 
-    await disposeApp(tester);
-    platform.dispose();
-  });
+    testWidgets('multiple devices are shown', (tester) async {
+      await tester.pumpWidget(buildTestApp());
+      await tester.pump();
+      await tester.pump();
 
-  testWidgets('nearby stays loading while the peer feed is silent', (
-    tester,
-  ) async {
-    final platform = FakeBluetoothPlatform();
-    platform.enqueue('getState', Ok(readySnapshot()));
+      await tester.tap(find.byIcon(Icons.refresh));
+      await tester.pump();
+      await tester.pump();
 
-    final controller = StreamController<Result<List<NearbyPeer>>>();
-    addTearDown(controller.close);
+      final service = ProviderScope.containerOf(
+        tester.element(find.byType(NearbyScreen)),
+      ).read(bleServiceProvider);
 
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          identityRepositoryProvider.overrideWithValue(
-            FakeIdentityRepository(identity: testIdentity()),
-          ),
-          databaseConnectionFactoryProvider.overrideWithValue(
-            const InMemoryConnectionFactory(),
-          ),
-          bluetoothPlatformProvider.overrideWithValue(platform),
-          nearbyPeersProvider.overrideWith((_) => controller.stream),
-        ],
-        child: const OneBitApp(),
-      ),
-    );
-    await tester.pumpAndSettle();
+      service.pushDiscovery(
+        const DiscoveredOneBitDevice(
+          deviceId: 'AA:BB:CC:DD:EE:01',
+          rssi: -50,
+          timestamp: 1700000000000,
+          name: 'OneBit-A',
+          serviceUuids: ['D1A00000-0000-1000-8000-00805F9B34FB'],
+        ),
+      );
+      service.pushDiscovery(
+        const DiscoveredOneBitDevice(
+          deviceId: 'AA:BB:CC:DD:EE:02',
+          rssi: -70,
+          timestamp: 1700000000000,
+          name: 'OneBit-B',
+          serviceUuids: ['D1A00000-0000-1000-8000-00805F9B34FB'],
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
 
-    GoRouter.of(tester.element(find.byType(AppShell))).go(AppRoutePaths.nearby);
-    await tester.pumpAndSettle();
+      expect(find.text('OneBit-A'), findsOneWidget);
+      expect(find.text('OneBit-B'), findsOneWidget);
+    });
 
-    expect(find.byType(OneBitLoadingIndicator), findsOneWidget);
+    testWidgets('devices sorted by signal strength', (tester) async {
+      await tester.pumpWidget(buildTestApp());
+      await tester.pump();
+      await tester.pump();
 
-    await disposeApp(tester);
-    platform.dispose();
+      await tester.tap(find.byIcon(Icons.refresh));
+      await tester.pump();
+      await tester.pump();
+
+      final service = ProviderScope.containerOf(
+        tester.element(find.byType(NearbyScreen)),
+      ).read(bleServiceProvider);
+
+      service.pushDiscovery(
+        const DiscoveredOneBitDevice(
+          deviceId: 'AA:BB:CC:DD:EE:01',
+          rssi: -85,
+          timestamp: 1700000000000,
+          name: 'Weak-Device',
+          serviceUuids: ['D1A00000-0000-1000-8000-00805F9B34FB'],
+        ),
+      );
+      service.pushDiscovery(
+        const DiscoveredOneBitDevice(
+          deviceId: 'AA:BB:CC:DD:EE:02',
+          rssi: -45,
+          timestamp: 1700000000000,
+          name: 'Strong-Device',
+          serviceUuids: ['D1A00000-0000-1000-8000-00805F9B34FB'],
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      final strongIndex = tester.getTopLeft(find.text('Strong-Device')).dy;
+      final weakIndex = tester.getTopLeft(find.text('Weak-Device')).dy;
+      expect(strongIndex, lessThan(weakIndex));
+    });
+
+    testWidgets('device without name shows fallback', (tester) async {
+      await tester.pumpWidget(buildTestApp());
+      await tester.pump();
+      await tester.pump();
+
+      await tester.tap(find.byIcon(Icons.refresh));
+      await tester.pump();
+      await tester.pump();
+
+      final service = ProviderScope.containerOf(
+        tester.element(find.byType(NearbyScreen)),
+      ).read(bleServiceProvider);
+
+      service.pushDiscovery(
+        const DiscoveredOneBitDevice(
+          deviceId: 'AA:BB:CC:DD:EE:FF',
+          rssi: -60,
+          timestamp: 1700000000000,
+          serviceUuids: ['D1A00000-0000-1000-8000-00805F9B34FB'],
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('OneBit device'), findsOneWidget);
+    });
+
+    testWidgets('bluetooth off shows disabled state', (tester) async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(testChannel, (call) async {
+        if (call.method == 'getState') {
+          return <String, dynamic>{
+            'state': 'off',
+            'permission': 'granted',
+            'batterySaver': false,
+            'recoveryRequired': false,
+          };
+        }
+        return null;
+      });
+
+      await tester.pumpWidget(buildTestApp());
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('Bluetooth is off'), findsOneWidget);
+      expect(
+        find.text('Enable Bluetooth to discover and connect to nearby OneBit peers.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('permission required shows permission state', (tester) async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(testChannel, (call) async {
+        if (call.method == 'getState') {
+          return <String, dynamic>{
+            'state': 'ready',
+            'permission': 'notDetermined',
+            'batterySaver': false,
+            'recoveryRequired': false,
+          };
+        }
+        if (call.method == 'requestPermissions') {
+          return <String, dynamic>{
+            'permission': 'granted',
+          };
+        }
+        return null;
+      });
+
+      await tester.pumpWidget(buildTestApp());
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('Permission needed'), findsOneWidget);
+      expect(find.text('Grant permission'), findsOneWidget);
+    });
+
+    testWidgets('dispose stops scan and advertising', (tester) async {
+      await tester.pumpWidget(buildTestApp());
+      await tester.pump();
+      await tester.pump();
+
+      await tester.tap(find.byIcon(Icons.refresh));
+      await tester.pump();
+      await tester.pump();
+
+      final service = ProviderScope.containerOf(
+        tester.element(find.byType(NearbyScreen)),
+      ).read(bleServiceProvider);
+
+      expect(service.current.isScanning, true);
+
+      await tester.pumpWidget(const MaterialApp(home: SizedBox()));
+      await tester.pump();
+
+      expect(service.current.isScanning, false);
+    });
+
+    testWidgets('new scan clears stale results from previous session',
+        (tester) async {
+      await tester.pumpWidget(buildTestApp());
+      await tester.pump();
+      await tester.pump();
+
+      await tester.tap(find.byIcon(Icons.refresh));
+      await tester.pump();
+      await tester.pump();
+
+      final service = ProviderScope.containerOf(
+        tester.element(find.byType(NearbyScreen)),
+      ).read(bleServiceProvider);
+
+      service.pushDiscovery(
+        const DiscoveredOneBitDevice(
+          deviceId: 'AA:BB:CC:DD:EE:01',
+          rssi: -55,
+          timestamp: 1700000000000,
+          name: 'Old-Device',
+          serviceUuids: ['D1A00000-0000-1000-8000-00805F9B34FB'],
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('Old-Device'), findsOneWidget);
+
+      await service.stopScan();
+      await tester.pump();
+      await tester.pump();
+
+      // After stopping, the peers found view still shows the device
+      expect(find.text('Old-Device'), findsOneWidget);
+      expect(find.text('1 nearby'), findsOneWidget);
+
+      // Start second scan — old devices should be cleared
+      await tester.tap(find.byIcon(Icons.refresh));
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('Old-Device'), findsNothing);
+    });
+
+    testWidgets('permission request preserves radio state', (tester) async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(testChannel, (call) async {
+        if (call.method == 'getState') {
+          return <String, dynamic>{
+            'state': 'ready',
+            'permission': 'notDetermined',
+            'batterySaver': false,
+            'recoveryRequired': false,
+          };
+        }
+        if (call.method == 'requestPermissions') {
+          return <String, dynamic>{
+            'permission': 'granted',
+          };
+        }
+        return null;
+      });
+
+      await tester.pumpWidget(buildTestApp());
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('Permission needed'), findsOneWidget);
+
+      await tester.tap(find.text('Grant permission'));
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('No peers nearby'), findsOneWidget);
+      expect(find.text('Scan again'), findsOneWidget);
+    });
+
+    testWidgets('discovered device is tappable', (tester) async {
+      await tester.pumpWidget(buildTestApp());
+      await tester.pump();
+      await tester.pump();
+
+      await tester.tap(find.byIcon(Icons.refresh));
+      await tester.pump();
+      await tester.pump();
+
+      final service = ProviderScope.containerOf(
+        tester.element(find.byType(NearbyScreen)),
+      ).read(bleServiceProvider);
+
+      service.pushDiscovery(
+        const DiscoveredOneBitDevice(
+          deviceId: 'AA:BB:CC:DD:EE:FF',
+          rssi: -55,
+          timestamp: 1700000000000,
+          name: 'OneBit-001',
+          serviceUuids: ['D1A00000-0000-1000-8000-00805F9B34FB'],
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('OneBit-001'), findsOneWidget);
+      await tester.tap(find.text('OneBit-001'));
+      await tester.pump();
+    });
   });
 }

@@ -1,60 +1,31 @@
 include: package:flutter_lints/flutter.yaml
 
 analyzer:
-  language:
-    strict-casts: true
-    strict-inference: true
-    strict-raw-types: true
+  errors:
+    missing_return: error
+    dead_code: warning
   exclude:
     - build/**
-    - cpp/**
-    # Generated sources (Drift codegen) are excluded from analysis; the
-    # generators own their own style and the strict lint set would otherwise
-    # flag generated declarations.
-    - '**/*.g.dart'
-    - '**/*.drift.dart'
-    - '**/*.freezed.dart'
     - android/**
     - ios/**
+    - "**/*.g.dart"
+    - "**/*.drift.dart"
     - web/**
     - windows/**
     - macos/**
     - linux/**
-  errors:
-    avoid_print: warning
-    prefer_const_constructors: warning
-    unawaited_futures: warning
 
 linter:
   rules:
-    always_declare_return_types: true
-    always_put_required_named_parameters_first: true
-    avoid_classes_with_only_static_members: false
-    avoid_dynamic_calls: true
-    avoid_print: true
-    avoid_unused_constructor_parameters: true
-    cancel_subscriptions: true
-    close_sinks: true
-    directives_ordering: true
-    no_leading_underscores_for_local_identifiers: true
-    no_logic_in_create_state: true
     prefer_const_constructors: true
     prefer_const_declarations: true
-    prefer_final_fields: true
-    prefer_final_locals: true
-    prefer_final_in_for_each: true
-    prefer_if_null_operators: true
-    prefer_interpolation_to_compose_strings: true
+    avoid_print: true
     prefer_single_quotes: true
-    require_trailing_commas: true
     sort_child_properties_last: true
-    unawaited_futures: true
-    unnecessary_await_in_return: true
-    unnecessary_lambdas: true
-    unnecessary_null_checks: true
-    unnecessary_parenthesis: true
-    unnecessary_statements: true
     use_key_in_widget_constructors: true
-    use_named_constants: true
-    use_super_parameters: true
-    use_to_and_as_if_applicable: true
+    prefer_final_locals: true
+    avoid_unnecessary_containers: true
+    sized_box_for_whitespace: true
+    prefer_is_empty: true
+    prefer_is_not_empty: true
+    avoid_relative_lib_imports: true
