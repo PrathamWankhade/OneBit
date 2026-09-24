@@ -40,6 +40,9 @@ migrate_working_dir/
 *.g.dart
 *.drift.dart
 
+# Android heap dumps / profiling
+*.hprof
+
 # Android
 /android/.gradle/
 /android/app/debug/
