@@ -100,3 +100,13 @@ final settingsRelayEnabledProvider = StateProvider<bool>(
   },
   dependencies: [settingsRepositoryProvider],
 );
+
+// ── App update ──
+
+final settingsAutoUpdateProvider = StateProvider<bool>(
+  (ref) {
+    final repo = ref.watch(settingsRepositoryProvider);
+    return repo.autoUpdateEnabled;
+  },
+  dependencies: [settingsRepositoryProvider],
+);

@@ -2,6 +2,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:onebit/core/theme/app_theme.dart';
+import 'package:onebit/core/version/app_version.dart';
 import 'package:onebit/features/settings/data/settings_providers.dart';
 import 'package:onebit/features/settings/presentation/widgets/settings_section.dart';
 import 'package:onebit/features/settings/presentation/widgets/settings_tile.dart';
@@ -41,6 +42,12 @@ class SettingsMainScreen extends ConsumerWidget {
                   icon: Icons.qr_code,
                   title: 'My QR Code',
                   onTap: () => context.push('/identity/qr'),
+                ),
+                SettingsTile(
+                  icon: Icons.qr_code_scanner,
+                  title: 'Scan QR Code',
+                  value: 'Pair',
+                  onTap: () => context.push('/identity/scan'),
                 ),
                 SettingsTile(
                   icon: Icons.fingerprint,
@@ -231,9 +238,17 @@ class SettingsMainScreen extends ConsumerWidget {
                   onTap: () => context.push('/settings/routing-diagnostics'),
                 ),
                 SettingsTile(
+                  icon: Icons.system_update,
+                  title: 'App update',
+                  value: ref.watch(settingsAutoUpdateProvider)
+                      ? 'Auto'
+                      : 'Manual',
+                  onTap: () => context.push('/settings/update'),
+                ),
+                SettingsTile(
                   icon: Icons.info_outline,
                   title: 'About OneBit',
-                  value: 'v1.0.0+1',
+                  value: 'v${AppVersion.current}',
                   onTap: () => context.push('/settings/about'),
                 ),
                 SettingsTile(

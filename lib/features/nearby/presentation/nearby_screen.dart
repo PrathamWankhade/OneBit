@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:onebit/core/logging/app_logger.dart';
 import 'package:onebit/core/theme/app_theme.dart';
 import 'package:onebit/features/ble/ble_providers.dart';
 import 'package:onebit/features/ble/ble_state.dart';
@@ -28,6 +29,18 @@ class _NearbyScreenState extends ConsumerState<NearbyScreen>
   BleStateNotifier? _notifier;
   late AnimationController _pulseController;
 
+  /// Whether discoverability has been started automatically.
+  ///
+  /// Being visible to other nodes was previously a manual action hidden
+  /// behind a button at the bottom of the screen, so a phone that nobody
+  /// remembered to put into advertise mode simply never showed up in anyone
+  /// else's list. Start it as soon as the radio and permissions allow.
+  ///
+  /// Scanning is deliberately *not* started automatically — it is the
+  /// state this screen is built around ("Scan again") and stays under the
+  /// user's control.
+  bool _autoStarted = false;
+
   @override
   void initState() {
     super.initState();
@@ -36,6 +49,7 @@ class _NearbyScreenState extends ConsumerState<NearbyScreen>
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeAutoStart());
   }
 
   @override
@@ -57,6 +71,30 @@ class _NearbyScreenState extends ConsumerState<NearbyScreen>
         _resolvedDevices[resolved.device.deviceId] = resolved;
       });
     });
+  }
+
+  /// Makes this device discoverable once BLE is ready.
+  ///
+  /// Called after the first frame and re-checked whenever the screen
+  /// rebuilds, because radio and permission state only settle once
+  /// `getState` has answered. It no-ops until BLE is operational and only
+  /// ever starts once.
+  Future<void> _maybeAutoStart() async {
+    if (_autoStarted || !mounted) return;
+    final notifier = _notifier;
+    if (notifier == null) return;
+    if (!ref.read(bleStateProvider).isOperational) return;
+    _autoStarted = true;
+
+    // Advertising carries the local public key, so wait for the identity to
+    // load — without it, peers only ever see an anonymous "OneBit device".
+    try {
+      await ref.read(localIdentityProvider.future);
+    } catch (e) {
+      AppLogger.warning('Nearby: identity unavailable before advertising: $e');
+    }
+    if (!mounted) return;
+    await _startAdvertising();
   }
 
   Future<void> _startScan() async {
@@ -111,6 +149,11 @@ class _NearbyScreenState extends ConsumerState<NearbyScreen>
   @override
   Widget build(BuildContext context) {
     final bleState = ref.watch(bleStateProvider);
+    if (!_autoStarted) {
+      // Radio and permission state only settle after the first frame has
+      // been requested, so retry once this frame has actually rendered.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _maybeAutoStart());
+    }
     final isScanning = bleState.isScanning;
     final devices = _resolvedDevices.values.toList();
 
@@ -142,17 +185,24 @@ class _NearbyScreenState extends ConsumerState<NearbyScreen>
   ) {
     if (bleState.needsBluetoothEnable) {
       return _BluetoothDisabledState(
-        onOpenSettings: () =>
-            ref.read(bleStateProvider.notifier).openBluetoothSettings(),
+        onOpenSettings: () async {
+          await ref.read(bleStateProvider.notifier).openBluetoothSettings();
+          await _maybeAutoStart();
+        },
       );
     }
 
     if (bleState.needsPermissionRequest || bleState.needsManualRecovery) {
       return _PermissionRequiredState(
-        onRequest: () =>
-            ref.read(bleStateProvider.notifier).requestPermissions(),
+        onRequest: () async {
+          await ref.read(bleStateProvider.notifier).requestPermissions();
+          await _maybeAutoStart();
+        },
         onRecover: bleState.needsManualRecovery
-            ? () => ref.read(bleStateProvider.notifier).recoverPermissions()
+            ? () async {
+                await ref.read(bleStateProvider.notifier).recoverPermissions();
+                await _maybeAutoStart();
+              }
             : null,
       );
     }

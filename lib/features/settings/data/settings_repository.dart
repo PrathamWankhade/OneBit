@@ -43,6 +43,12 @@ class SettingsRepository {
   bool get discoveryEnabled => _prefs.getBool(_kDiscoveryEnabled) ?? true;
   bool get relayEnabled => _prefs.getBool(_kRelayEnabled) ?? true;
 
+  // ── App update ──
+
+  /// Whether OneBit looks for new builds on its own and tells the user
+  /// when one is available.
+  bool get autoUpdateEnabled => _prefs.getBool(_kAutoUpdateEnabled) ?? true;
+
   // ── Setters ──
 
   Future<bool> setThemeMode(int index) => _prefs.setInt(_kThemeMode, index);
@@ -65,6 +71,8 @@ class SettingsRepository {
       _prefs.setBool(_kDiscoveryEnabled, value);
   Future<bool> setRelayEnabled(bool value) =>
       _prefs.setBool(_kRelayEnabled, value);
+  Future<bool> setAutoUpdateEnabled(bool value) =>
+      _prefs.setBool(_kAutoUpdateEnabled, value);
 
   // ── Per-peer settings ──
 
@@ -94,3 +102,4 @@ const _kNotificationSound = 'settings_notification_sound';
 const _kNotificationVibration = 'settings_notification_vibration';
 const _kDiscoveryEnabled = 'settings_discovery_enabled';
 const _kRelayEnabled = 'settings_relay_enabled';
+const _kAutoUpdateEnabled = 'settings_auto_update_enabled';

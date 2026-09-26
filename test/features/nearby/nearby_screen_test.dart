@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:onebit/features/ble/ble_providers.dart';
 import 'package:onebit/features/ble/discovered_device.dart';
+import 'package:onebit/features/identity/identity_providers.dart';
 import 'package:onebit/features/nearby/presentation/nearby_screen.dart';
 
 void main() {
@@ -51,7 +52,13 @@ void main() {
 
   Widget buildTestApp({List<Override> overrides = const []}) {
     return ProviderScope(
-      overrides: overrides,
+      overrides: [
+        // Advertising waits for the local identity before starting, but
+        // these tests are about discovery UI, not identity — stubbing it
+        // keeps them from opening the real database.
+        localIdentityProvider.overrideWith((ref) async => null),
+        ...overrides,
+      ],
       child: const MaterialApp(
         home: NearbyScreen(),
       ),
@@ -391,6 +398,27 @@ void main() {
       expect(find.text('OneBit-001'), findsOneWidget);
       await tester.tap(find.text('OneBit-001'));
       await tester.pump();
+    });
+
+    testWidgets('becomes discoverable automatically, scanning stays manual',
+        (tester) async {
+      await tester.pumpWidget(buildTestApp());
+      await tester.pump();
+      await tester.pump();
+
+      final service = ProviderScope.containerOf(
+        tester.element(find.byType(NearbyScreen)),
+      ).read(bleServiceProvider);
+
+      // A phone nobody remembered to put in advertise mode would otherwise
+      // never appear in anyone else's list.
+      expect(service.current.isAdvertising, true);
+
+      // Scanning is still the user's call, so the idle "Scan again"
+      // state remains reachable.
+      expect(service.current.isScanning, false);
+      expect(find.text('No peers nearby'), findsOneWidget);
+      expect(find.text('Scan again'), findsOneWidget);
     });
   });
 }

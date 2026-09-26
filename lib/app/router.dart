@@ -19,6 +19,7 @@ import 'package:onebit/features/nearby/presentation/nearby_screen.dart';
 import 'package:onebit/features/onboarding/presentation/onboarding_screen.dart';
 import 'package:onebit/features/routing/ui/routing_diagnostics_screen.dart';
 import 'package:onebit/features/settings/presentation/screens/about_screen.dart';
+import 'package:onebit/features/settings/presentation/screens/app_update_screen.dart';
 import 'package:onebit/features/settings/presentation/screens/appearance_settings_screen.dart';
 import 'package:onebit/features/settings/presentation/screens/mesh_settings_screen.dart';
 import 'package:onebit/features/settings/presentation/screens/privacy_settings_screen.dart';
@@ -234,6 +235,11 @@ GoRouter createRouter(RouterNotifier notifier) {
             path: 'about',
             pageBuilder: (context, state) =>
                 _slideTransition(context, state, const AboutScreen()),
+          ),
+          GoRoute(
+            path: 'update',
+            pageBuilder: (context, state) =>
+                _slideTransition(context, state, const AppUpdateScreen()),
           ),
           GoRoute(
             path: 'routing-diagnostics',

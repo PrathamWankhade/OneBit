@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:onebit/core/theme/app_theme.dart';
+import 'package:onebit/core/version/app_version.dart';
 
 /// F8 — About OneBit screen.
 class AboutScreen extends StatelessWidget {
@@ -62,9 +63,9 @@ class AboutScreen extends StatelessWidget {
             ),
             child: Column(
               children: [
-                const _InfoRow(label: 'Version', value: '1.0.0+1'),
+                const _InfoRow(label: 'Version', value: AppVersion.current),
                 const Divider(height: 24, color: AppTheme.bgMuted),
-                const _InfoRow(label: 'Build', value: '1'),
+                const _InfoRow(label: 'Build', value: AppVersion.build),
                 const Divider(height: 24, color: AppTheme.bgMuted),
                 GestureDetector(
                   onTap: () => showLicensePage(context: context),
