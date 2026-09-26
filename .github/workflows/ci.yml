@@ -20,16 +20,16 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      # Drift/Mockito sources are gitignored (see .gitignore), so they must be
+      # regenerated or `flutter analyze` fails on undefined generated symbols.
+      - name: Code generation
+        run: dart run build_runner build --delete-conflicting-outputs
+
       - name: Static analysis (zero issues)
         run: flutter analyze
 
       - name: Unit & widget tests
         run: flutter test --coverage
-
-      - name: Native (Kotlin) unit tests
-        run: |
-          cd android
-          ./gradlew :app:testDebugUnitTest --console=plain
 
       - name: Upload coverage
         uses: codecov/codecov-action@v5
@@ -52,8 +52,17 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      # The APK build compiles the generated Drift sources too.
+      - name: Code generation
+        run: dart run build_runner build --delete-conflicting-outputs
+
       - name: Assemble debug apk
         run: flutter build apk --debug
+
+      # The Gradle wrapper and android/local.properties are gitignored;
+      # `flutter build apk` materialises them, so native tests must run after it.
+      - name: Native (Kotlin) unit tests
+        run: cd android && ./gradlew :app:testDebugUnitTest --console=plain
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
