@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:qr/qr.dart' as qr;
+import 'package:onebit/core/theme/app_motion.dart';
 import 'package:onebit/core/theme/app_theme.dart';
 import 'package:onebit/features/identity/identity_export.dart';
 import 'package:onebit/features/identity/identity_providers.dart';
@@ -63,9 +64,14 @@ class _IdentityQrScreenState extends ConsumerState<IdentityQrScreen> {
       backgroundColor: AppTheme.bgBase,
       appBar: AppBar(
         backgroundColor: AppTheme.bgBase,
-        title: Text(
-          _page == 0 ? 'My QR Code' : 'Scan QR Code',
-          style: AppTheme.titleLarge.copyWith(color: AppTheme.textPrimary),
+        title: MotionCrossFade(
+          // Keys make AnimatedSwitcher treat the two titles as different
+          // children; without them they'd silently swap with no transition.
+          child: Text(
+            _page == 0 ? 'My QR Code' : 'Scan QR Code',
+            key: ValueKey<String>(_page == 0 ? 'qr-title' : 'scan-title'),
+            style: AppTheme.titleLarge.copyWith(color: AppTheme.textPrimary),
+          ),
         ),
         actions: [
           IconButton(
@@ -159,7 +165,7 @@ class _IdentityQrScreenState extends ConsumerState<IdentityQrScreen> {
                   },
                 ),
               ),
-              const _PeerBoundCard(),
+              const MotionEnter(child: _PeerBoundCard()),
             ],
           ),
           const IdentityQrScannerView(),

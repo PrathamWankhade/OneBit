@@ -112,6 +112,7 @@ class _IdentityQrScannerViewState
         MobileScanner(
           controller: _scannerController!,
           onDetect: _onDetect,
+          placeholderBuilder: (context) => const _CameraWarmup(),
         ),
         // Scan overlay
         Center(
@@ -441,5 +442,55 @@ class _IdentityQrScannerViewState
     } catch (e) {
       if (mounted) setState(() => _verificationError = 'Verification failed: $e');
     }
+  }
+}
+
+/// Stand-in shown while the camera warms up.
+///
+/// `mobile_scanner` defaults to a black box, which makes the pager slide a
+/// dead rectangle in from the right. This keeps the page on the app's own
+/// surface so the transition reads as intentional.
+///
+/// Deliberately has no spinner: a perpetual animation here would hang any
+/// test that reaches for `pumpAndSettle`.
+class _CameraWarmup extends StatelessWidget {
+  const _CameraWarmup();
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: AppTheme.bgBase,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: AppTheme.accentMuted,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: AppTheme.accent.withValues(alpha: 0.3),
+                ),
+              ),
+              child: const Icon(
+                Icons.photo_camera_outlined,
+                size: 24,
+                color: AppTheme.accent,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Starting camera',
+              style: AppTheme.caption.copyWith(
+                color: AppTheme.textTertiary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:onebit/core/theme/app_motion.dart';
 import 'package:onebit/core/theme/app_theme.dart';
 
 // ── OneBitCard ──────────────────────────────────────────────────────
@@ -140,22 +141,24 @@ class OneBitSectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-      child: Row(
-        children: [
-          Text(
-            label.toUpperCase(),
-            style: AppTheme.labelMedium.copyWith(
-              color: AppTheme.textTertiary,
-              letterSpacing: 0.1,
+    return MotionEnter(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+        child: Row(
+          children: [
+            Text(
+              label.toUpperCase(),
+              style: AppTheme.labelMedium.copyWith(
+                color: AppTheme.textTertiary,
+                letterSpacing: 0.1,
+              ),
             ),
-          ),
-          if (trailing != null) ...[
-            const Spacer(),
-            trailing!,
+            if (trailing != null) ...[
+              const Spacer(),
+              trailing!,
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

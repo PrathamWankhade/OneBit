@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:onebit/core/theme/app_motion.dart';
 import 'package:onebit/core/theme/app_theme.dart';
 
 /// F8 — Toggle settings tile with icon, title, optional description,
@@ -23,55 +24,57 @@ class SettingsToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onChanged != null ? () => onChanged!(!value) : null,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        constraints: BoxConstraints(
-          minHeight: description != null ? 72 : 56,
-        ),
-        child: Row(
-          children: [
-            // Icon
-            Icon(icon, size: 24, color: AppTheme.textSecondary),
-            const SizedBox(width: 16),
+    return MotionEnter(
+      child: GestureDetector(
+        onTap: onChanged != null ? () => onChanged!(!value) : null,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          constraints: BoxConstraints(
+            minHeight: description != null ? 72 : 56,
+          ),
+          child: Row(
+            children: [
+              // Icon
+              Icon(icon, size: 24, color: AppTheme.textSecondary),
+              const SizedBox(width: 16),
 
-            // Title + description
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    title,
-                    style: AppTheme.bodyMedium.copyWith(
-                      color: AppTheme.textPrimary,
-                    ),
-                  ),
-                  if (description != null) ...[
-                    const SizedBox(height: 2),
+              // Title + description
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
                     Text(
-                      description!,
-                      style: AppTheme.caption.copyWith(
-                        color: AppTheme.textSecondary,
+                      title,
+                      style: AppTheme.bodyMedium.copyWith(
+                        color: AppTheme.textPrimary,
                       ),
                     ),
+                    if (description != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        description!,
+                        style: AppTheme.caption.copyWith(
+                          color: AppTheme.textSecondary,
+                        ),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
-            ),
 
-            // Toggle switch
-            SizedBox(
-              width: 51,
-              height: 31,
-              child: Switch(
-                value: value,
-                onChanged: onChanged,
+              // Toggle switch
+              SizedBox(
+                width: 51,
+                height: 31,
+                child: Switch(
+                  value: value,
+                  onChanged: onChanged,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

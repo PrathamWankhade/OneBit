@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:onebit/core/theme/app_motion.dart';
 import 'package:onebit/core/theme/app_theme.dart';
 
 /// F8 — Standard settings tile with icon, title, optional description,
@@ -30,65 +31,67 @@ class SettingsTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        constraints: BoxConstraints(
-          minHeight: description != null ? 72 : 56,
-        ),
-        child: Row(
-          children: [
-            // Icon
-            Icon(icon, size: 24, color: AppTheme.textSecondary),
-            const SizedBox(width: 16),
+    return MotionEnter(
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          constraints: BoxConstraints(
+            minHeight: description != null ? 72 : 56,
+          ),
+          child: Row(
+            children: [
+              // Icon
+              Icon(icon, size: 24, color: AppTheme.textSecondary),
+              const SizedBox(width: 16),
 
-            // Title + description
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    title,
-                    style: AppTheme.bodyMedium.copyWith(
-                      color: AppTheme.textPrimary,
-                    ),
-                  ),
-                  if (description != null) ...[
-                    const SizedBox(height: 2),
+              // Title + description
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
                     Text(
-                      description!,
-                      style: AppTheme.caption.copyWith(
-                        color: AppTheme.textSecondary,
+                      title,
+                      style: AppTheme.bodyMedium.copyWith(
+                        color: AppTheme.textPrimary,
                       ),
                     ),
+                    if (description != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        description!,
+                        style: AppTheme.caption.copyWith(
+                          color: AppTheme.textSecondary,
+                        ),
+                      ),
+                    ],
                   ],
-                ],
-              ),
-            ),
-
-            // Value + trailing/arrow
-            if (value != null)
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: Text(
-                  value!,
-                  style: AppTheme.bodyMedium.copyWith(
-                    color: AppTheme.textTertiary,
-                  ),
                 ),
               ),
-            if (trailing != null)
-              trailing!
-            else if (onTap != null)
-              const Icon(
-                Icons.chevron_right,
-                size: 16,
-                color: AppTheme.textTertiary,
-              ),
-          ],
+
+              // Value + trailing/arrow
+              if (value != null)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: Text(
+                    value!,
+                    style: AppTheme.bodyMedium.copyWith(
+                      color: AppTheme.textTertiary,
+                    ),
+                  ),
+                ),
+              if (trailing != null)
+                trailing!
+              else if (onTap != null)
+                const Icon(
+                  Icons.chevron_right,
+                  size: 16,
+                  color: AppTheme.textTertiary,
+                ),
+            ],
+          ),
         ),
       ),
     );

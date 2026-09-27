@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:onebit/core/theme/app_motion.dart';
 import 'package:onebit/core/theme/app_theme.dart';
 import 'package:onebit/features/navigation/presentation/floating_nav_bar.dart';
 
@@ -28,6 +29,14 @@ class _MainShellScaffoldState extends State<MainShellScaffold>
   bool _isDragging = false;
   late final AnimationController _slideController;
   late final Animation<Offset> _slideAnimation;
+  late final Animation<double> _fadeAnimation;
+
+  /// Last tab the body was built for.
+  ///
+  /// The animation is driven from here rather than from `_onTap` so that
+  /// *every* tab change moves — `goBranch` from the nav bar, the swipe
+  /// gesture, and `context.go('/nearby')` from a button all land here.
+  late int _shownIndex;
 
   static const int _chatsTabIndex = 0;
   static const int _tabCount = 3;
@@ -38,17 +47,22 @@ class _MainShellScaffoldState extends State<MainShellScaffold>
   @override
   void initState() {
     super.initState();
+    _shownIndex = widget.navigationShell.currentIndex;
     _slideController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 250),
+      duration: kMotionBase,
     );
     _slideAnimation = Tween<Offset>(
       begin: const Offset(0.08, 0),
       end: Offset.zero,
     ).animate(CurvedAnimation(
       parent: _slideController,
-      curve: Curves.easeOut,
+      curve: kMotionEnter,
     ));
+    _fadeAnimation = CurvedAnimation(
+      parent: _slideController,
+      curve: kMotionEnter,
+    );
     _slideController.value = 1.0;
   }
 
@@ -60,7 +74,6 @@ class _MainShellScaffoldState extends State<MainShellScaffold>
 
   void _onTap(int index) {
     if (index == _currentIndex) return;
-    _slideController.forward(from: 0.0);
     widget.navigationShell.goBranch(
       index,
       initialLocation: index == widget.navigationShell.currentIndex,
@@ -91,16 +104,33 @@ class _MainShellScaffoldState extends State<MainShellScaffold>
     }
   }
 
+  /// Restarts the tab entrance once the new branch is in the tree.
+  void _replayIfTabChanged() {
+    final index = widget.navigationShell.currentIndex;
+    if (index == _shownIndex) return;
+    _shownIndex = index;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _slideController.forward(from: 0.0);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    _replayIfTabChanged();
+
     return Scaffold(
       body: GestureDetector(
         onHorizontalDragStart: _onHorizontalDragStart,
         onHorizontalDragUpdate: _onHorizontalDragUpdate,
         onHorizontalDragEnd: _onHorizontalDragEnd,
-        child: SlideTransition(
-          position: _slideAnimation,
-          child: widget.navigationShell,
+        child: FadeTransition(
+          opacity: _fadeAnimation,
+          child: SlideTransition(
+            position: _slideAnimation,
+            child: widget.navigationShell,
+          ),
         ),
       ),
       bottomNavigationBar: FloatingNavBar(
