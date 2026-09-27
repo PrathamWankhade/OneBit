@@ -8,7 +8,6 @@ import 'package:onebit/features/conversations/presentation/conversation_screen.d
 import 'package:onebit/features/conversations/presentation/new_conversation_dialog.dart';
 import 'package:onebit/features/identity/presentation/edit_profile_screen.dart';
 import 'package:onebit/features/identity/presentation/identity_qr_screen.dart';
-import 'package:onebit/features/identity/presentation/identity_qr_scanner_screen.dart';
 import 'package:onebit/features/identity/presentation/peer_detail_screen.dart';
 import 'package:onebit/features/identity/presentation/peer_list_screen.dart';
 import 'package:onebit/features/identity/presentation/profile_screen.dart';
@@ -162,8 +161,11 @@ GoRouter createRouter(RouterNotifier notifier) {
       ),
       GoRoute(
         path: '/identity/scan',
-        pageBuilder: (context, state) =>
-            _slideTransition(context, state, const IdentityQrScannerScreen()),
+        pageBuilder: (context, state) => _slideTransition(
+          context,
+          state,
+          const IdentityQrScreen(initialPage: 1),
+        ),
       ),
       GoRoute(
         path: '/identity/verify',

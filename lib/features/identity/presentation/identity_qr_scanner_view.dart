@@ -10,20 +10,24 @@ import 'package:onebit/features/identity/identity_repository.dart';
 import 'package:onebit/features/trust/peer_trust.dart';
 import 'package:onebit/features/trust/trust_providers.dart';
 
-/// F6 — QR code scanner for importing peer identities.
+/// F6 — QR code scanner body for importing peer identities.
 ///
 /// Camera-based QR detection. Shows confirmation with fingerprint
 /// after a valid identity is scanned.
-class IdentityQrScannerScreen extends ConsumerStatefulWidget {
-  const IdentityQrScannerScreen({super.key});
+///
+/// Renders no Scaffold or AppBar of its own — it is hosted as the second
+/// swipe page of [IdentityQrScreen] so "my code" and "scan a peer" share
+/// one screen and one app bar.
+class IdentityQrScannerView extends ConsumerStatefulWidget {
+  const IdentityQrScannerView({super.key});
 
   @override
-  ConsumerState<IdentityQrScannerScreen> createState() =>
-      _IdentityQrScannerScreenState();
+  ConsumerState<IdentityQrScannerView> createState() =>
+      _IdentityQrScannerViewState();
 }
 
-class _IdentityQrScannerScreenState
-    extends ConsumerState<IdentityQrScannerScreen> {
+class _IdentityQrScannerViewState
+    extends ConsumerState<IdentityQrScannerView> {
   MobileScannerController? _scannerController;
   bool _hasDetected = false;
   PublicIdentity? _detectedIdentity;
@@ -97,19 +101,9 @@ class _IdentityQrScannerScreenState
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppTheme.bgBase,
-      appBar: AppBar(
-        backgroundColor: AppTheme.bgBase,
-        title: Text(
-          'Scan QR Code',
-          style: AppTheme.titleLarge.copyWith(color: AppTheme.textPrimary),
-        ),
-      ),
-      body: _hasDetected && _detectedIdentity != null
-          ? _buildConfirmation()
-          : _buildScanner(),
-    );
+    return _hasDetected && _detectedIdentity != null
+        ? _buildConfirmation()
+        : _buildScanner();
   }
 
   Widget _buildScanner() {
