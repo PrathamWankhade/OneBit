@@ -49,6 +49,14 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Read app version
+        id: version
+        shell: pwsh
+        run: |
+          $line = Select-String -Path pubspec.yaml -Pattern '^version:\s*(\S+)' |
+                  Select-Object -First 1
+          "version=$($line.Matches[0].Groups[1].Value)" >> $env:GITHUB_OUTPUT
+
       - name: Install dependencies
         run: flutter pub get
 
@@ -67,5 +75,70 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: onebit-debug
-          path: build/app/outputs/flutter-apk/app-debug.apk
+          # Version comes from pubspec.yaml (`version: 1.0.0+1`), never from a
+          # tag, so the artifact can't claim a version the binary won't report.
+          name: onebit-debug-${{ steps.version.outputs.version }}
+          # `app-*.apk` is Flutter's default name; `OneBit-*.apk` is the
+          # version + build stamped copy Gradle drops alongside it.
+          path: |
+            build/app/outputs/flutter-apk/app-*.apk
+            build/app/outputs/flutter-apk/OneBit-*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  # The installable APK, released as `OneBit-<version>-release.apk`.
+  #
+  # Separate job on purpose: it starts as soon as `analyze` passes rather than
+  # waiting for the debug build + native tests, so a red build can't cost the
+  # release artifact and there is always something downloadable to install.
+  apk:
+    name: Build (release apk)
+    needs: analyze
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Read app version
+        id: version
+        shell: pwsh
+        run: |
+          $line = Select-String -Path pubspec.yaml -Pattern '^version:\s*(\S+)' |
+                  Select-Object -First 1
+          "version=$($line.Matches[0].Groups[1].Value)" >> $env:GITHUB_OUTPUT
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      # The APK build compiles the generated Drift sources too.
+      - name: Code generation
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Assemble release apk
+        run: flutter build apk --release
+
+      # Gradle writes `OneBit-<version>-<mode>.apk` next to Flutter's default
+      # output. Fail loudly if it didn't rather than uploading an anonymous
+      # file that can't be told apart from any other build.
+      - name: Verify versioned artifact
+        shell: pwsh
+        run: |
+          $dir = 'build/app/outputs/flutter-apk'
+          $version = '${{ steps.version.outputs.version }}'
+          $stamped = Join-Path $dir "OneBit-$version-release.apk"
+          if (-not (Test-Path $stamped)) { throw "expected $stamped" }
+          Get-ChildItem $dir -Filter *.apk | ForEach-Object {
+            '{0}  {1:N1} MB' -f $_.Name, ($_.Length / 1MB)
+          }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: onebit-release-${{ steps.version.outputs.version }}
+          path: build/app/outputs/flutter-apk/OneBit-*.apk
+          if-no-files-found: error
+          retention-days: 30
