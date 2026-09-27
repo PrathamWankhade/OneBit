@@ -6,7 +6,7 @@ Thank you for your interest in contributing to OneBit. This document provides gu
 
 ### Prerequisites
 
-- Flutter SDK 3.13+
+- Flutter SDK 3.47+
 - Dart SDK 3.13+
 - Android Studio or VS Code with Flutter/Dart plugins
 - A physical Android or iOS device (BLE does not work on emulators)
@@ -15,8 +15,8 @@ Thank you for your interest in contributing to OneBit. This document provides gu
 
 ```bash
 # Fork and clone the repository
-git clone https://github.com/your-username/onebit.git
-cd onebit
+git clone https://github.com/your-username/OneBit.git
+cd OneBit
 
 # Install dependencies
 flutter pub get
@@ -63,7 +63,7 @@ Add waveform visualization to voice messages
 - Use `AppTheme` tokens for all colors, spacing, and typography
 - Use the shared component library in `lib/features/ui/components/`
 - Prefer `const` constructors where possible
-- Keep files under 500 lines; split into multiple files if needed
+- Aim to keep hand-written files under ~500 lines; split them up when they grow past it (`*.g.dart` files are generated, so they don't count)
 
 ### Design System
 
@@ -131,17 +131,19 @@ OneBit follows a feature-based architecture:
 
 ```
 lib/features/
-\u251c\u2500\u2500 feature_name/
-\u2502   \u251c\u2500\u2500 data/           Data sources, repositories
-\u2502   \u251c\u2500\u2500 domain/        Business logic (if complex)
-\u2502   \u251c\u2500\u2500 presentation/  UI screens, widgets
-\u2502   \u2514\u2500\u2500 providers/     Riverpod providers
-\u2514\u2500\u2500 shared/          Shared widgets, utilities
+└── feature_name/
+    ├── application/    Controllers and use cases        (settings, message)
+    ├── data/           Data sources, repositories       (settings)
+    ├── providers/      Riverpod providers               (conversations, message, routing)
+    ├── presentation/   Screens and widgets              (every feature)
+    └── <feature>/      Feature-specific folders         (message: models/, delivery/)
 ```
+
+Not every feature needs every folder — `nearby`, `identity` and `onboarding` are presentation-only. Build the layout the feature actually needs, and don't add new top-level folders under `lib/`: the four that exist are `app/`, `core/`, `data/` and `features/`.
 
 ### Key Patterns
 
-- **Riverpod** for state management (all providers are app-scoped keepAlive)
+- **Riverpod** for state management (no provider uses `autoDispose`, so state is app-scoped)
 - **GoRouter** for navigation with slide transitions
 - **Drift** for type-safe SQLite database access
 - **Repository pattern** for data access abstraction
@@ -172,7 +174,7 @@ For feature requests, describe:
 If you discover a security vulnerability:
 
 1. **Do not** open a public GitHub issue
-2. Contact the maintainer directly
+2. Contact the maintainer through their [GitHub profile](https://github.com/PrathamWankhade)
 3. Allow time for a fix before public disclosure
 
 ## License
@@ -181,4 +183,4 @@ By contributing to OneBit, you agree that your contributions will be licensed un
 
 ## Questions?
 
-If you have questions about contributing, feel free to open a discussion or reach out to the maintainer.
+If you have questions about contributing, open an issue and ask.

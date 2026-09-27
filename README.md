@@ -6,12 +6,12 @@
 
   **Decentralized mesh messenger**
 
-  No internet \u00b7 No cloud \u00b7 No servers \u00b7 No accounts
+  No internet · No cloud · No servers · No accounts
 
-  [![Flutter](https://img.shields.io/badge/Flutter-3.13+-02569B?logo=flutter)](https://flutter.dev)
+  [![Flutter](https://img.shields.io/badge/Flutter-3.47+-02569B?logo=flutter)](https://flutter.dev)
   [![Dart](https://img.shields.io/badge/Dart-3.13+-0175C4?logo=dart)](https://dart.dev)
+  [![CI](https://github.com/PrathamWankhade/OneBit/actions/workflows/ci.yml/badge.svg)](https://github.com/PrathamWankhade/OneBit/actions/workflows/ci.yml)
   [![License: MIT](https://img.shields.io/badge/License-MIT-00AAAA.svg)](LICENSE)
-  [![Tests](https://img.shields.io/badge/tests-2085%20passing-brightgreen)]()
 
   ---
 
@@ -28,43 +28,34 @@ Messages hop between devices using a custom mesh routing protocol. If two people
 | Feature | Description |
 |---------|-------------|
 | **Mesh Networking** | Multi-hop BLE routing with automatic topology discovery and route recovery |
-| **End-to-End Encryption** | AES-256-GCM with Ed25519 key exchange. Only you and your contacts can read messages |
+| **End-to-End Encryption** | AES-256-GCM session encryption, with X25519 key agreement derived from your Ed25519 identity key |
 | **Zero Infrastructure** | No servers, no accounts, no phone number required |
-| **Terminal Aesthetic** | IBM 5153-inspired UI with Consolas monospace typography |
+| **Terminal Aesthetic** | IBM 5153 palette on a Material 3 layout, with Consolas for hashes and identifiers |
 | **Media Sharing** | Send images, files, and voice messages over the mesh |
-| **QR Code Exchange** | Share identity via QR codes for in-person verification |
-| **Biometric Lock** | Fingerprint or face recognition to secure the app |
+| **QR Code Exchange** | Share and scan identity QR codes for in-person verification |
 | **Relay Participation** | Optionally help route messages for other peers |
-
-## Screenshots
-
-<div align="center">
-
-| Chats | Nearby | Identity | Settings |
-|-------|--------|----------|----------|
-| *Conversation list with E2E indicators* | *BLE peer discovery with signal bars* | *Profile with QR code and fingerprint* | *Terminal-style settings panels* |
-
-</div>
+| **Update Checks** | Settings → App update checks GitHub for a newer build and offers to install it |
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|------------|
-| Framework | Flutter 3.13+ \u00b7 Dart 3.13+ |
-| State Management | Riverpod 2.6.1 |
+| Framework | Flutter 3.47 · Dart 3.13 |
+| State Management | Riverpod 2.6 |
 | Navigation | GoRouter 14.8 |
-| Database | Drift 2.22 \u00b7 SQLite |
-| Preferences | shared\_preferences |
-| Security | cryptography \u00b7 flutter\_secure\_storage |
-| QR Codes | qr \u00b7 mobile\_scanner |
-| Design System | Material 3 \u00b7 IBM 5153 terminal theme |
-| Typography | Consolas monospace |
+| Database | Drift 2.22 · SQLite |
+| Preferences | shared_preferences |
+| Security | cryptography · flutter_secure_storage |
+| QR Codes | qr · mobile_scanner |
+| Media | image_picker · flutter_svg · shimmer |
+| Design System | Material 3 · IBM 5153 terminal palette |
+| Typography | Platform system font, with bundled Consolas for code |
 
 ## Getting Started
 
 ### Prerequisites
 
-- Flutter SDK 3.13+
+- Flutter SDK 3.47+
 - Dart SDK 3.13+
 - Android Studio / Xcode
 - A physical device (BLE does not work on emulators)
@@ -73,8 +64,8 @@ Messages hop between devices using a custom mesh routing protocol. If two people
 
 ```bash
 # Clone the repository
-git clone https://github.com/PrathamWankhade/onebit.git
-cd onebit
+git clone https://github.com/PrathamWankhade/OneBit.git
+cd OneBit
 
 # Install dependencies
 flutter pub get
@@ -91,10 +82,21 @@ flutter run -d <device>
 | Command | Description |
 |---------|-------------|
 | `flutter run -d <device>` | Run the app on a connected device |
-| `flutter test` | Run all tests (2085 passing) |
-| `flutter analyze` | Static analysis (0 errors) |
-| `dart run build_runner build` | Regenerate Drift/database code |
-| `flutter build apk --release` | Build release APK |
+| `flutter test` | Run the full test suite |
+| `flutter analyze` | Static analysis (CI requires zero issues) |
+| `dart run build_runner build --delete-conflicting-outputs` | Regenerate Drift/database code |
+| `flutter build apk --debug` | Build a debug APK |
+| `flutter build apk --release` | Build a release APK |
+
+### Install a build
+
+Every push to `main` runs CI and uploads versioned APKs to that run:
+
+1. Open the [Actions tab](https://github.com/PrathamWankhade/OneBit/actions)
+2. Open the latest green **ci** run
+3. Download `onebit-release-<version>` and install `OneBit-<version>-release.apk`
+
+The file name carries the version and build number from `pubspec.yaml`, so it always matches what the app reports in Settings → App update.
 
 ## Architecture
 
@@ -115,35 +117,38 @@ flutter run -d <device>
 
 ```
 lib/
-\u251c\u2500\u2500 main.dart                          Entry point + global ProviderContainer
-\u251c\u2500\u2500 app/
-\u2502   \u251c\u2500\u2500 app.dart                       OneBitApp + dark-only theme
-\u2502   \u251c\u2500\u2500 router.dart                    GoRouter with slide/fade transitions
-\u2502   \u2514\u2500\u2500 router_notifier.dart           Onboarding redirect logic
-\u251c\u2500\u2500 core/
-\u2502   \u251c\u2500\u2500 logging/app_logger.dart        Centralized logger
-\u2502   \u2514\u2500\u2500 theme/app_theme.dart           IBM 5153 terminal color scheme
-\u251c\u2500\u2500 data/
-\u2502   \u2514\u2500\u2500 database/
-\u2502       \u251c\u2500\u2500 app_database.dart          Drift database (schema v11)
-\u2502       \u2514\u2500\u2500 app_database.g.dart        Generated Drift code
-\u2514\u2500\u2500 features/
-    \u251c\u2500\u2500 ble/                         BLE service + state management
-    \u251c\u2500\u2500 conversations/              Chat UI + message bubbles
-    \u251c\u2500\u2500 crypto/                      AEAD cipher + key derivation
-    \u251c\u2500\u2500 identity/                   Profile, QR, fingerprint, trust
-    \u251c\u2500\u2500 message/                    Message relay + delivery
-    \u251c\u2500\u2500 navigation/                 3-tab floating nav bar
-    \u251c\u2500\u2500 nearby/                     BLE discovery + peer cards
-    \u251c\u2500\u2500 onboarding/                 Terminal boot sequence
-    \u251c\u2500\u2500 peer_registry/              Connection + peer management
-    \u251c\u2500\u2500 protocol/                   Packet codec + transport
-    \u251c\u2500\u2500 reliable/                   Reliable transfer manager
-    \u251c\u2500\u2500 routing/                    Mesh routing + topology
-    \u251c\u2500\u2500 settings/                   All settings screens + toggles
-    \u251c\u2500\u2500 trust/                      Trust + verification logic
-    \u2514\u2500\u2500 ui/                          Shared components library
+├── main.dart                     Entry point + global ProviderContainer
+├── app/
+│   ├── app.dart                  OneBitApp + dark-only theme
+│   ├── router.dart               GoRouter with slide/fade transitions
+│   └── router_notifier.dart      Onboarding redirect logic
+├── core/
+│   ├── logging/app_logger.dart   Centralized logger
+│   ├── theme/app_motion.dart     Shared motion tokens + transitions
+│   ├── theme/app_theme.dart      IBM 5153 terminal color scheme
+│   └── version/app_version.dart  Version the update check compares against
+├── data/
+│   ├── database/app_database.dart             Drift database (schema v11)
+│   └── preferences/onboarding_repository.dart Onboarding completion flag
+└── features/
+    ├── ble/              BLE service + state management
+    ├── conversations/    Chat UI + message bubbles
+    ├── crypto/           AEAD cipher + key derivation
+    ├── identity/         Profile, QR, fingerprint, trust
+    ├── message/          Message relay + delivery
+    ├── navigation/       3-tab floating nav bar
+    ├── nearby/           BLE discovery + peer cards
+    ├── onboarding/       Terminal boot sequence
+    ├── peer_registry/    Connection + peer management
+    ├── protocol/         Packet codec + transport
+    ├── reliable/         Reliable transfer manager
+    ├── routing/          Mesh routing + topology
+    ├── settings/         All settings screens + toggles
+    ├── trust/            Trust + verification logic
+    └── ui/               Shared components library
 ```
+
+Generated sources such as `app_database.g.dart` and the Mockito mocks are gitignored — `dart run build_runner build` recreates them, and CI runs it before analyzing.
 
 ## Design System
 
@@ -156,7 +161,7 @@ lib/
 | `accent` | `#00AAAA` | Primary actions, links |
 | `trust` | `#00AA00` | Success, online, verified |
 | `danger` | `#FF5555` | Errors, danger, blocked |
-| `warning` | `#FFFF55` | Warnings, caution |
+| `warning` | `#AA5500` | Warnings, caution |
 | `mesh` | `#00AA00` | Mesh network indicators |
 | `textPrimary` | `#AAAAAA` | Primary text |
 | `textSecondary` | `#555555` | Secondary text |
@@ -164,16 +169,16 @@ lib/
 
 ### Typography
 
-All UI text uses **Consolas** monospace for a consistent terminal aesthetic.
+Headings and body text use the platform system font — SF Pro on iOS, Roboto on Android. The `technical` style is the one that uses the bundled **Consolas** face, reserved for hashes, keys and identifiers.
 
-| Style | Size | Usage |
-|-------|------|-------|
-| `titleLarge` | 22px | Screen titles |
-| `titleMedium` | 16px | Section headers |
-| `bodyMedium` | 14px | Body text |
-| `bodySmall` | 12px | Secondary text |
-| `technical` | 13px | Code, hashes, IDs |
-| `caption` | 12px | Labels, hints |
+| Style | Size | Font | Usage |
+|-------|------|------|-------|
+| `titleLarge` | 18px | System | Screen titles |
+| `titleMedium` | 16px | System | Section headers |
+| `bodyMedium` | 14px | System | Body text |
+| `bodySmall` | 13px | System | Secondary text |
+| `technical` | 13px | Consolas | Hashes, keys, identifiers |
+| `caption` | 11px | System | Labels, hints |
 
 ## Testing
 
@@ -188,7 +193,7 @@ flutter test test/features/nearby/nearby_screen_test.dart
 flutter test --coverage
 ```
 
-**Current status**: 2085 tests passing, 0 analysis errors.
+**Current status**: the suite is green on every push, and CI fails the build if `flutter analyze` reports a single issue. Live results are on the [Actions page](https://github.com/PrathamWankhade/OneBit/actions).
 
 ## Contributing
 
@@ -196,7 +201,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute to On
 
 ## Security
 
-If you discover a security vulnerability, please report it responsibly. Do not open a public GitHub issue. Instead, contact the maintainer directly.
+If you discover a security vulnerability, please report it responsibly. Do not open a public GitHub issue. Instead, [contact the maintainer](https://github.com/PrathamWankhade) directly.
 
 ## License
 
@@ -206,6 +211,6 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 <div align="center">
 
-  Built with Flutter \u00b7 Designed for the mesh
+  Built with Flutter · Designed for the mesh
 
 </div>
