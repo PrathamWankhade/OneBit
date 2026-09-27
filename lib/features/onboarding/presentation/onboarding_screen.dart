@@ -45,7 +45,7 @@ class _BlinkingCursorState extends State<_BlinkingCursor> {
 
 /// F11 — Onboarding & First-Run Experience.
 ///
-/// 5 screens: Welcome → How It Works → Create Identity → Generating → Ready.
+/// 4 screens: Welcome → Create Identity → Generating → Ready.
 /// Creates the cryptographic identity during the flow and signals completion.
 class OnboardingScreen extends ConsumerStatefulWidget {
   const OnboardingScreen({required this.onComplete, super.key});
@@ -83,7 +83,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   }
 
   void _skipToCreate() {
-    _pageController.jumpToPage(2);
+    _pageController.jumpToPage(1);
   }
 
   Future<void> _createIdentity() async {
@@ -109,7 +109,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     } catch (e) {
       if (mounted) {
         // Go back to create page on error
-        _pageController.jumpToPage(2);
+        _pageController.jumpToPage(1);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to create identity: $e')),
         );
@@ -131,11 +131,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           physics: const NeverScrollableScrollPhysics(),
           children: [
             _WelcomePage(onGetStarted: _nextPage),
-            _HowItWorksPage(
-              onContinue: _nextPage,
-              onBack: _previousPage,
-              onSkip: _skipToCreate,
-            ),
             _CreateIdentityPage(
               nameController: _nameController,
               onCreate: _createIdentity,
@@ -304,180 +299,6 @@ class _WelcomePageState extends State<_WelcomePage>
             const SizedBox(height: 48),
           ],
         ),
-      ),
-    );
-  }
-}
-
-// ── F11.2: How It Works Screen ──────────────────────────────────
-
-class _HowItWorksPage extends StatelessWidget {
-  const _HowItWorksPage({
-    required this.onContinue,
-    required this.onBack,
-    required this.onSkip,
-  });
-
-  final VoidCallback onContinue;
-  final VoidCallback onBack;
-  final VoidCallback onSkip;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        // Header with back and skip
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-          child: Row(
-            children: [
-              IconButton(
-                icon: const Icon(
-                  Icons.arrow_back_ios_new,
-                  size: 20,
-                  color: AppTheme.textSecondary,
-                ),
-                onPressed: onBack,
-              ),
-              const Spacer(),
-              TextButton(
-                onPressed: onSkip,
-                child: Text(
-                  'Skip',
-                  style: AppTheme.bodyMedium.copyWith(
-                    color: AppTheme.textSecondary,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        // Title
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              'How OneBit works',
-              style: AppTheme.headlineMedium.copyWith(
-                color: AppTheme.textPrimary,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 24),
-
-        // Step cards
-        const Expanded(
-          child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: 32),
-            child: Column(
-              children: [
-                _StepCard(
-                  icon: Icon(Icons.vpn_key, size: 32, color: AppTheme.accent),
-                  stepNumber: 'Step 1',
-                  title: 'Create your identity',
-                  description:
-                      'Your device generates a unique cryptographic key.',
-                ),
-                SizedBox(height: 12),
-                _StepCard(
-                  icon: Icon(Icons.wifi_tethering, size: 32, color: AppTheme.accent),
-                  stepNumber: 'Step 2',
-                  title: 'Discover nearby peers',
-                  description: 'Find other OneBit users directly via Bluetooth.',
-                ),
-                SizedBox(height: 12),
-                _StepCard(
-                  icon: Icon(Icons.lock_outline, size: 32, color: AppTheme.accent),
-                  stepNumber: 'Step 3',
-                  title: 'Communicate privately',
-                  description:
-                      'End-to-end encrypted. No servers. No accounts.',
-                ),
-              ],
-            ),
-          ),
-        ),
-
-        // Continue button
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32),
-          child: SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              onPressed: onContinue,
-              style: FilledButton.styleFrom(
-                backgroundColor: AppTheme.accent,
-                foregroundColor: AppTheme.bgBase,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-              ),
-              child: const Text('Continue'),
-            ),
-          ),
-        ),
-        const SizedBox(height: 48),
-      ],
-    );
-  }
-}
-
-class _StepCard extends StatelessWidget {
-  const _StepCard({
-    required this.icon,
-    required this.stepNumber,
-    required this.title,
-    required this.description,
-  });
-
-  final Widget icon;
-  final String stepNumber;
-  final String title;
-  final String description;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppTheme.bgSurface,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(width: 32, height: 32, child: icon),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  stepNumber,
-                  style: AppTheme.technicalSmall.copyWith(
-                    color: AppTheme.textTertiary,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  title,
-                  style: AppTheme.bodyMedium.copyWith(
-                    color: AppTheme.textPrimary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  description,
-                  style: AppTheme.bodyMedium.copyWith(
-                    color: AppTheme.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }

@@ -68,14 +68,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 600));
 
-    // Step 2: How it works
-    expect(find.text('How OneBit works'), findsOneWidget);
-    await tester.tap(find.text('Continue'));
-
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 600));
-
-    // Step 3: Create identity
+    // Step 2: Create identity
     expect(find.text('Create your identity'), findsOneWidget);
 
     await db.close();
