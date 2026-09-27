@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:onebit/features/ble/ble_uuids.dart';
 import 'package:onebit/features/ble/discovered_device.dart';
 import 'package:onebit/features/identity/identity_models.dart';
 import 'package:onebit/features/peer_registry/peer_association.dart';
@@ -80,15 +81,43 @@ class IdentityAssociationResolver {
     this._localPublicKeyHex,
     this._identityChangeService,
   }) {
+    _localFingerprintHex = fingerprintOfPublicKeyHex(_localPublicKeyHex);
     _peerSub = peerStream.listen(_onPeerUpdate);
     _discoverySub = discoveryStream.listen(_onDiscovery);
   }
 
   String? _localPublicKeyHex;
+  String? _localFingerprintHex;
   final IdentityChangeService? _identityChangeService;
 
   /// In-memory cache: lowercase hex public key → PeerInfo.
   final Map<String, PeerInfo> _peerCache = {};
+
+  /// In-memory cache: lowercase hex advertisement fingerprint → PeerInfo.
+  ///
+  /// A v2 peer broadcasts only a 16-byte fingerprint — the full public key
+  /// no longer fits a legacy advertising packet — so matching on the key
+  /// alone would classify every known neighbour as an unknown device until
+  /// the moment it happened to be connected.
+  final Map<String, PeerInfo> _fingerprintCache = {};
+
+  /// Advertisement fingerprint for a hex-encoded public key, or null when
+  /// [publicKeyHex] is not a full Ed25519 key.
+  static String? fingerprintOfPublicKeyHex(String? publicKeyHex) {
+    if (publicKeyHex == null) return null;
+    final clean =
+        publicKeyHex.replaceAll(RegExp('[^0-9a-fA-F]'), '');
+    if (clean.length != BleIdentityProtocol.publicKeyLength * 2) return null;
+    final bytes = <int>[];
+    for (var i = 0; i < clean.length; i += 2) {
+      final byte = int.tryParse(clean.substring(i, i + 2), radix: 16);
+      if (byte == null) return null;
+      bytes.add(byte);
+    }
+    return DiscoveredOneBitDevice.bytesToHex(
+      BleIdentityProtocol.fingerprintBytes(bytes),
+    );
+  }
 
   /// Deduplication: deviceId → last emission timestamp (ms).
   final Map<String, int> _lastEmission = {};
@@ -115,6 +144,7 @@ class IdentityAssociationResolver {
   /// self-identity detection.
   void setLocalIdentity(String? publicKeyHex) {
     _localPublicKeyHex = publicKeyHex;
+    _localFingerprintHex = fingerprintOfPublicKeyHex(publicKeyHex);
   }
 
   /// Current number of known peers in the cache.
@@ -300,12 +330,17 @@ class IdentityAssociationResolver {
 
   void _onPeerUpdate(List<PeerInfo> peers) {
     _peerCache.clear();
+    _fingerprintCache.clear();
     for (final peer in peers) {
       final key = peer.identityId?.toLowerCase() ??
           peer.publicKeyHex?.toLowerCase();
-      if (key != null) {
-        _peerCache[key] = peer;
-      }
+      if (key == null) continue;
+      _peerCache[key] = peer;
+      // Index by advertisement fingerprint as well, so a known neighbour
+      // can be recognised from the 16 bytes that actually fit in a legacy
+      // advertising packet.
+      final fingerprint = fingerprintOfPublicKeyHex(key);
+      if (fingerprint != null) _fingerprintCache[fingerprint] = peer;
     }
   }
 
@@ -349,29 +384,42 @@ class IdentityAssociationResolver {
   ///   different identity than previously associated
   ResolvedBleDevice resolve(DiscoveredOneBitDevice device) {
     final publicKeyHex = device.identityIdHex;
+    final fingerprintHex = device.identityFingerprintHex;
 
     // No identity in advertisement.
-    if (publicKeyHex == null) {
+    if (publicKeyHex == null && fingerprintHex == null) {
       return ResolvedBleDevice(
         device: device,
         status: BlePeerStatus.noIdentity,
       );
     }
 
-    // Check self-identity.
-    if (_localPublicKeyHex != null &&
-        publicKeyHex.toLowerCase() == _localPublicKeyHex!.toLowerCase()) {
-      // I7.4: Track association for self identity.
-      _trackAssociation(device.deviceId, publicKeyHex);
+    // Check self-identity. A v1 peer sends the full key; a v2 peer only
+    // sends the fingerprint, so compare against the fingerprint of our own
+    // key as well or we would list ourselves as a stranger.
+    if (publicKeyHex != null) {
+      if (_localPublicKeyHex != null &&
+          publicKeyHex.toLowerCase() == _localPublicKeyHex!.toLowerCase()) {
+        // I7.4: Track association for self identity.
+        _trackAssociation(device.deviceId, publicKeyHex);
 
+        return ResolvedBleDevice(
+          device: device,
+          status: BlePeerStatus.selfIdentity,
+        );
+      }
+    } else if (_localFingerprintHex != null &&
+        fingerprintHex == _localFingerprintHex) {
       return ResolvedBleDevice(
         device: device,
         status: BlePeerStatus.selfIdentity,
       );
     }
 
-    // Check for identity change via the IdentityChangeService.
-    if (_identityChangeService != null) {
+    // Check for identity change via the IdentityChangeService. This keys
+    // on the identity the BLE address previously presented, so it needs
+    // the full public key and cannot run for a fingerprint-only sighting.
+    if (publicKeyHex != null && _identityChangeService != null) {
       final change = _identityChangeService.checkForChange(device);
       if (change != null && change.hasChanged) {
         // Identity change detected — this BLE address previously
@@ -387,11 +435,21 @@ class IdentityAssociationResolver {
       }
     }
 
-    // Look up in known peers cache.
-    final peer = _peerCache[publicKeyHex.toLowerCase()];
+    // Look up in known peers — by full key when one arrived, otherwise by
+    // the fingerprint that was advertised.
+    final peer = publicKeyHex != null
+        ? _peerCache[publicKeyHex.toLowerCase()]
+        : _fingerprintCache[fingerprintHex!];
     if (peer != null) {
-      // I7.4: Track association for known peers.
-      _trackAssociation(device.deviceId, publicKeyHex);
+      // I7.4: Track association for known peers. Prefer the key we were
+      // given; fall back to the peer's own identity for fingerprint-only
+      // sightings so the association table never records a bare
+      // fingerprint as if it were an identity.
+      final trackedId =
+          publicKeyHex ?? peer.identityId ?? peer.publicKeyHex;
+      if (trackedId != null) {
+        _trackAssociation(device.deviceId, trackedId);
+      }
 
       return ResolvedBleDevice(
         device: device,

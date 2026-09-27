@@ -60,7 +60,7 @@ enum BleScanState {
 /// Configuration for a BLE scan session.
 class BleScanConfig {
   const BleScanConfig({
-    this.serviceUuids = const [BleUuids.oneBitService],
+    this.serviceUuids = const [],
     this.mode = BleScanMode.active,
     this.duplicateFilter = true,
     this.timeoutMs = 30000,
@@ -70,8 +70,15 @@ class BleScanConfig {
     this.adaptive = true,
   });
 
-  /// Service UUIDs to filter for. Only devices advertising these UUIDs
-  /// will be reported.
+  /// Service UUIDs to install as a *hardware* scan filter.
+  ///
+  /// Empty by default, and that is load-bearing. A 128-bit service UUID
+  /// occupies 18 of the 31 bytes a legacy advertising packet allows, so
+  /// it can no longer be advertised next to the identity payload — a
+  /// hardware filter on it would match nothing whatsoever and the Nearby
+  /// list would stay empty no matter how healthy the scan was. OneBit
+  /// traffic is recognised from the manufacturer company id instead,
+  /// which `BleService` applies in Dart.
   final List<String> serviceUuids;
 
   /// Scan power mode.

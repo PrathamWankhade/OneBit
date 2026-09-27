@@ -444,9 +444,13 @@ void main() {
   // ── BleScanConfig ────────────────────────────────────
 
   group('BleScanConfig', () {
-    test('default config uses OneBit service UUID and active mode', () {
+    test('default config has no hardware service filter', () {
+      // Deliberate: a 128-bit service UUID costs 18 of the 31 bytes a
+      // legacy advertising packet allows, so it no longer fits beside the
+      // identity payload. Filtering on it in the scanner would match
+      // nothing at all.
       const config = BleScanConfig();
-      expect(config.serviceUuids, [BleUuids.oneBitService]);
+      expect(config.serviceUuids, isEmpty);
       expect(config.mode, BleScanMode.active);
       expect(config.duplicateFilter, true);
       expect(config.timeoutMs, 30000);
@@ -1406,10 +1410,11 @@ void main() {
   // ── I2.3: Scan config defaults ──────────────────────
 
   group('Scan config for OneBit', () {
-    test('default config filters for OneBit service', () {
+    test('default config leaves filtering to Dart', () {
+      // OneBit traffic is recognised from the manufacturer company id, so
+      // the scanner must not be pre-filtered on a UUID nobody advertises.
       const config = BleScanConfig();
-      expect(config.serviceUuids, contains(BleUuids.oneBitService));
-      expect(config.serviceUuids, hasLength(1));
+      expect(config.serviceUuids, isEmpty);
     });
 
     test('config uses 30 second timeout', () {

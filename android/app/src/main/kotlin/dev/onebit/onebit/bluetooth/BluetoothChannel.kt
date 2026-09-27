@@ -60,6 +60,11 @@ class BluetoothChannel(
             manager.emitter = BleEmitter { event, payload ->
                 runCatching {
                     sink.success(mapOf<String, Any?>("event" to event) + payload)
+                }.onFailure { error ->
+                    // Swallowing this silently turns any payload the codec
+                    // cannot encode into "nothing happens", with nothing in
+                    // logcat to explain why Dart never saw the event.
+                    BleLog.e("event dropped while emitting $event", throwable = error)
                 }
             }
         }

@@ -14,6 +14,12 @@ import 'package:onebit/features/reliable/transfer.dart';
 const _methodsChannel = 'dev.onebit.onebit/ble';
 const _eventsChannel = 'dev.onebit.onebit/ble_events';
 
+/// Mirrors Kotlin `BleErrorCodes.SCAN_TIMEOUT`.
+///
+/// A scan reaching its configured window is the normal end of a session,
+/// not a transport failure.
+const _scanTimeoutCode = 'ble.scan.timeout';
+
 /// Dart-side bridge to the native BLE transport.
 ///
 /// The service exposes a [stateStream] that mirrors the Kotlin
@@ -274,13 +280,22 @@ class BleService {
         'rotationCount': 0,
       };
 
-      // Embed identity public key in manufacturer data if available.
-      final identityPayload =
-          BleIdentityProtocol.buildPayload(config.identityPublicKeyBytes);
-      if (identityPayload != null) {
-        params['manufacturerId'] = BleIdentityProtocol.companyId;
-        params['manufacturerData'] = identityPayload;
-      }
+      // Identity travels as the v2 fingerprint payload: 17 bytes, which
+      // fits the 31-byte advertising budget alongside the flags and AD
+      // header, whereas the 33-byte public key made the platform fail with
+      // ADVERTISE_FAILED_DATA_TOO_LARGE and the phone went unseen by
+      // everyone.
+      //
+      // Always send manufacturer data, even with no identity to embed:
+      // it is the only OneBit marker in the packet now (the service UUID
+      // no longer fits), so an empty advertisement would make this phone
+      // invisible to the isOneBit gate on the scanning side.
+      final identityPayload = BleIdentityProtocol.buildAdvertPayload(
+            config.identityPublicKeyBytes,
+          ) ??
+          const <int>[BleIdentityProtocol.advertVersion];
+      params['manufacturerId'] = BleIdentityProtocol.companyId;
+      params['manufacturerData'] = identityPayload;
 
       final result = await _methods.invokeMethod<Map>(
         'startAdvertising',
@@ -769,8 +784,15 @@ class BleService {
       (dynamic event) {
         if (event is! Map) return;
         final type = event['event'] as String?;
-        if (type == 'stateChanged' || type == 'permissionChanged') {
+        if (type == 'stateChanged') {
           _applyState(Map<String, dynamic>.from(event));
+        } else if (type == 'permissionChanged') {
+          // Permission-only payload: it carries no `state` key, so routing
+          // it through _applyState would reset `radio` to `unknown` and,
+          // because isOperational is `radio == ready && permission ==
+          // granted`, permanently disable advertising and get every scan
+          // cancelled by BleLifecycleObserver.
+          _applyPermissionState(Map<String, dynamic>.from(event));
         } else if (type == 'advertisingChanged') {
           _applyAdvertisingEvent(Map<String, dynamic>.from(event));
         } else if (type == 'scanResult') {
@@ -779,7 +801,13 @@ class BleService {
           _applyScanStateChanged(Map<String, dynamic>.from(event));
         } else if (type == 'transportError') {
           _applyTransportError(Map<String, dynamic>.from(event));
-        } else if (type == 'connectionStateChanged') {
+        } else if (type == 'connectionStateChanged' ||
+            // The Kotlin ConnectionManager has always emitted
+            // `connectionChanged`; Dart listened for a name nobody sent,
+            // so every connection stayed `connecting` forever and
+            // isConnected (which also needs servicesDiscovered) never
+            // became reachable.
+            type == 'connectionChanged') {
           _applyConnectionStateEvent(Map<String, dynamic>.from(event));
         } else if (type == 'servicesDiscovered') {
           _applyServicesDiscoveredEvent(Map<String, dynamic>.from(event));
@@ -847,11 +875,20 @@ class BleService {
   }
 
   void _applyScanResult(Map<String, dynamic> data) {
-    final device = DiscoveredOneBitDevice.fromScanResult(data);
+    final DiscoveredOneBitDevice device;
+    try {
+      device = DiscoveredOneBitDevice.fromScanResult(data);
+    } catch (e) {
+      // A throw here escapes into the event listener, where it is neither
+      // a stream error nor caught: discovery would stop emitting for the
+      // rest of the session while the native scan kept looking healthy.
+      AppLogger.warning('BLE scanResult payload rejected: $e');
+      return;
+    }
 
-    // Only keep devices advertising the OneBit service UUID.
-    // The native ScanFilter already performs this check, but we
-    // apply it here as a safety net.
+    // Keep only OneBit traffic. The native ScanFilter performs the same
+    // check when a hardware filter is installed; without one — which is
+    // the current configuration — this is the only gate.
     if (!device.isOneBit) return;
 
     // Deduplicate: update RSSI if seen, otherwise add.
@@ -892,11 +929,21 @@ class BleService {
     final code = data['code'] as String? ?? '';
     final context = data['context'] as String? ?? '';
 
-    if (context == 'scan') {
-      AppLogger.warning('BLE scan transport error: $code');
-      _updateScanState(BleScanState.error);
-      _devices.clear();
+    if (context != 'scan') return;
+
+    if (code == _scanTimeoutCode) {
+      // The scan window simply elapsed. The native side already sent
+      // `scanStateChanged {scanning:false}` immediately before this, which
+      // returned us to idle — flagging an error as well made the Nearby
+      // screen replace a populated list with its error state every time a
+      // scan ran to completion.
+      AppLogger.info('BLE scan window closed after timeout');
+      return;
     }
+
+    AppLogger.warning('BLE scan transport error: $code');
+    _updateScanState(BleScanState.error);
+    _devices.clear();
   }
 
   void _applyConnectionStateEvent(Map<String, dynamic> data) {

@@ -36,26 +36,29 @@ class PermissionManager(private val adapter: BluetoothAdapter) {
 
     private var deniedOnce = false
 
-    /** Permissions required by the manifest for the current platform. */
-    fun requiredPermissions(): Array<String> {
-        val scoped = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            arrayOf(
-                Manifest.permission.BLUETOOTH_SCAN,
-                Manifest.permission.BLUETOOTH_CONNECT,
-                Manifest.permission.BLUETOOTH_ADVERTISE,
-            )
-        } else {
-            arrayOf(
-                Manifest.permission.BLUETOOTH,
-                Manifest.permission.BLUETOOTH_ADMIN,
-                Manifest.permission.ACCESS_FINE_LOCATION,
-            )
-        }
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            scoped + Manifest.permission.POST_NOTIFICATIONS
-        } else {
-            scoped
-        }
+    /**
+     * Runtime permissions BLE is gated on.
+     *
+     * Deliberately excludes POST_NOTIFICATIONS. Including it meant that on
+     * API 33+ a user who declined notifications was reported as `partial`,
+     * which sets `needsPermissionRequest` and parked the Nearby screen
+     * behind its permission gate permanently — recovery cannot fix a
+     * deliberate denial, so the list simply stayed empty. Notifications
+     * only dress up the foreground-service tile; the service still runs
+     * without them, so they never gate scanning or advertising.
+     */
+    fun requiredPermissions(): Array<String> = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        arrayOf(
+            Manifest.permission.BLUETOOTH_SCAN,
+            Manifest.permission.BLUETOOTH_CONNECT,
+            Manifest.permission.BLUETOOTH_ADVERTISE,
+        )
+    } else {
+        arrayOf(
+            Manifest.permission.BLUETOOTH,
+            Manifest.permission.BLUETOOTH_ADMIN,
+            Manifest.permission.ACCESS_FINE_LOCATION,
+        )
     }
 
     /** True when every manifest-required runtime permission is granted. */

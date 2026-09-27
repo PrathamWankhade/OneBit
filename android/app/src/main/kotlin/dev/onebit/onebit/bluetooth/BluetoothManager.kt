@@ -249,15 +249,28 @@ class BluetoothManager(private val activity: Activity) {
     fun startAdvertising(args: Map<*, *>): Map<String, Any> {
         requireRadioReady()
         // Advertising is the peripheral role: serve the GATT server the
-        // moment we present a service so inbound peers find it.
+        // moment we present a service so inbound peers find it. This runs
+        // whether or not the UUID reaches the advertising packet — it is
+        // what a peer connects to.
         if (args["serviceUuid"] != null) {
             gattServer.start(deviceId)
         }
+        val serviceUuid = args["serviceUuid"] as? String
+        val manufacturerData =
+            (args["manufacturerData"] as? List<*>)?.mapNotNull { it as? Int }
+        // A 128-bit service UUID occupies 18 of the 31 bytes a legacy
+        // advertising packet allows; with the flags AD and the manufacturer
+        // AD header there is no room for it beside an identity payload. The
+        // identity is what makes a peer recognisable at a distance, and the
+        // UUID only matters once a link exists — where it arrives through
+        // service discovery. Identity wins; the UUID stays on the server.
+        val advertiseServiceUuid =
+            if (manufacturerData.isNullOrEmpty()) serviceUuid else null
         val id = advertiser.startAdvertising(
             mode = args["mode"] as? String ?: "balanced",
-            serviceUuid = args["serviceUuid"] as? String,
+            serviceUuid = advertiseServiceUuid,
             manufacturerId = (args["manufacturerId"] as? Number)?.toInt(),
-            manufacturerData = (args["manufacturerData"] as? List<*>)?.mapNotNull { it as? Int },
+            manufacturerData = manufacturerData,
             localName = args["localName"] as? String,
             txPowerBoost = (args["txPower"] as? Number)?.toInt() ?: 0,
             background = args["background"] as? Boolean ?: false,

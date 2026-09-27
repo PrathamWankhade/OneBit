@@ -26,8 +26,9 @@ import kotlin.math.pow
  * Connect sequence: connecting -> connected -> MTU negotiation -> service
  * discovery -> ready. Failures rewind into reconnecting (bounded by the
  * caller's retry budget and exponential backoff), then disconnected. Stage
- * results are exposed to Dart both as `connectionChanged`/`mtuNegotiated`
- * events and through completers that back the method channel.
+ * results are exposed to Dart both as `connectionStateChanged` /
+ * `servicesDiscovered` / `mtuNegotiated` events and through completers
+ * that back the method channel.
  */
 @SuppressLint("MissingPermission")
 class ConnectionManager(private val gattClient: GattClientManager) : GattEventListener {
@@ -281,6 +282,18 @@ class ConnectionManager(private val gattClient: GattClientManager) : GattEventLi
         link.cachedServices = tree
         link.pendingDiscovery?.complete(tree)
         link.pendingDiscovery = null
+        // No Kotlin code ever emitted `servicesDiscovered`, yet Dart gates
+        // `isConnected` on `connected && servicesDiscovered` and uses this
+        // event to decide whether the peer serves the OneBit service.
+        // Emit it before READY so anything reacting to "ready" already has
+        // the list it needs.
+        emitter?.send(
+            "servicesDiscovered",
+            mapOf(
+                "deviceId" to deviceId,
+                "services" to tree.mapNotNull { it["uuid"] as? String },
+            ),
+        )
         link.machine.transition(BtConnectionState.READY)
         emitConnection(link, BtConnectionState.READY, mtu = link.negotiatedMtu)
     }
@@ -403,7 +416,12 @@ class ConnectionManager(private val gattClient: GattClientManager) : GattEventLi
         errorCode: String? = null,
     ) {
         emitter?.send(
-            "connectionChanged",
+            // Dart listens for `connectionStateChanged`. This used to be
+            // sent as `connectionChanged`, which no handler matched, so
+            // every connection sat at `connecting` forever and
+            // `isConnected` — which also requires servicesDiscovered —
+            // could never become true.
+            "connectionStateChanged",
             buildMap {
                 put("deviceId", link.device.address)
                 put("state", state.wireName)

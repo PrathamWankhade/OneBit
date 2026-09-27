@@ -71,16 +71,22 @@ void main() {
       await tester.pump();
       await tester.pump();
 
+      // Discovery auto-starts with the screen, and the app bar swaps the
+      // refresh button for a spinner while it runs. Stopping the scan
+      // directly is what a session that found nobody looks like.
+      final service = ProviderScope.containerOf(
+        tester.element(find.byType(NearbyScreen)),
+      ).read(bleServiceProvider);
+      await service.stopScan();
+      await tester.pump();
+      await tester.pump();
+
       expect(find.text('No peers nearby'), findsOneWidget);
       expect(find.text('Scan again'), findsOneWidget);
     });
 
     testWidgets('scanning shows animation then peers', (tester) async {
       await tester.pumpWidget(buildTestApp());
-      await tester.pump();
-      await tester.pump();
-
-      await tester.tap(find.byIcon(Icons.refresh));
       await tester.pump();
       await tester.pump();
 
@@ -92,10 +98,6 @@ void main() {
 
     testWidgets('discovered device appears in list', (tester) async {
       await tester.pumpWidget(buildTestApp());
-      await tester.pump();
-      await tester.pump();
-
-      await tester.tap(find.byIcon(Icons.refresh));
       await tester.pump();
       await tester.pump();
 
@@ -119,10 +121,6 @@ void main() {
 
     testWidgets('multiple devices are shown', (tester) async {
       await tester.pumpWidget(buildTestApp());
-      await tester.pump();
-      await tester.pump();
-
-      await tester.tap(find.byIcon(Icons.refresh));
       await tester.pump();
       await tester.pump();
 
@@ -160,10 +158,6 @@ void main() {
       await tester.pump();
       await tester.pump();
 
-      await tester.tap(find.byIcon(Icons.refresh));
-      await tester.pump();
-      await tester.pump();
-
       final service = ProviderScope.containerOf(
         tester.element(find.byType(NearbyScreen)),
       ).read(bleServiceProvider);
@@ -196,10 +190,6 @@ void main() {
 
     testWidgets('device without name shows fallback', (tester) async {
       await tester.pumpWidget(buildTestApp());
-      await tester.pump();
-      await tester.pump();
-
-      await tester.tap(find.byIcon(Icons.refresh));
       await tester.pump();
       await tester.pump();
 
@@ -278,10 +268,6 @@ void main() {
       await tester.pump();
       await tester.pump();
 
-      await tester.tap(find.byIcon(Icons.refresh));
-      await tester.pump();
-      await tester.pump();
-
       final service = ProviderScope.containerOf(
         tester.element(find.byType(NearbyScreen)),
       ).read(bleServiceProvider);
@@ -297,10 +283,6 @@ void main() {
     testWidgets('new scan clears stale results from previous session',
         (tester) async {
       await tester.pumpWidget(buildTestApp());
-      await tester.pump();
-      await tester.pump();
-
-      await tester.tap(find.byIcon(Icons.refresh));
       await tester.pump();
       await tester.pump();
 
@@ -353,6 +335,16 @@ void main() {
             'permission': 'granted',
           };
         }
+        // Granting permission auto-starts advertising and scanning, and
+        // both are native calls. Without answers here they reject, and
+        // the assertions below would be reading a rejected call rather
+        // than the radio's state.
+        if (call.method == 'startAdvertising') {
+          return <String, dynamic>{'id': 'adv-1'};
+        }
+        if (call.method == 'startScan') {
+          return <String, dynamic>{'id': 'scan-1'};
+        }
         return null;
       });
 
@@ -366,16 +358,20 @@ void main() {
       await tester.pump();
       await tester.pump();
 
-      expect(find.text('No peers nearby'), findsOneWidget);
-      expect(find.text('Scan again'), findsOneWidget);
+      // Discovery auto-starts once permission lands, and that it does is
+      // the real assertion: had `permissionChanged` reset the radio to
+      // `unknown`, isOperational would be false and neither of these
+      // would ever begin.
+      final service = ProviderScope.containerOf(
+        tester.element(find.byType(NearbyScreen)),
+      ).read(bleServiceProvider);
+      expect(service.current.isAdvertising, true);
+      expect(service.current.isScanning, true);
+      expect(find.text('Scanning for peers'), findsOneWidget);
     });
 
     testWidgets('discovered device is tappable', (tester) async {
       await tester.pumpWidget(buildTestApp());
-      await tester.pump();
-      await tester.pump();
-
-      await tester.tap(find.byIcon(Icons.refresh));
       await tester.pump();
       await tester.pump();
 
@@ -400,7 +396,7 @@ void main() {
       await tester.pump();
     });
 
-    testWidgets('becomes discoverable automatically, scanning stays manual',
+    testWidgets('becomes discoverable and starts scanning automatically',
         (tester) async {
       await tester.pumpWidget(buildTestApp());
       await tester.pump();
@@ -414,11 +410,11 @@ void main() {
       // never appear in anyone else's list.
       expect(service.current.isAdvertising, true);
 
-      // Scanning is still the user's call, so the idle "Scan again"
-      // state remains reachable.
-      expect(service.current.isScanning, false);
-      expect(find.text('No peers nearby'), findsOneWidget);
-      expect(find.text('Scan again'), findsOneWidget);
+      // Discovery now starts with the screen as well: opening Nearby to
+      // see who is around should not also require pressing "Scan again"
+      // before a single row can appear.
+      expect(service.current.isScanning, true);
+      expect(find.text('Scanning for peers'), findsOneWidget);
     });
   });
 }

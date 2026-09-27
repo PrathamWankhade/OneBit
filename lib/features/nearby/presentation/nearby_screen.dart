@@ -26,19 +26,23 @@ class _NearbyScreenState extends ConsumerState<NearbyScreen>
     with TickerProviderStateMixin {
   final Map<String, ResolvedBleDevice> _resolvedDevices = {};
   StreamSubscription<ResolvedBleDevice>? _resolvedSub;
+
+  /// The resolver instance [_resolvedSub] is attached to, so `onDone` can
+  /// tell a genuinely new resolver from the closed one it just left.
+  IdentityAssociationResolver? _listenedResolver;
   BleStateNotifier? _notifier;
   late AnimationController _pulseController;
 
-  /// Whether discoverability has been started automatically.
+  /// Whether discovery (advertising *and* scanning) has been started
+  /// automatically.
   ///
-  /// Being visible to other nodes was previously a manual action hidden
-  /// behind a button at the bottom of the screen, so a phone that nobody
+  /// Being visible to other nodes used to be a manual action hidden behind
+  /// a button at the bottom of the screen, so a phone that nobody
   /// remembered to put into advertise mode simply never showed up in anyone
-  /// else's list. Start it as soon as the radio and permissions allow.
-  ///
-  /// Scanning is deliberately *not* started automatically — it is the
-  /// state this screen is built around ("Scan again") and stays under the
-  /// user's control.
+  /// else's list. Scanning had the mirror-image problem: opening Nearby to
+  /// see who was around still required a separate press of "Scan again"
+  /// before a single row could appear. Both now start as soon as the radio
+  /// and permissions allow, and the buttons remain as manual refresh.
   bool _autoStarted = false;
 
   @override
@@ -65,12 +69,30 @@ class _NearbyScreenState extends ConsumerState<NearbyScreen>
     _resolvedSub?.cancel();
     setState(() => _resolvedDevices.clear());
     final resolver = ref.read(bleIdentityResolverProvider);
-    _resolvedSub = resolver.resolvedStream.listen((resolved) {
-      if (!mounted) return;
-      setState(() {
-        _resolvedDevices[resolved.device.deviceId] = resolved;
-      });
-    });
+    _listenedResolver = resolver;
+    _resolvedSub = resolver.resolvedStream.listen(
+      (resolved) {
+        if (!mounted) return;
+        setState(() {
+          _resolvedDevices[resolved.device.deviceId] = resolved;
+        });
+      },
+      onDone: () {
+        if (!mounted) return;
+        _resolvedSub = null;
+        // Re-attach only to a *new* resolver. The provider rebuilds when
+        // its identity dependency resolves and disposes the previous one,
+        // closing this stream underneath us — without re-attaching, the
+        // screen stops receiving rows and looks exactly like an empty
+        // list. Listening again to a controller that is already closed
+        // would fire onDone immediately and spin, hence the identity
+        // check.
+        final current = ref.read(bleIdentityResolverProvider);
+        if (!identical(_listenedResolver, current)) {
+          _startListening();
+        }
+      },
+    );
   }
 
   /// Makes this device discoverable once BLE is ready.
@@ -95,15 +117,27 @@ class _NearbyScreenState extends ConsumerState<NearbyScreen>
     }
     if (!mounted) return;
     await _startAdvertising();
+    if (!mounted) return;
+    // Discovery now starts with the screen. A user opening Nearby to see
+    // who is around should not also have to press "Scan again" before a
+    // single row can appear; the button remains as a manual refresh.
+    await _startScan();
   }
 
   Future<void> _startScan() async {
     final notifier = ref.read(bleStateProvider.notifier);
+    // Attach before the native call. The scanner reports the first
+    // sighting of each device exactly once per session
+    // (CALLBACK_TYPE_FIRST_MATCH), and `startScan` resolves only once the
+    // platform has actually begun — so a subscription installed afterwards
+    // races the very results it exists to collect.
+    _startListening();
     try {
       await notifier.startScan();
-      _startListening();
-    } on BleScanException {
-      // Error state is reflected via bleStateProvider.
+    } on BleScanException catch (e) {
+      // Error state is also reflected via bleStateProvider, but log it so
+      // an auto-started scan that silently failed is not invisible.
+      AppLogger.warning('Nearby: scan did not start: $e');
     }
   }
 
@@ -207,7 +241,11 @@ class _NearbyScreenState extends ConsumerState<NearbyScreen>
       );
     }
 
-    if (bleState.scan == BleScanState.error) {
+    // Only fall back to the error state when there is nothing to show.
+    // Checking it unconditionally meant a scan that reported a problem
+    // late in its session replaced a populated list with an error panel,
+    // hiding results the user had already been given.
+    if (bleState.scan == BleScanState.error && devices.isEmpty) {
       return _ErrorState(onRetry: _startScan);
     }
 

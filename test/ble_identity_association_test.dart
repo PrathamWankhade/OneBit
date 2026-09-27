@@ -10,6 +10,7 @@ import 'package:onebit/features/identity/identity_association_resolver.dart';
 import 'package:onebit/features/identity/identity_export.dart';
 import 'package:onebit/features/identity/identity_models.dart';
 import 'package:onebit/features/identity/identity_repository.dart';
+import 'package:onebit/features/peer_registry/peer_association.dart';
 
 AppDatabase createTestDb() =>
     AppDatabase.test(DatabaseConnection(NativeDatabase.memory()));
@@ -54,6 +55,35 @@ Map<String, dynamic> fakeScanResult({
       'serviceUuids': [BleUuids.oneBitService],
       'manufacturerData': manufacturerData,
       'serviceData': <String, dynamic>{},
+    },
+  };
+}
+
+/// Build a v2 scan result: only the 16-byte identity fingerprint is
+/// advertised, because a full public key does not fit a legacy advertising
+/// packet alongside the AD overhead.
+Map<String, dynamic> fakeScanResultV2({
+  String deviceId = 'AA:BB:CC:DD:EE:FF',
+  String? name,
+  int rssi = -60,
+  required List<int> identityKey,
+}) {
+  final payload = BleIdentityProtocol.buildAdvertPayload(identityKey);
+  return {
+    'device': {
+      'id': deviceId,
+      'name': name,
+      'addressType': 'public',
+    },
+    'rssiDb': rssi,
+    'timestamp': DateTime.now().millisecondsSinceEpoch,
+    'connectable': true,
+    'advertisement': {
+      'localName': name,
+      'serviceUuids': <String>[],
+      'manufacturerData': {
+        '65535': payload,
+      },
     },
   };
 }
@@ -272,6 +302,77 @@ void main() {
       expect(resolved.peer, isNotNull);
       expect(resolved.peer!.displayName, 'Alice');
       expect(resolved.displayName, 'Alice');
+
+      resolver.dispose();
+    });
+
+    test('resolves a known peer from a fingerprint-only advertisement',
+        () async {
+      final foreignKey = fakePublicKeyHex(2);
+
+      await db.upsertPeerIdentity(
+        displayName: 'Alice',
+        createdAt: DateTime.now(),
+        identityId: foreignKey,
+        publicKey: foreignKey,
+      );
+
+      final resolver = createResolver();
+      final associations = <List<PeerAssociation>>[];
+      final assocSub = resolver.associationStream.listen(associations.add);
+
+      final peers = await repo.getAllPeerIdentities();
+      peerController.add(peers);
+      await Future<void>.delayed(Duration.zero);
+
+      final device = DiscoveredOneBitDevice.fromScanResult(
+        fakeScanResultV2(identityKey: fakePublicKeyBytes(2)),
+      );
+      // The whole point of v2: no key on the wire.
+      expect(device.identityIdHex, isNull);
+      expect(device.identityFingerprintHex, isNotNull);
+
+      final resolved = resolver.resolve(device);
+
+      expect(resolved.status, BlePeerStatus.knownPeer);
+      expect(resolved.peer!.displayName, 'Alice');
+
+      // The association must be recorded against the peer's real identity,
+      // never against the bare 16-byte fingerprint.
+      await Future<void>.delayed(Duration.zero);
+      expect(associations, isNotEmpty);
+      expect(associations.last.single.peerIdentityId, foreignKey);
+
+      await assocSub.cancel();
+      resolver.dispose();
+    });
+
+    test('recognises self from a fingerprint-only advertisement', () async {
+      final resolver = createResolver(localKeyHex: fakePublicKeyHex(1));
+
+      final device = DiscoveredOneBitDevice.fromScanResult(
+        fakeScanResultV2(identityKey: fakePublicKeyBytes(1)),
+      );
+
+      final resolved = resolver.resolve(device);
+
+      expect(resolved.status, BlePeerStatus.selfIdentity);
+      expect(resolved.peer, isNull);
+
+      resolver.dispose();
+    });
+
+    test('a fingerprint for someone else is still an unknown identity',
+        () async {
+      final resolver = createResolver(localKeyHex: fakePublicKeyHex(1));
+
+      final device = DiscoveredOneBitDevice.fromScanResult(
+        fakeScanResultV2(identityKey: fakePublicKeyBytes(99)),
+      );
+
+      final resolved = resolver.resolve(device);
+
+      expect(resolved.status, BlePeerStatus.unknownIdentity);
 
       resolver.dispose();
     });
