@@ -46,6 +46,8 @@ migrate_working_dir/
 # Android
 /android/.gradle/
 /android/.kotlin/
+/android/build/
+/android/app/build/
 /android/app/debug/
 /android/app/profile/
 /android/app/release/
