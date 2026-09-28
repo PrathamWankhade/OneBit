@@ -98,9 +98,10 @@ void main() {
 
     // Rows that existed with an empty handler are gone rather than
     // shipped as dead taps.
-    for (final label in ['Reply', 'Forward', 'React', 'Edit', 'Details']) {
+    for (final label in ['Forward', 'React', 'Edit', 'Details']) {
       expect(find.text(label), findsNothing, reason: label);
     }
+    expect(find.text('Reply'), findsOneWidget);
     expect(find.text('Copy'), findsOneWidget);
     expect(find.text('Delete'), findsOneWidget);
 

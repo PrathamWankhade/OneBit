@@ -13,6 +13,7 @@ class MessageBubble extends StatefulWidget {
     required this.timestamp,
     required this.isReceived,
     this.status = 'sent',
+    this.replyQuote,
     this.animate = false,
     super.key,
   });
@@ -21,6 +22,13 @@ class MessageBubble extends StatefulWidget {
   final DateTime timestamp;
   final bool isReceived;
   final String status;
+
+  /// The message this one answers, as the sender quoted it.
+  ///
+  /// A null quote is an ordinary message; it is carried alongside
+  /// `content` rather than inside it so the body stays selectable text.
+  final String? replyQuote;
+
   final bool animate;
 
   @override
@@ -82,6 +90,29 @@ class _MessageBubbleState extends State<MessageBubble>
               crossAxisAlignment:
                   widget.isReceived ? CrossAxisAlignment.start : CrossAxisAlignment.end,
               children: [
+                if (widget.replyQuote != null)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppTheme.bgBase,
+                      borderRadius: BorderRadius.circular(6),
+                      border: const Border(
+                        left: BorderSide(color: AppTheme.accent, width: 3),
+                      ),
+                    ),
+                    child: Text(
+                      widget.replyQuote!,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTheme.caption.copyWith(
+                        color: AppTheme.textTertiary,
+                      ),
+                    ),
+                  ),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   decoration: BoxDecoration(

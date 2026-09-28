@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:onebit/app/app.dart';
 import 'package:onebit/core/theme/app_theme.dart';
 import 'package:onebit/data/database/app_database.dart';
+import 'package:onebit/features/conversations/models/reply_tag.dart';
 import 'package:onebit/features/conversations/presentation/attachment_sheet.dart';
 import 'package:onebit/features/conversations/presentation/message_bubble.dart';
 import 'package:onebit/features/conversations/presentation/voice_recording_widget.dart';
@@ -46,6 +47,13 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   final _scrollController = ScrollController();
   bool _isRecording = false;
 
+  /// The message the composer is currently answering, if any.
+  ///
+  /// Held here rather than as a DB column: the quote already travels
+  /// inside `content`, so there is nothing to persist on the sender's
+  /// own row and nothing to look up later.
+  Message? _replyingTo;
+
   @override
   void dispose() {
     _controller.dispose();
@@ -54,10 +62,16 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   }
 
   Future<void> _send() async {
-    final text = _controller.text.trim();
-    if (text.isEmpty) return;
+    final typed = _controller.text.trim();
+    if (typed.isEmpty) return;
+
+    final reply = _replyingTo;
+    final text = reply == null
+        ? typed
+        : ReplyTag.encode(quoted: ReplyTag.quoteFor(reply.content), text: typed);
 
     _controller.clear();
+    setState(() => _replyingTo = null);
     final db = ref.read(databaseProvider);
     final transport = ref.read(messageTransportProvider);
 
@@ -129,6 +143,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         if (!confirmed || !context.mounted) return;
         await db.deleteMessage(msg.id);
         if (context.mounted) showDeleteSnackbar(context);
+      case MessageActionType.reply:
+        if (mounted) {
+          setState(() => _replyingTo = msg);
+        }
     }
   }
 
@@ -342,11 +360,25 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                   },
                 )
               else
-                _Composer(
-                  controller: _controller,
-                  onSend: _send,
-                  onStartRecording: () => setState(() => _isRecording = true),
-                  onAttach: _showAttachmentMenu,
+                Container(
+                  color: AppTheme.bgBase,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_replyingTo != null)
+                        _ReplyStrip(
+                          quote: ReplyTag.quoteFor(_replyingTo!.content),
+                          onCancel: () => setState(() => _replyingTo = null),
+                        ),
+                      _Composer(
+                        controller: _controller,
+                        onSend: _send,
+                        onStartRecording: () =>
+                            setState(() => _isRecording = true),
+                        onAttach: _showAttachmentMenu,
+                      ),
+                    ],
+                  ),
                 ),
             ],
           );
@@ -630,9 +662,14 @@ class _MessageList extends StatelessWidget {
   }
 
   Widget _buildMessageWidget(dynamic msg, bool isReceived) {
-    final content = msg.content as String;
+    final raw = msg.content as String;
     final timestamp = msg.createdAt as DateTime;
     final status = isReceived ? '' : (msg.status as String? ?? 'sent');
+
+    // A reply is one message, not two: strip the quote off for the body
+    // and hand it to the bubble beside it.
+    final reply = ReplyTag.parse(raw);
+    final content = reply?.text ?? raw;
 
     if (content.startsWith('[image:') && content.endsWith(']')) {
       final fileName = content.substring(7, content.length - 1);
@@ -686,6 +723,7 @@ class _MessageList extends StatelessWidget {
 
     return MessageBubble(
       content: content,
+      replyQuote: reply?.quote,
       timestamp: timestamp,
       isReceived: isReceived,
       status: status,
@@ -929,6 +967,52 @@ class _ComposerState extends State<_Composer> {
                 color: _hasText ? AppTheme.bgBase : AppTheme.textSecondary,
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Reply strip ───────────────────────────────────────────────────
+
+/// The message waiting to be answered, shown above the composer.
+class _ReplyStrip extends StatelessWidget {
+  const _ReplyStrip({required this.quote, this.onCancel});
+
+  final String quote;
+  final VoidCallback? onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 6, 4, 2),
+      decoration: const BoxDecoration(
+        border: Border(
+          top: BorderSide(color: AppTheme.borderDefault, width: 0.5),
+        ),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.reply,
+            size: 16,
+            color: AppTheme.accent,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              quote,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTheme.caption.copyWith(color: AppTheme.textSecondary),
+            ),
+          ),
+          IconButton(
+            onPressed: onCancel,
+            icon: const Icon(Icons.close, size: 18),
+            color: AppTheme.textTertiary,
+            visualDensity: VisualDensity.compact,
           ),
         ],
       ),

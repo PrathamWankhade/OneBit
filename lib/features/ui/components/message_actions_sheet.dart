@@ -5,11 +5,12 @@ import 'package:onebit/features/ui/components/app_bottom_sheet.dart';
 ///
 /// Shown on long-press of a message.
 ///
-/// Only actions the app can actually carry out are listed. Reply,
-/// forward, react, edit and details were here as rows with an empty tap
-/// handler — a menu that looks like five things and does none of them is
-/// worse than a menu that says two. They come back as they land.
+/// Only actions the app can actually carry out are listed. Forward,
+/// react, edit and details were here as rows with an empty tap handler
+/// — a menu that looks like seven things and does two is the lie this
+/// is fixing. They come back as they land.
 enum MessageActionType {
+  reply,
   copy,
   delete,
 }
@@ -26,6 +27,11 @@ Future<MessageActionType?> showMessageActions(
   return showAppBottomSheet<MessageActionType>(
     context,
     actions: [
+      const SheetAction(
+        icon: Icons.reply,
+        label: 'Reply',
+        result: MessageActionType.reply,
+      ),
       if (canCopy)
         const SheetAction(
           icon: Icons.copy,
