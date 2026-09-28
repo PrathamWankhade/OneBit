@@ -41,6 +41,7 @@ import 'package:onebit/core/logging/app_logger.dart';
 import 'package:onebit/features/ble/ble_service.dart';
 import 'package:onebit/features/ble/ble_state.dart';
 import 'package:onebit/features/protocol/onebit_packet.dart';
+import 'package:onebit/features/protocol/packet_chunking.dart';
 import 'package:onebit/features/protocol/packet_codec.dart';
 import 'package:onebit/features/reliable/transfer.dart';
 import 'package:onebit/features/routing/neighbor_entry.dart';
@@ -96,6 +97,9 @@ class MeshRouter {
   Timer? _refreshTimer;
 
   int _packetIdCounter = 0;
+
+  /// Puts the slices of a chunked advertisement back together on arrival.
+  final _chunks = PacketChunkReassembler();
   bool _started = false;
   bool _disposed = false;
 
@@ -290,8 +294,10 @@ class MeshRouter {
 
   /// Push our current neighbor set to every connected neighbour.
   ///
-  /// Best effort: a neighbour that already has a transfer in flight
-  /// will simply drop this — the next refresh covers it.
+  /// An advertisement with more than one packet's worth of neighbours is
+  /// split across them; each link still only ever carries one transfer at
+  /// a time, so this queues behind whatever is already in flight rather
+  /// than being turned away.
   Future<void> advertiseNow() async {
     if (!_usable || !_started) return;
 
@@ -307,19 +313,7 @@ class MeshRouter {
       return;
     }
 
-    final Uint8List packetBytes;
-    try {
-      packetBytes = PacketCodec.encode(
-        OneBitPacket(
-          type: PacketType.topologyAdvertisement,
-          packetId: _nextPacketId(),
-          payload: adBytes,
-        ),
-      );
-    } catch (e) {
-      AppLogger.warning('MeshRouter: could not encode packet: $e');
-      return;
-    }
+    final packetId = _nextPacketId();
 
     final neighbors = neighborTable.neighbors;
     if (neighbors.isEmpty) return;
@@ -328,7 +322,12 @@ class MeshRouter {
       final deviceId = neighbor.bleDeviceId;
       if (deviceId == null) continue;
       unawaited(
-        bleService.sendReliable(deviceId, packetBytes).then(
+        sendInPackets(
+          adBytes,
+          type: PacketType.topologyAdvertisement,
+          packetId: packetId,
+          send: (bytes) => bleService.sendReliable(deviceId, bytes),
+        ).then(
           (result) {
             if (result != TransferResult.delivered) {
               AppLogger.info(
@@ -360,8 +359,15 @@ class MeshRouter {
 
     if (packet.type != PacketType.topologyAdvertisement) return;
 
+    final payload = _chunks.accept(
+      data.deviceId,
+      packet.packetId,
+      Uint8List.fromList(packet.payload),
+    );
+    if (payload == null) return; // still assembling
+
     final outcome = topologyExchange.processRawAdvertisement(
-      bytes: packet.payload,
+      bytes: payload,
       localPeerId: localPeerId,
     );
 
@@ -369,7 +375,7 @@ class MeshRouter {
       case AdvertisementResult.accepted:
         AppLogger.info(
           'MeshRouter: accepted topology from a peer '
-              '(${packet.payload.length} bytes)',
+              '(${payload.length} bytes)',
         );
         _refreshIndirectRoutes();
         _notifyRoutesChanged();

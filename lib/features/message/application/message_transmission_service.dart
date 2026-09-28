@@ -41,7 +41,7 @@ import 'package:onebit/features/message/models/message_envelope_codec.dart';
 import 'package:onebit/features/message/models/message_envelope_validator.dart';
 import 'package:onebit/features/message/models/onebit_message.dart';
 import 'package:onebit/features/protocol/onebit_packet.dart';
-import 'package:onebit/features/protocol/packet_codec.dart';
+import 'package:onebit/features/protocol/packet_chunking.dart';
 import 'package:onebit/features/reliable/transfer.dart';
 import 'package:onebit/features/routing/route.dart';
 
@@ -219,31 +219,16 @@ class MessageTransmissionService {
       );
     }
 
-    // 7. Check size against packet constraints.
-    if (envelopeBytes.length > PacketConstants.maxPayloadSize) {
+    // 7. Check size against what chunking can carry.
+    if (envelopeBytes.length > maxChunkedPayload) {
       return TransmissionResult.encodingFailed(
         reason: 'Envelope too large: ${envelopeBytes.length} bytes '
-            '(max ${PacketConstants.maxPayloadSize})',
+            '(max $maxChunkedPayload)',
       );
     }
 
-    // 8. Wrap in OneBit packet.
-    final packet = OneBitPacket(
-      type: PacketType.message,
-      packetId: _nextPacketId(),
-      payload: envelopeBytes,
-    );
-
-    final Uint8List packetBytes;
-    try {
-      packetBytes = PacketCodec.encode(packet);
-    } catch (e) {
-      return TransmissionResult.encodingFailed(
-        reason: 'Failed to encode packet: $e',
-      );
-    }
-
-    // 9. Send via I7 reliable transport.
+    // 8. Send via I7 reliable transport — in as many packets as the
+    //    envelope needs, one ACK at a time.
     AppLogger.info(
       'Transmission: sending to ${_shortId(nextHopPeerId)} '
       '(dest=${_shortId(message.destinationPeerId)}, '
@@ -253,7 +238,12 @@ class MessageTransmissionService {
 
     final TransferResult transferResult;
     try {
-      transferResult = await _bleService.sendReliable(deviceId, packetBytes);
+      transferResult = await sendInPackets(
+        envelopeBytes,
+        type: PacketType.message,
+        packetId: _nextPacketId(),
+        send: (bytes) => _bleService.sendReliable(deviceId, bytes),
+      );
     } catch (e) {
       AppLogger.error('Transmission: transport error', e);
       return TransmissionResult.transportFailed(
@@ -261,7 +251,7 @@ class MessageTransmissionService {
       );
     }
 
-    // 10. Map transport result.
+    // 9. Map transport result.
     return switch (transferResult) {
       TransferResult.delivered => TransmissionResult.sentToNextHop(
           nextHopPeerId: nextHopPeerId,

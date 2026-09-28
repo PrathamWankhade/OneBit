@@ -73,6 +73,12 @@ class BleService {
   /// Per-device reliable transfer managers, keyed by device ID.
   final Map<String, ReliableTransferManager> _reliableManagers = {};
 
+  /// Per-device send chains, keyed by device ID.
+  ///
+  /// Holds the barrier the next send on that link waits behind; entries
+  /// drain themselves once the link is idle.
+  final Map<String, Future<void>> _sendChain = {};
+
   /// Per-device reliable channels, keyed by device ID.
   final Map<String, BleServiceChannel> _reliableChannels = {};
 
@@ -89,7 +95,36 @@ class BleService {
   /// Returns [TransferResult.delivered] when the peer acknowledges,
   /// [TransferResult.failed] after retries are exhausted, or
   /// [TransferResult.cancelled] on disconnect/disposal.
+  ///
+  /// A link only has room for one transfer in flight — the manager holds
+  /// a single pending send and answers anything else with `failed`. So
+  /// calls are chained per device: a topology advertisement racing a
+  /// message waits out one ACK instead of vanishing.
   Future<TransferResult> sendReliable(
+    String deviceId,
+    List<int> payload,
+  ) async {
+    _assertNotDisposed();
+
+    final previous = _sendChain[deviceId] ?? Future<void>.value();
+    final result = previous.then((_) => _sendReliableNow(deviceId, payload));
+
+    // The barrier keeps the chain going past a failure so one bad send
+    // does not poison every send behind it.
+    final barrier = result.then<void>((_) {}, onError: (Object _) {});
+    _sendChain[deviceId] = barrier;
+    barrier.whenComplete(() {
+      // Only the tail drains the entry; a newer send chains onto this
+      // one and owns it instead.
+      if (identical(_sendChain[deviceId], barrier)) {
+        _sendChain.remove(deviceId);
+      }
+    });
+
+    return result;
+  }
+
+  Future<TransferResult> _sendReliableNow(
     String deviceId,
     List<int> payload,
   ) async {

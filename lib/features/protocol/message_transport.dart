@@ -14,6 +14,7 @@ import 'package:onebit/features/message/models/message_state.dart';
 import 'package:onebit/features/message/models/onebit_message.dart';
 import 'package:onebit/features/protocol/message_codec.dart';
 import 'package:onebit/features/protocol/onebit_packet.dart';
+import 'package:onebit/features/protocol/packet_chunking.dart';
 import 'package:onebit/features/protocol/packet_codec.dart';
 import 'package:onebit/features/reliable/transfer.dart';
 import 'package:onebit/features/routing/route.dart';
@@ -95,6 +96,10 @@ class MessageTransport {
   StreamSubscription<ReliableDataReceived>? _receiveSub;
   StreamSubscription<void>? _routeSub;
   StreamSubscription<void>? _connectionSub;
+
+  /// Puts the slices of a chunked payload back together as they arrive.
+  final _chunks = PacketChunkReassembler();
+
   int _packetIdCounter = 0;
   bool _flushing = false;
 
@@ -290,12 +295,11 @@ class MessageTransport {
       payload: messageBytes,
     );
 
-    // The envelope adds an 85-byte header to an already framed message.
-    // Anything that does not fit must go direct (or be chunked later).
-    if (!envelope.isValid ||
-        envelope.estimatedSize > PacketConstants.maxPayloadSize) {
-      return null;
-    }
+    // The envelope adds an 86-byte header to an already framed message.
+    // Past one packet it is carried across as many as it needs — but
+    // `isValid` still has to hold, because the receiving end validates
+    // the envelope before it will look at what is inside it.
+    if (!envelope.isValid) return null;
 
     final message = OneBitMessage(
       id: messageId,
@@ -341,36 +345,26 @@ class MessageTransport {
       return TransferResult.failed;
     }
 
-    if (messageBytes.length > PacketConstants.maxPayloadSize) {
+    if (messageBytes.length > maxChunkedPayload) {
       await _updateMessageStatus(localMsgId, 'failed');
       AppLogger.error(
         'MessageTransport: encoded message too large '
-        '${messageBytes.length} bytes (max ${PacketConstants.maxPayloadSize})',
+        '${messageBytes.length} bytes (max $maxChunkedPayload)',
       );
-      return TransferResult.failed;
-    }
-
-    final packet = OneBitPacket(
-      type: PacketType.message,
-      packetId: _nextPacketId(),
-      payload: messageBytes,
-    );
-
-    final Uint8List packetBytes;
-    try {
-      packetBytes = PacketCodec.encode(packet);
-    } catch (e) {
-      await _updateMessageStatus(localMsgId, 'failed');
-      AppLogger.error('MessageTransport: could not encode packet', e);
       return TransferResult.failed;
     }
 
     AppLogger.info(
       'MessageTransport: sending direct to $deviceId, '
-      '${messageBytes.length} bytes, packet ${packet.packetId}',
+      '${messageBytes.length} bytes',
     );
 
-    final result = await _bleService.sendReliable(deviceId, packetBytes);
+    final result = await sendInPackets(
+      messageBytes,
+      type: PacketType.message,
+      packetId: _nextPacketId(),
+      send: (bytes) => _bleService.sendReliable(deviceId, bytes),
+    );
 
     // A BLE send that did not land is almost always a link that went
     // away mid-flight — the peer may well be back by the next flush.
@@ -401,11 +395,17 @@ class MessageTransport {
         return;
       }
 
-      final payload = Uint8List.fromList(packet.payload);
+      final payload = _chunks.accept(
+        data.deviceId,
+        packet.packetId,
+        Uint8List.fromList(packet.payload),
+      );
+      if (payload == null) return; // still assembling
+
       if (_isI9Envelope(payload)) {
         _handleI9Envelope(data.deviceId, payload);
       } else {
-        _handleLegacyMessage(data.deviceId, packet);
+        _handleLegacyMessage(data.deviceId, payload);
       }
     } catch (e) {
       AppLogger.error('MessageTransport: failed to decode incoming message', e);
@@ -479,8 +479,8 @@ class MessageTransport {
   }
 
   /// Handle an incoming legacy MessageCodec message.
-  void _handleLegacyMessage(String deviceId, OneBitPacket packet) {
-    final decoded = MessageCodec.decode(Uint8List.fromList(packet.payload));
+  void _handleLegacyMessage(String deviceId, Uint8List payload) {
+    final decoded = MessageCodec.decode(payload);
 
     AppLogger.info(
       'MessageTransport: received legacy message from $deviceId, '
