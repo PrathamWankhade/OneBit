@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:onebit/core/theme/app_theme.dart';
 import 'package:onebit/core/version/app_version.dart';
+import 'package:onebit/features/settings/application/app_update_providers.dart';
 import 'package:onebit/features/settings/data/settings_providers.dart';
 import 'package:onebit/features/settings/presentation/widgets/settings_section.dart';
 import 'package:onebit/features/settings/presentation/widgets/settings_tile.dart';
@@ -13,6 +14,8 @@ class SettingsMainScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final pendingUpdate = ref.watch(pendingAppUpdateProvider);
+
     return Scaffold(
       backgroundColor: AppTheme.bgBase,
       body: SafeArea(
@@ -240,9 +243,17 @@ class SettingsMainScreen extends ConsumerWidget {
                 SettingsTile(
                   icon: Icons.system_update,
                   title: 'App update',
-                  value: ref.watch(settingsAutoUpdateProvider)
-                      ? 'Auto'
-                      : 'Manual',
+                  // The offer is only worth showing when there is one: an
+                  // update found on a previous run is still stored, so this
+                  // reads from storage rather than waiting on a request.
+                  description: pendingUpdate == null
+                      ? null
+                      : '${pendingUpdate.version} is ready to install',
+                  value: pendingUpdate != null
+                      ? null
+                      : (ref.watch(settingsAutoUpdateProvider)
+                          ? 'Auto'
+                          : 'Manual'),
                   onTap: () => context.push('/settings/update'),
                 ),
                 SettingsTile(

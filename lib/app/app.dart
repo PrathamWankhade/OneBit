@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:onebit/app/router.dart';
 import 'package:onebit/app/router_notifier.dart';
 import 'package:onebit/core/theme/app_theme.dart';
+import 'package:onebit/core/version/app_version.dart';
 import 'package:onebit/data/database/app_database.dart';
 import 'package:onebit/data/preferences/onboarding_repository.dart';
 import 'package:onebit/features/ble/ble_lifecycle_observer.dart';
@@ -12,6 +13,7 @@ import 'package:onebit/features/ble/ble_providers.dart';
 import 'package:onebit/features/protocol/message_transport.dart';
 import 'package:onebit/features/message/application/message_relay_service.dart';
 import 'package:onebit/features/message/providers/message_providers.dart';
+import 'package:onebit/features/settings/application/app_update_watcher.dart';
 import 'package:onebit/features/settings/data/settings_repository.dart';
 import 'package:onebit/features/settings/data/settings_providers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -132,23 +134,48 @@ class OneBitApp extends ConsumerWidget {
   }
 }
 
-class _OneBitAppBody extends ConsumerWidget {
+class _OneBitAppBody extends ConsumerStatefulWidget {
   const _OneBitAppBody({required this.router, required this.settingsRepo});
 
   final GoRouter router;
   final SettingsRepository settingsRepo;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_OneBitAppBody> createState() => _OneBitAppBodyState();
+}
+
+class _OneBitAppBodyState extends ConsumerState<_OneBitAppBody> {
+  /// Shared with the [MaterialApp] below so the automatic update check can
+  /// raise a SnackBar without a context from the wrong side of the router.
+  final GlobalKey<ScaffoldMessengerState> _scaffoldMessengerKey =
+      GlobalKey<ScaffoldMessengerState>();
+
+  @override
+  void initState() {
+    super.initState();
+    // Fire and forget: nothing awaits the platform's version, so a slow or
+    // missing plugin cannot hold up the first frame. Screens render the
+    // pubspec fallback meanwhile, and the automatic check below awaits it
+    // properly before comparing anything.
+    AppVersion.load();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     ref.watch(bleLifecycleObserverProvider);
 
-    return MaterialApp.router(
-      title: 'OneBit',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.dark(),
-      darkTheme: AppTheme.dark(),
-      themeMode: ThemeMode.dark,
-      routerConfig: router,
+    return AppUpdateWatcher(
+      scaffoldMessengerKey: _scaffoldMessengerKey,
+      onOpenUpdate: () => widget.router.push('/settings/update'),
+      child: MaterialApp.router(
+        title: 'OneBit',
+        debugShowCheckedModeBanner: false,
+        scaffoldMessengerKey: _scaffoldMessengerKey,
+        theme: AppTheme.dark(),
+        darkTheme: AppTheme.dark(),
+        themeMode: ThemeMode.dark,
+        routerConfig: widget.router,
+      ),
     );
   }
 }

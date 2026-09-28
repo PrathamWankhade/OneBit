@@ -49,6 +49,23 @@ class SettingsRepository {
   /// when one is available.
   bool get autoUpdateEnabled => _prefs.getBool(_kAutoUpdateEnabled) ?? true;
 
+  /// The newest upstream build known to be newer than this one, or `null`
+  /// when nothing is outstanding.
+  ///
+  /// Persisted rather than held in memory so a restart inside the
+  /// rate-limit window still shows the tile as offering an update, instead
+  /// of going quiet until the next check falls due.
+  String? get pendingUpdateVersion =>
+      _prefs.getString(_kPendingUpdateVersion);
+
+  /// Where [pendingUpdateVersion] can be picked up.
+  String? get pendingUpdateUrl => _prefs.getString(_kPendingUpdateUrl);
+
+  /// Milliseconds since epoch of the last automatic check that reached the
+  /// network, or `0` when there has never been one.
+  int get lastUpdateCheckAt =>
+      _prefs.getInt(_kLastUpdateCheckAt) ?? 0;
+
   // ── Setters ──
 
   Future<bool> setThemeMode(int index) => _prefs.setInt(_kThemeMode, index);
@@ -73,6 +90,29 @@ class SettingsRepository {
       _prefs.setBool(_kRelayEnabled, value);
   Future<bool> setAutoUpdateEnabled(bool value) =>
       _prefs.setBool(_kAutoUpdateEnabled, value);
+
+  /// Records what an automatic check found.
+  ///
+  /// Both fields move together: a version with no URL (or the reverse)
+  /// would show a badge that leads nowhere.
+  Future<bool> setPendingUpdate({
+    required String? version,
+    required String? url,
+  }) async {
+    final savedVersion = await _setOrClear(_kPendingUpdateVersion, version);
+    final savedUrl = await _setOrClear(_kPendingUpdateUrl, url);
+    return savedVersion && savedUrl;
+  }
+
+  /// Records that a check reached the network, so the next one is not
+  /// due for another six hours.
+  Future<bool> setLastUpdateCheckAt(int millisecondsSinceEpoch) =>
+      _prefs.setInt(_kLastUpdateCheckAt, millisecondsSinceEpoch);
+
+  Future<bool> _setOrClear(String key, String? value) =>
+      value == null || value.isEmpty
+          ? _prefs.remove(key)
+          : _prefs.setString(key, value);
 
   // ── Per-peer settings ──
 
@@ -103,3 +143,6 @@ const _kNotificationVibration = 'settings_notification_vibration';
 const _kDiscoveryEnabled = 'settings_discovery_enabled';
 const _kRelayEnabled = 'settings_relay_enabled';
 const _kAutoUpdateEnabled = 'settings_auto_update_enabled';
+const _kPendingUpdateVersion = 'settings_pending_update_version';
+const _kPendingUpdateUrl = 'settings_pending_update_url';
+const _kLastUpdateCheckAt = 'settings_last_update_check_at';

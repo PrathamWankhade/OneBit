@@ -6,7 +6,11 @@ import 'package:onebit/core/version/app_version.dart';
 
 /// A OneBit build published upstream that is newer than the running one.
 class AppUpdateInfo {
-  const AppUpdateInfo({required this.version, required this.releaseUrl});
+  const AppUpdateInfo({
+    required this.version,
+    required this.releaseUrl,
+    this.apkUrl,
+  });
 
   /// The upstream git tag, e.g. `v1.0.1`.
   final String version;
@@ -16,6 +20,13 @@ class AppUpdateInfo {
   /// Points straight at a GitHub Release when one exists, otherwise at the
   /// repository itself, which always resolves.
   final String releaseUrl;
+
+  /// A direct download of this release's APK, when the release carries one.
+  ///
+  /// Present lets the app fetch and install the update itself; absent sends
+  /// the user to [releaseUrl] instead, which is what happens for a tag that
+  /// was never published as a Release.
+  final String? apkUrl;
 
   @override
   String toString() => 'AppUpdateInfo($version)';
@@ -44,6 +55,13 @@ class AppUpdateService {
 
   /// The repository the app is published from.
   static const String defaultRepoSlug = 'PrathamWankhade/OneBit';
+
+  /// The releases page for [defaultRepoSlug].
+  ///
+  /// Used as a fallback for an update recorded without a URL of its own,
+  /// which always resolves and always lists every download.
+  static String get repoReleasesUrl =>
+      'https://github.com/$defaultRepoSlug/releases';
 
   /// The `owner/name` of the repository updates are read from.
   final String repoSlug;
@@ -92,10 +110,25 @@ class AppUpdateService {
         AppUpdateInfo(
           version: tag,
           releaseUrl: url is String && url.isNotEmpty ? url : _repoUrl,
+          apkUrl: _apkAsset(item['assets']),
         ),
       );
     }
     return updates;
+  }
+
+  /// The first `.apk` among a release's assets, or `null` when the release
+  /// is a bare tag with nothing attached.
+  static String? _apkAsset(Object? assets) {
+    if (assets is! List) return null;
+    for (final asset in assets.whereType<Map>()) {
+      final name = asset['name'];
+      final url = asset['browser_download_url'];
+      if (name is! String || !name.toLowerCase().endsWith('.apk')) continue;
+      if (url is! String || url.isEmpty) continue;
+      return url;
+    }
+    return null;
   }
 
   Future<List<AppUpdateInfo>?> _tags() async {
