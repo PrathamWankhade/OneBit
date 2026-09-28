@@ -22,6 +22,18 @@ android {
         versionName = flutter.versionName
     }
 
+    // One signing identity for every build, local and CI, so Android
+    // accepts a newer APK as an upgrade of an installed one. The credential
+    // is tracked on purpose - see android/.gitignore for why.
+    signingConfigs {
+        (findByName("debug") ?: create("debug")).apply {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("debug")

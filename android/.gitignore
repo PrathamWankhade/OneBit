@@ -12,3 +12,17 @@ GeneratedPluginRegistrant.java
 key.properties
 **/*.keystore
 **/*.jks
+
+# The one below is tracked on purpose.
+#
+# Android will only install an APK over an installed one when the two carry
+# the same signature, so every build of OneBit has to share an identity.
+# A GitHub runner starts with no `~/.android/debug.keystore`, which means
+# AGP mints a fresh random key on each job and a release could never be
+# installed over the previous release - sideloaded or from inside the app.
+#
+# This is the stock Android debug credential (alias `androiddebugkey`,
+# password `android`), the same one `keytool` generates for every
+# developer machine, so publishing it costs nothing an attacker with the
+# default password did not already have.
+!app/debug.keystore
