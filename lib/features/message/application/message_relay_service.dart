@@ -198,7 +198,21 @@ class MessageRelayService {
       return result;
     }
 
-    // 4. Construct OneBitMessage preserving original identity.
+    // 4. Hop budget. The counter is checked *after* the destination test
+    //    above, because spending your last hop must not stop a message
+    //    arriving — only stop it travelling any further.
+    if (envelope.hopLimitReached) {
+      const result = RelayFailed(
+        reason: 'Hop limit reached ($maxEnvelopeHops)',
+      );
+      AppLogger.info(
+        'Relay: ${_shortId(envelope.messageId)} dropped — hop limit reached',
+      );
+      _recordEvent(envelope, result);
+      return result;
+    }
+
+    // 5. Construct OneBitMessage preserving original identity.
     //
     // The relay node does NOT become the source. The original
     // sourcePeerId and destinationPeerId are preserved exactly.
@@ -211,19 +225,22 @@ class MessageRelayService {
       payloadSizeBytes: envelope.payload.length,
     );
 
-    // 5. Forward via existing I9.4 transmission service.
+    // 6. Forward via existing I9.4 transmission service.
     //
     // This reuses the same route-lookup → device-resolve → encode
-    // → BLE-send pipeline used by origin transmission.
+    // → BLE-send pipeline used by origin transmission. The hop counter
+    // is the one thing that changes: the relay does not become the
+    // source, but it does count as a hop.
     AppLogger.info(
       'Relay: forwarding ${_shortId(envelope.messageId)} '
       'from ${_shortId(envelope.sourcePeerId)} '
-      'to ${_shortId(envelope.destinationPeerId)}',
+      'to ${_shortId(envelope.destinationPeerId)} '
+      '(hop ${envelope.hopCount + 1}/$maxEnvelopeHops)',
     );
 
     final transmissionResult = await _transmissionService.transmit(
       message: message,
-      envelope: envelope,
+      envelope: envelope.withAdditionalHop(),
     );
 
     // 6. Map transmission result to relay result.

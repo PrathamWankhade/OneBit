@@ -354,9 +354,9 @@ void main() {
       expect(captured.first, deviceB);
 
       final packet = packetOf(captured.last);
-      // An I9 envelope announces itself with version byte 0x01; a legacy
-      // MessageCodec frame starts with the 2-byte length of "m_1".
-      expect(packet.payload.first, 0x01);
+      // An I9 envelope announces itself with the envelope protocol version;
+      // a legacy MessageCodec frame starts with the 2-byte length of "m_1".
+      expect(packet.payload.first, messageProtocolVersion);
 
       final envelope = MessageEnvelopeCodec.decode(
         Uint8List.fromList(packet.payload),
@@ -389,7 +389,7 @@ void main() {
 
       final captured = verify(ble.sendReliable(captureAny, captureAny)).captured;
       final packet = packetOf(captured.last);
-      expect(packet.payload.first, isNot(0x01));
+      expect(packet.payload.first, isNot(messageProtocolVersion));
       expect(
         MessageCodec.decode(Uint8List.fromList(packet.payload)).content,
         'no route yet',

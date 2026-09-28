@@ -11,12 +11,13 @@
 /// [messageId: 16B]
 /// [sourcePeerId: 32B]
 /// [destinationPeerId: 32B]
+/// [hopCount: 1B]
 /// [payloadLength: 4B]
 /// [payload: NB]
 /// ```
 ///
-/// Total header overhead: 85 bytes.
-/// Maximum total size: 85 + 4096 = 4181 bytes.
+/// Total header overhead: 86 bytes.
+/// Maximum total size: 86 + 4096 = 4182 bytes.
 ///
 /// ## Determinism
 ///
@@ -35,6 +36,7 @@ const int envelopeHeaderSize =
     messageIdByteSize + // messageId
     peerIdByteSize + // sourcePeerId
     peerIdByteSize + // destinationPeerId
+    1 + // hopCount
     4; // payloadLength
 
 /// Maximum encoded envelope size.
@@ -62,6 +64,9 @@ enum EnvelopeDecodeReason {
 
   /// Destination PeerId is not exactly 32 bytes.
   invalidDestinationPeerId,
+
+  /// The hop counter is outside the supported range.
+  hopCountOutOfRange,
 
   /// Trailing bytes after the declared envelope.
   trailingData,
@@ -97,6 +102,11 @@ class MessageEnvelopeCodec {
     if (totalSize > maxEncodedEnvelopeSize) {
       throw const EnvelopeDecodeException(EnvelopeDecodeReason.envelopeTooLarge);
     }
+    if (envelope.hopCount < 0 || envelope.hopCount > maxEnvelopeHops) {
+      throw const EnvelopeDecodeException(
+        EnvelopeDecodeReason.hopCountOutOfRange,
+      );
+    }
 
     final bytes = Uint8List(totalSize);
     var offset = 0;
@@ -118,6 +128,9 @@ class MessageEnvelopeCodec {
     final dstBytes = _hexDecode(envelope.destinationPeerId);
     bytes.setAll(offset, dstBytes);
     offset += peerIdByteSize;
+
+    // Relay hops taken so far (1 byte).
+    bytes[offset++] = envelope.hopCount & 0xFF;
 
     // Payload length (4 bytes, big-endian uint32).
     bytes[offset++] = (payload.length >> 24) & 0xFF;
@@ -167,7 +180,17 @@ class MessageEnvelopeCodec {
     final dstBytes = bytes.sublist(offset, offset + peerIdByteSize);
     offset += peerIdByteSize;
 
-    // 6. Payload length (4 bytes, big-endian uint32).
+    // 6. Relay hops taken so far (1 byte). An envelope that already
+    //    used up its budget must not be decodable — nothing downstream
+    //    would have a chance to refuse it.
+    final hopCount = bytes[offset++];
+    if (hopCount > maxEnvelopeHops) {
+      throw const EnvelopeDecodeException(
+        EnvelopeDecodeReason.hopCountOutOfRange,
+      );
+    }
+
+    // 7. Payload length (4 bytes, big-endian uint32).
     if (offset + 4 > bytes.length) {
       throw const EnvelopeDecodeException(
         EnvelopeDecodeReason.malformedEnvelope,
@@ -180,42 +203,42 @@ class MessageEnvelopeCodec {
         bytes[offset + 3];
     offset += 4;
 
-    // 7. Validate payload length against available bytes.
+    // 8. Validate payload length against available bytes.
     if (offset + payloadLength > bytes.length) {
       throw const EnvelopeDecodeException(
         EnvelopeDecodeReason.invalidPayloadLength,
       );
     }
 
-    // 8. Reject trailing bytes.
+    // 9. Reject trailing bytes.
     if (offset + payloadLength != bytes.length) {
       throw const EnvelopeDecodeException(
         EnvelopeDecodeReason.trailingData,
       );
     }
 
-    // 9. Payload size limit.
+    // 10. Payload size limit.
     if (payloadLength > maxMessagePayloadSize) {
       throw const EnvelopeDecodeException(
         EnvelopeDecodeReason.payloadTooLarge,
       );
     }
 
-    // 10. Total size check.
+    // 11. Total size check.
     if (bytes.length > maxEncodedEnvelopeSize) {
       throw const EnvelopeDecodeException(
         EnvelopeDecodeReason.envelopeTooLarge,
       );
     }
 
-    // 11. Construct MessageId from raw bytes.
+    // 12. Construct MessageId from raw bytes.
     final messageId = MessageId.fromBytes(Uint8List.fromList(idBytes));
 
-    // 12. Hex-encode PeerIds.
+    // 13. Hex-encode PeerIds.
     final sourcePeerId = _hexEncode(srcBytes);
     final destinationPeerId = _hexEncode(dstBytes);
 
-    // 13. Extract payload.
+    // 14. Extract payload.
     final payload = payloadLength > 0
         ? Uint8List.fromList(bytes.sublist(offset, offset + payloadLength))
         : Uint8List(0);
@@ -225,6 +248,7 @@ class MessageEnvelopeCodec {
       messageId: messageId,
       sourcePeerId: sourcePeerId,
       destinationPeerId: destinationPeerId,
+      hopCount: hopCount,
       payload: payload,
     );
   }

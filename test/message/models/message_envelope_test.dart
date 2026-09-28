@@ -104,8 +104,8 @@ void main() {
         payload: Uint8List(100),
       );
 
-      // 1 + 16 + 32 + 32 + 4 + 100 = 185
-      expect(envelope.estimatedSize, equals(185));
+      // 1 + 16 + 32 + 32 + 1 + 4 + 100 = 186
+      expect(envelope.estimatedSize, equals(186));
     });
 
     test('equality ignores payload content', () {

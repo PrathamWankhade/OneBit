@@ -24,12 +24,14 @@ void main() {
     String? src,
     String? dst,
     List<int>? payload,
+    int hopCount = 0,
   }) {
     return MessageEnvelope(
       protocolVersion: messageProtocolVersion,
       messageId: id ?? testMsgId,
       sourcePeerId: src ?? testSource,
       destinationPeerId: dst ?? testDestination,
+      hopCount: hopCount,
       payload: Uint8List.fromList(payload ?? [1, 2, 3]),
     );
   }
@@ -40,8 +42,8 @@ void main() {
         final envelope = makeEnvelope(payload: List.filled(100, 0xAB));
         final bytes = MessageEnvelopeCodec.encode(envelope);
 
-        // header (85) + payload (100) = 185
-        expect(bytes.length, equals(185));
+        // header (86) + payload (100) = 186
+        expect(bytes.length, equals(186));
       });
 
       test('first byte is protocol version', () {
@@ -59,15 +61,31 @@ void main() {
         expect(bytes.sublist(1, 17), equals(idBytes));
       });
 
-      test('payload length is big-endian uint32 at offset 81', () {
+      test('hop count sits at offset 81', () {
+        final envelope = makeEnvelope();
+        final bytes = MessageEnvelopeCodec.encode(envelope);
+
+        expect(bytes[81], equals(envelope.hopCount));
+      });
+
+      test('payload length is big-endian uint32 at offset 82', () {
         final envelope = makeEnvelope(payload: List.filled(256, 0xFF));
         final bytes = MessageEnvelopeCodec.encode(envelope);
 
-        // Offset 81-84: payload length (256 = 0x00000100)
-        expect(bytes[81], equals(0x00));
+        // Offset 82-85: payload length (256 = 0x00000100)
         expect(bytes[82], equals(0x00));
-        expect(bytes[83], equals(0x01));
-        expect(bytes[84], equals(0x00));
+        expect(bytes[83], equals(0x00));
+        expect(bytes[84], equals(0x01));
+        expect(bytes[85], equals(0x00));
+      });
+
+      test('rejects an envelope that is already over its hop budget', () {
+        final envelope = makeEnvelope().copyWith(hopCount: maxEnvelopeHops + 1);
+
+        expect(
+          () => MessageEnvelopeCodec.encode(envelope),
+          throwsA(isA<EnvelopeDecodeException>()),
+        );
       });
     });
 
@@ -109,11 +127,21 @@ void main() {
         );
       });
 
+      test('rejects an envelope whose hop budget is already spent', () {
+        final bytes = MessageEnvelopeCodec.encode(makeEnvelope());
+        bytes[81] = maxEnvelopeHops + 1; // hopCount
+
+        expect(
+          () => MessageEnvelopeCodec.decode(bytes),
+          throwsA(isA<EnvelopeDecodeException>()),
+        );
+      });
+
       test('rejects truncated payload', () {
         final envelope = makeEnvelope(payload: List.filled(100, 0));
         final bytes = MessageEnvelopeCodec.encode(envelope);
         // Truncate to header only — payload length says 100 but no bytes.
-        final truncated = Uint8List.fromList(bytes.sublist(0, 85));
+        final truncated = Uint8List.fromList(bytes.sublist(0, 86));
 
         expect(
           () => MessageEnvelopeCodec.decode(truncated),
@@ -135,7 +163,7 @@ void main() {
 
       test('rejects oversized payload', () {
         // Build bytes manually with payload length exceeding max.
-        // header (85) + (maxMessagePayloadSize + 1) would exceed maxEncodedEnvelopeSize.
+        // header (86) + (maxMessagePayloadSize + 1) would exceed maxEncodedEnvelopeSize.
         // The encode method rejects this, so we test via decode with
         // manually crafted bytes that have a valid header but oversized
         // payload length.
@@ -158,12 +186,12 @@ void main() {
         for (var i = 49; i < 81; i++) {
           bytes[i] = 0xBB;
         }
-        // Payload length at 81-84: set to maxMessagePayloadSize + 1 = 4097.
+        // Payload length at 82-85: set to maxMessagePayloadSize + 1 = 4097.
         const oversized = maxMessagePayloadSize + 1;
-        bytes[81] = (oversized >> 24) & 0xFF;
-        bytes[82] = (oversized >> 16) & 0xFF;
-        bytes[83] = (oversized >> 8) & 0xFF;
-        bytes[84] = oversized & 0xFF;
+        bytes[82] = (oversized >> 24) & 0xFF;
+        bytes[83] = (oversized >> 16) & 0xFF;
+        bytes[84] = (oversized >> 8) & 0xFF;
+        bytes[85] = oversized & 0xFF;
 
         expect(
           () => MessageEnvelopeCodec.decode(bytes),
@@ -183,6 +211,15 @@ void main() {
         expect(restored.sourcePeerId, equals(original.sourcePeerId));
         expect(restored.destinationPeerId, equals(original.destinationPeerId));
         expect(restored.payload, equals(original.payload));
+      });
+
+      test('encode → decode preserves the relay hop count', () {
+        final original = makeEnvelope(hopCount: maxEnvelopeHops);
+        final restored = MessageEnvelopeCodec.decode(
+          MessageEnvelopeCodec.encode(original),
+        );
+
+        expect(restored.hopCount, equals(maxEnvelopeHops));
       });
 
       test('encode → decode preserves empty payload', () {
@@ -255,7 +292,7 @@ void main() {
         for (var i = 49; i < 81; i++) {
           bytes[i] = 0xBB;
         }
-        // Payload length at 81-84: already 0 from initialization.
+        // Payload length at 82-85: already 0 from initialization.
 
         final decoded = MessageEnvelopeCodec.decode(bytes);
         expect(decoded.payload.length, equals(0));

@@ -304,10 +304,14 @@ class MessageTransport {
   }
 
   /// Check if the payload starts with a valid I9.2 envelope version byte.
+  ///
+  /// A legacy `MessageCodec` frame opens with the big-endian length of the
+  /// external message id, which is a handful of bytes in practice, so the
+  /// version byte is a safe discriminator — the length floor below rules out
+  /// even a short frame being mistaken for an envelope.
   bool _isI9Envelope(Uint8List payload) {
-    if (payload.isEmpty) return false;
-    // I9.2 envelope version byte is 0x01.
-    return payload[0] == 0x01;
+    if (payload.length < envelopeHeaderSize) return false;
+    return payload[0] == messageProtocolVersion;
   }
 
   /// Handle an incoming I9.2 envelope: persist it if it is for us,

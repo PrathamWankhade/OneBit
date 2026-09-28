@@ -6,6 +6,7 @@ import 'package:onebit/features/message/application/message_relay_service.dart';
 import 'package:onebit/features/message/application/message_transmission_service.dart';
 import 'package:onebit/features/message/models/message_envelope.dart';
 import 'package:onebit/features/message/models/message_id.dart';
+import 'package:onebit/features/message/models/onebit_message.dart';
 import 'package:onebit/features/routing/route.dart';
 
 void main() {
@@ -39,12 +40,14 @@ void main() {
     String? source,
     String? destination,
     Uint8List? payload,
+    int hopCount = 0,
   }) {
     return MessageEnvelope(
-      protocolVersion: 1,
+      protocolVersion: messageProtocolVersion,
       messageId: messageId ?? makeId(),
       sourcePeerId: source ?? remotePeerId,
       destinationPeerId: destination ?? localPeerId,
+      hopCount: hopCount,
       payload: payload ?? Uint8List.fromList([1, 2, 3]),
     );
   }
@@ -103,6 +106,61 @@ void main() {
           isA<RelayFailed>(),
         ),
       );
+    });
+
+    test('relay spends one hop before re-transmitting', () async {
+      final transmission = _RecordingTransmission(localPeerId: localPeerId);
+      final service = MessageRelayService(
+        localPeerId: localPeerId,
+        transmissionService: transmission,
+      );
+      final envelope = makeEnvelope(
+        destination: thirdPeerId,
+        hopCount: 3,
+      );
+
+      await service.receiveAndRelay(envelope);
+
+      expect(transmission.seen, isNotNull);
+      expect(transmission.seen!.hopCount, equals(4));
+      // Transit state, not identity: the relay never mutates what it
+      // was handed, so the incoming record stays intact.
+      expect(envelope.hopCount, equals(3));
+      expect(transmission.seen!.sourcePeerId, equals(envelope.sourcePeerId));
+      expect(transmission.seen!.messageId, equals(envelope.messageId));
+    });
+
+    test('relay refuses once the hop budget is spent', () async {
+      final transmission = _RecordingTransmission(localPeerId: localPeerId);
+      final service = MessageRelayService(
+        localPeerId: localPeerId,
+        transmissionService: transmission,
+      );
+      final envelope = makeEnvelope(
+        destination: thirdPeerId,
+        hopCount: maxEnvelopeHops,
+      );
+
+      final result = await service.receiveAndRelay(envelope);
+
+      expect(result, isA<RelayFailed>());
+      expect((result as RelayFailed).reason, contains('Hop limit reached'));
+      expect(transmission.seen, isNull);
+    });
+
+    test('relay still delivers to itself at the hop budget', () async {
+      final transmission = _RecordingTransmission(localPeerId: localPeerId);
+      final service = MessageRelayService(
+        localPeerId: localPeerId,
+        transmissionService: transmission,
+      );
+
+      final result = await service.receiveAndRelay(
+        makeEnvelope(destination: localPeerId, hopCount: maxEnvelopeHops),
+      );
+
+      expect(result, isA<LocalDestination>());
+      expect(transmission.seen, isNull);
     });
 
     test('source PeerId is preserved during relay', () async {
@@ -279,4 +337,28 @@ void main() {
       expect(failed.reason, equals('No route'));
     });
   });
+}
+
+/// A transmission service that never touches BLE, so a test can see
+/// exactly what the relay asked to put on the wire.
+class _RecordingTransmission extends MessageTransmissionService {
+  _RecordingTransmission({required super.localPeerId})
+      : super(
+          bleService: BleService(),
+          routeLookup: (_) => null,
+          deviceResolver: (_) => null,
+          isPeerConnected: (_) => false,
+        );
+
+  /// The last envelope the relay asked to transmit, if any.
+  MessageEnvelope? seen;
+
+  @override
+  Future<TransmissionResult> transmit({
+    required OneBitMessage message,
+    required MessageEnvelope envelope,
+  }) async {
+    seen = envelope;
+    return const TransmissionResult.noRoute();
+  }
 }
