@@ -254,11 +254,13 @@ class AppDatabase extends _$AppDatabase {
   Future<int> insertMessage({
     required int conversationId,
     required String content,
+    String? status,
   }) async {
     final id = await into(messages).insert(
       MessagesCompanion.insert(
         conversationId: conversationId,
         content: content,
+        status: status == null ? const Value.absent() : Value(status),
         createdAt: DateTime.now(),
       ),
     );
@@ -277,6 +279,19 @@ class AppDatabase extends _$AppDatabase {
 
   Future<int> deleteMessage(int id) {
     return (delete(messages)..where((t) => t.id.equals(id))).go();
+  }
+
+  /// Messages that could not be handed to their peer yet, oldest first.
+  ///
+  /// Oldest-first so the outbox drains in the order the user wrote it.
+  /// Unreachable peers fail fast, so a stuck conversation cannot hold
+  /// up a message that now has somewhere to go.
+  Future<List<Message>> queuedMessages({int limit = 50}) {
+    return (select(messages)
+          ..where((t) => t.status.equals('queued'))
+          ..orderBy([(t) => OrderingTerm.asc(t.createdAt)])
+          ..limit(limit))
+        .get();
   }
 
   // ── BLE Transport helpers ──

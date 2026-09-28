@@ -158,6 +158,8 @@ class _StatusIcon extends StatelessWidget {
         return const Icon(Icons.done_all, size: 12, color: AppTheme.accent);
       case 'failed':
         return const Icon(Icons.error_outline, size: 12, color: AppTheme.red);
+      case 'queued':
+        return const Icon(Icons.schedule, size: 12, color: AppTheme.textTertiary);
       default:
         return const SizedBox.shrink();
     }

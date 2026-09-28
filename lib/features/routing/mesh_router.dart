@@ -29,7 +29,9 @@
 /// - Does not create BLE connections (I7 owns that)
 /// - Does not select the next hop (I8.7 [RoutingTable.bestRoute] does)
 /// - Does not forward messages (I9.5 [MessageRelayService] does)
-/// - Does not retry failed sends or persist anything
+/// - Does not send or retry messages — [routesChanged] only announces
+///   that the table moved, so whoever owns the outbox can try again
+/// - Does not persist anything
 library;
 
 import 'dart:async';
@@ -105,6 +107,16 @@ class MeshRouter {
   /// (the neighbour stream only ever emits live entries).
   Set<String> _activePeers = const {};
 
+  /// Fires after routes were recomputed.
+  ///
+  /// Not the routes themselves — listeners care that *something* changed,
+  /// so a message that previously had nowhere to go might now have a
+  /// next hop.
+  final _routesChanged = StreamController<void>.broadcast();
+
+  /// Broadcast stream of route recomputation.
+  Stream<void> get routesChanged => _routesChanged.stream;
+
   /// Whether the router is allowed to do anything at all.
   bool get _usable => !_disposed && RoutingValidators.isValidPeerId(localPeerId);
 
@@ -173,6 +185,19 @@ class MeshRouter {
     }
 
     _syncRefreshTimer(active.isNotEmpty);
+    _notifyRoutesChanged();
+  }
+
+  /// Let listeners know the next hop for something may have appeared
+  /// or vanished. Never throws — a listener's failure must not undo
+  /// the bookkeeping above.
+  void _notifyRoutesChanged() {
+    if (_disposed) return;
+    try {
+      _routesChanged.add(null);
+    } catch (_) {
+      // A closed controller during teardown is not worth reporting.
+    }
   }
 
   void _syncDirectRoutes(Set<String> active) {
@@ -347,6 +372,7 @@ class MeshRouter {
               '(${packet.payload.length} bytes)',
         );
         _refreshIndirectRoutes();
+        _notifyRoutesChanged();
       case AdvertisementResult.rejectedStale:
       case AdvertisementResult.rejectedMalformed:
       case AdvertisementResult.rejectedSelfSource:
@@ -395,5 +421,6 @@ class MeshRouter {
     _dataSub = null;
     _refreshTimer?.cancel();
     _refreshTimer = null;
+    _routesChanged.close();
   }
 }

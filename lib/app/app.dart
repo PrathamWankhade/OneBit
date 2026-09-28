@@ -80,7 +80,8 @@ final messageRelayServiceProvider = Provider<MessageRelayService?>((ref) {
 /// App-scoped message transport bridging DB ↔ BLE.
 ///
 /// Also hands the transport the routing/identity lookups it needs to
-/// decide between a mesh send and a direct one.
+/// decide between a mesh send and a direct one, plus the two events that
+/// tell its outbox that a message stuck waiting may have a next hop now.
 final messageTransportProvider = Provider<MessageTransport>((ref) {
   final bleService = ref.watch(bleServiceProvider);
   final db = ref.watch(databaseProvider);
@@ -90,6 +91,7 @@ final messageTransportProvider = Provider<MessageTransport>((ref) {
   final routingTable = ref.watch(routingTableProvider);
   final connectionManager = ref.watch(peerConnectionManagerProvider);
   final resolver = ref.watch(bleIdentityResolverProvider);
+  final meshRouter = ref.watch(meshRouterProvider);
 
   final transport = MessageTransport(
     bleService: bleService,
@@ -100,6 +102,8 @@ final messageTransportProvider = Provider<MessageTransport>((ref) {
     deviceForPeer: connectionManager.deviceForPeer,
     routeLookup: routingTable.bestRoute,
     transmissionService: transmissionService,
+    routeEvents: meshRouter.routesChanged,
+    connectionEvents: connectionManager.connectionStream,
   );
   transport.startListening();
   ref.onDispose(() => transport.dispose());

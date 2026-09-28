@@ -49,6 +49,15 @@ typedef RouteLookup = Route? Function(String destinationPeerId);
 ///   ├─ I9 envelope → addressed to us? persist it : MessageRelayService
 ///   └─ legacy format → MessageCodec → Database
 /// ```
+///
+/// ## Outbox
+///
+/// Every outbound row starts life in the `queued` state, and is moved
+/// to `sent` or `failed` once an attempt settles. `failed` is reserved
+/// for failures a retry could not fix (it will not encode, it will not
+/// fit); "the peer was not on the air" stays `queued` and is retried by
+/// [flushQueued] whenever [_routeEvents] or [_connectionEvents] says the
+/// reachable set may have changed.
 class MessageTransport {
   MessageTransport({
     required this._bleService,
@@ -59,6 +68,8 @@ class MessageTransport {
     this._deviceForPeer,
     this._routeLookup,
     this._transmissionService,
+    this._routeEvents,
+    this._connectionEvents,
   });
 
   final BleService _bleService;
@@ -74,8 +85,18 @@ class MessageTransport {
   final RouteLookup? _routeLookup;
   final MessageTransmissionService? _transmissionService;
 
+  /// Announces that the route table was recomputed — a neighbour
+  /// appeared, left, or advertised somebody new.
+  final Stream<void>? _routeEvents;
+
+  /// Announces that the set of connected peers changed.
+  final Stream<void>? _connectionEvents;
+
   StreamSubscription<ReliableDataReceived>? _receiveSub;
+  StreamSubscription<void>? _routeSub;
+  StreamSubscription<void>? _connectionSub;
   int _packetIdCounter = 0;
+  bool _flushing = false;
 
   /// Start listening for incoming messages from peers.
   void startListening() {
@@ -84,6 +105,22 @@ class MessageTransport {
       _handleIncoming,
       onError: (e) => AppLogger.error('MessageTransport receive error', e),
     );
+
+    // Both events mean the same thing to the outbox: a message that had
+    // nowhere to go may have somewhere now. Re-entrancy is guarded, so
+    // a burst of them costs one pass, not one per event.
+    _routeSub?.cancel();
+    _routeSub = _routeEvents?.listen(
+      (_) => unawaited(flushQueued()),
+      onError: (Object e) => AppLogger.error('MessageTransport route sub', e),
+    );
+    _connectionSub?.cancel();
+    _connectionSub = _connectionEvents?.listen(
+      (_) => unawaited(flushQueued()),
+      onError: (Object e) =>
+          AppLogger.error('MessageTransport connection sub', e),
+    );
+
     AppLogger.info('MessageTransport: listening for incoming messages');
   }
 
@@ -91,6 +128,10 @@ class MessageTransport {
   void stopListening() {
     _receiveSub?.cancel();
     _receiveSub = null;
+    _routeSub?.cancel();
+    _routeSub = null;
+    _connectionSub?.cancel();
+    _connectionSub = null;
   }
 
   // ── Sending ───────────────────────────────────────────────
@@ -103,6 +144,8 @@ class MessageTransport {
   ///
   /// Returns [TransferResult.delivered] on success, or
   /// [TransferResult.failed] / [TransferResult.cancelled] on failure.
+  /// The row is born in the outbox (`queued`) so that a send interrupted
+  /// by a crash is still picked up by a later flush.
   Future<TransferResult> sendMessage({
     required String peerDeviceId,
     required int conversationId,
@@ -111,8 +154,72 @@ class MessageTransport {
     final localMsgId = await _database.insertMessage(
       conversationId: conversationId,
       content: content,
+      status: 'queued',
     );
-    final externalId = 'm_$localMsgId';
+    return _deliver(
+      peerDeviceId: peerDeviceId,
+      conversationId: conversationId,
+      localMsgId: localMsgId,
+      content: content,
+    );
+  }
+
+  /// Re-attempt every message waiting for its peer.
+  ///
+  /// Called when a peer connects or the route table is recomputed: both
+  /// mean a message that had nowhere to go may have somewhere now. Each
+  /// attempt resolves the destination afresh, so a conversation keyed by
+  /// a BLE address retries under whatever identity the peer has since
+  /// proven.
+  Future<void> flushQueued() async {
+    if (_flushing) return;
+    _flushing = true;
+    try {
+      final queued = await _database.queuedMessages();
+      for (final row in queued) {
+        final conversation =
+            await _database.getConversation(row.conversationId);
+        final peerDeviceId = conversation?.peerDeviceId;
+        if (peerDeviceId == null || peerDeviceId.isEmpty) continue;
+
+        await _deliver(
+          peerDeviceId: peerDeviceId,
+          conversationId: row.conversationId,
+          localMsgId: row.id,
+          content: row.content,
+        );
+      }
+    } catch (e) {
+      AppLogger.error('MessageTransport: outbox flush failed', e);
+    } finally {
+      _flushing = false;
+    }
+  }
+
+  /// The wire identity of a message row.
+  ///
+  /// Derived from the primary key rather than stored, so a retry carries
+  /// exactly the id the receiver saw the first time — that is what lets a
+  /// receiving conversation drop the duplicate if the first attempt did
+  /// get through after all.
+  String _externalIdFor(int messageId) => 'm_$messageId';
+
+  /// Push one already-stored message out to its peer.
+  ///
+  /// Shared by the first attempt and every retry, because both must
+  /// resolve the destination and pick a route from scratch.
+  ///
+  /// Failures are classified so the outbox knows what to do next:
+  /// * `failed` — deterministic; encoding this again will fail again.
+  /// * `queued` — transient; the peer was not reachable this time and a
+  ///   later flush should try again.
+  Future<TransferResult> _deliver({
+    required String peerDeviceId,
+    required int conversationId,
+    required int localMsgId,
+    required String content,
+  }) async {
+    final externalId = _externalIdFor(localMsgId);
 
     final Uint8List messageBytes;
     try {
@@ -142,7 +249,7 @@ class MessageTransport {
       if (viaMesh != null) {
         await _updateMessageStatus(
           localMsgId,
-          viaMesh == TransferResult.delivered ? 'sent' : 'failed',
+          viaMesh == TransferResult.delivered ? 'sent' : 'queued',
         );
         AppLogger.info('MessageTransport: mesh send result=$viaMesh');
         return viaMesh;
@@ -227,9 +334,9 @@ class MessageTransport {
   }) async {
     final deviceId = _resolveDevice(peerDeviceId, peerIdentity);
     if (deviceId == null) {
-      await _updateMessageStatus(localMsgId, 'failed');
+      await _updateMessageStatus(localMsgId, 'queued');
       AppLogger.info(
-        'MessageTransport: no reachable device for $peerDeviceId',
+        'MessageTransport: no reachable device for $peerDeviceId — queued',
       );
       return TransferResult.failed;
     }
@@ -265,7 +372,9 @@ class MessageTransport {
 
     final result = await _bleService.sendReliable(deviceId, packetBytes);
 
-    final status = result == TransferResult.delivered ? 'sent' : 'failed';
+    // A BLE send that did not land is almost always a link that went
+    // away mid-flight — the peer may well be back by the next flush.
+    final status = result == TransferResult.delivered ? 'sent' : 'queued';
     await _updateMessageStatus(localMsgId, status);
 
     AppLogger.info('MessageTransport: send result=$status');

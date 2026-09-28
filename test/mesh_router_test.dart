@@ -51,6 +51,7 @@ void main() {
   const peerC =
       'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc';
   const deviceB = 'AA:BB:CC:DD:02';
+  const deviceC = 'AA:BB:CC:DD:03';
 
   /// Decode a captured `sendReliable` payload as a OneBit packet.
   OneBitPacket packetOf(Object captured) =>
@@ -254,6 +255,22 @@ void main() {
       verifyNever(ble.sendReliable(any, any));
     });
 
+    test('announces route recomputation so an outbox can retry', () async {
+      router.start();
+      var recomputations = 0;
+      final sub = router.routesChanged.listen((_) => recomputations++);
+      addTearDown(sub.cancel);
+
+      await connectPeerB();
+      await pumpEventQueue();
+      expect(recomputations, greaterThan(0));
+
+      final afterConnect = recomputations;
+      neighborTable.forceRemoveNeighbor(peerB);
+      await pumpEventQueue();
+      expect(recomputations, greaterThan(afterConnect));
+    });
+
     test('ignores a malformed advertisement without throwing', () async {
       router.start();
       await connectPeerB();
@@ -296,43 +313,67 @@ void main() {
       await db.close();
     });
 
-    MessageTransport buildTransport({bool withRoute = true}) {
+    /// Whether a route exists to peerB. peerB is always directly
+    /// connected, so only its *route* is optional here.
+    var routeIsUp = true;
+
+    /// Whether peerC is reachable at all — route and device together.
+    /// peerC starts out of reach; the outbox tests bring it within
+    /// reach mid-flight.
+    var peerCUp = false;
+
+    Route routeToPeer(String peer) => Route(
+          destinationPeerId: peer,
+          nextHopPeerId: peer,
+          metric: 1,
+          state: RouteState.active,
+          source: RouteSource.direct,
+          createdAt: DateTime.now(),
+          lastValidatedAt: DateTime.now(),
+        );
+
+    Route? routeTo(String dest) {
+      if (dest == peerB) return routeIsUp ? routeToPeer(peerB) : null;
+      if (dest == peerC) return peerCUp ? routeToPeer(peerC) : null;
+      return null;
+    }
+
+    String? deviceFor(String peer) {
+      if (peer == peerB) return deviceB;
+      if (peer == peerC) return peerCUp ? deviceC : null;
+      return null;
+    }
+
+    MessageTransport buildTransport({
+      bool? withRoute,
+      Stream<void>? routeEvents,
+    }) {
+      // The group body runs once, so every test re-establishes the
+      // fixture here; the outbox cases then bring peerC up by hand.
+      routeIsUp = withRoute ?? true;
+      peerCUp = false;
+
       final transmission = MessageTransmissionService(
         localPeerId: localId,
         bleService: ble,
-        routeLookup: (dest) => withRoute && dest == peerB
-            ? Route(
-                destinationPeerId: peerB,
-                nextHopPeerId: peerB,
-                metric: 1,
-                state: RouteState.active,
-                source: RouteSource.direct,
-                createdAt: DateTime.now(),
-                lastValidatedAt: DateTime.now(),
-              )
-            : null,
-        deviceResolver: (peer) => peer == peerB ? deviceB : null,
-        isPeerConnected: (peer) => peer == peerB,
+        routeLookup: routeTo,
+        deviceResolver: deviceFor,
+        isPeerConnected: (peer) => deviceFor(peer) != null,
       );
 
       final built = MessageTransport(
         bleService: ble,
         database: db,
         localPeerId: localId,
-        identityForDevice: (device) => device == deviceB ? peerB : null,
-        deviceForPeer: (peer) => peer == peerB ? deviceB : null,
-        routeLookup: (dest) => withRoute && dest == peerB
-            ? Route(
-                destinationPeerId: peerB,
-                nextHopPeerId: peerB,
-                metric: 1,
-                state: RouteState.active,
-                source: RouteSource.direct,
-                createdAt: DateTime.now(),
-                lastValidatedAt: DateTime.now(),
-              )
-            : null,
+        identityForDevice: (device) => device == deviceB
+            ? peerB
+            : device == deviceC
+                ? peerC
+                : null,
+        deviceForPeer: deviceFor,
+        routeLookup: routeTo,
         transmissionService: transmission,
+        routeEvents: routeEvents,
       );
       built.startListening();
       return built;
@@ -396,7 +437,8 @@ void main() {
       );
     });
 
-    test('reports failure when the peer cannot be reached at all', () async {
+    test('a peer with no device leaves the message in the outbox',
+        () async {
       when(ble.sendReliable('ZZ:ZZ', any))
           .thenAnswer((_) async => TransferResult.failed);
 
@@ -410,8 +452,100 @@ void main() {
       );
       expect(result, TransferResult.failed);
 
+      // Not delivered, but not written off either: the peer may simply
+      // not be on the air yet.
       final messages = await db.getMessages(convId);
-      expect(messages.single.status, 'failed');
+      expect(messages.single.status, 'queued');
+      expect(await db.queuedMessages(), hasLength(1));
+    });
+
+    test('a known identity with no device leaves the message in the outbox',
+        () async {
+      transport = buildTransport(withRoute: false);
+      final convId = await db.createConversationWithPeer('Peer C', peerC);
+
+      final result = await transport!.sendMessage(
+        peerDeviceId: peerC,
+        conversationId: convId,
+        content: 'nobody home',
+      );
+
+      expect(result, isNot(TransferResult.delivered));
+      expect((await db.getMessages(convId)).single.status, 'queued');
+      verifyNever(ble.sendReliable(any, any));
+    });
+
+    test('flush delivers a queued message once a route appears', () async {
+      transport = buildTransport(withRoute: false);
+      final convId = await db.createConversationWithPeer('Peer C', peerC);
+      await transport!.sendMessage(
+        peerDeviceId: peerC,
+        conversationId: convId,
+        content: 'saved for later',
+      );
+      expect((await db.getMessages(convId)).single.status, 'queued');
+
+      peerCUp = true;
+      await transport!.flushQueued();
+
+      expect((await db.getMessages(convId)).single.status, 'sent');
+      expect(await db.queuedMessages(), isEmpty);
+      verify(ble.sendReliable(deviceC, any)).called(1);
+    });
+
+    test('flush leaves the message queued while the peer is still out of reach',
+        () async {
+      transport = buildTransport(withRoute: false);
+      final convId = await db.createConversationWithPeer('Peer C', peerC);
+      await transport!.sendMessage(
+        peerDeviceId: peerC,
+        conversationId: convId,
+        content: 'still nobody home',
+      );
+
+      await transport!.flushQueued();
+
+      expect((await db.getMessages(convId)).single.status, 'queued');
+      verifyNever(ble.sendReliable(any, any));
+    });
+
+    test('a route change event triggers the flush on its own', () async {
+      final routeEvents = StreamController<void>.broadcast();
+      addTearDown(routeEvents.close);
+
+      transport = buildTransport(
+        withRoute: false,
+        routeEvents: routeEvents.stream,
+      );
+      final convId = await db.createConversationWithPeer('Peer C', peerC);
+      await transport!.sendMessage(
+        peerDeviceId: peerC,
+        conversationId: convId,
+        content: 'waiting on the mesh',
+      );
+      expect((await db.getMessages(convId)).single.status, 'queued');
+
+      peerCUp = true;
+      routeEvents.add(null);
+      await pumpEventQueue();
+
+      expect((await db.getMessages(convId)).single.status, 'sent');
+      expect(await db.queuedMessages(), isEmpty);
+    });
+
+    test('a message that can never fit is failed, not queued', () async {
+      transport = buildTransport(withRoute: false);
+      final convId = await db.createConversationWithPeer('Peer B', deviceB);
+
+      final result = await transport!.sendMessage(
+        peerDeviceId: deviceB,
+        conversationId: convId,
+        content: 'x' * 600,
+      );
+
+      expect(result, isNot(TransferResult.delivered));
+      expect((await db.getMessages(convId)).single.status, 'failed');
+      expect(await db.queuedMessages(), isEmpty);
     });
 
     test('persists an inbound envelope addressed to us', () async {
