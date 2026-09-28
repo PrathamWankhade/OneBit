@@ -168,8 +168,8 @@ void main() {
   });
 
   group('Schema', () {
-    test('schema version is 11', () {
-      expect(db.schemaVersion, 11);
+    test('schema version is 12', () {
+      expect(db.schemaVersion, 12);
     });
   });
 
@@ -184,6 +184,99 @@ void main() {
         content: 'actual content',
       );
       expect(msgId, greaterThan(0));
+    });
+  });
+
+  group('Read receipts', () {
+    late int conversationId;
+
+    setUp(() async {
+      conversationId = await db.createConversation('Chat');
+    });
+
+    test('a message from a peer arrives unread', () async {
+      await db.insertReceivedMessage(
+        conversationId: conversationId,
+        content: 'hello',
+        externalMessageId: 'ext-1',
+      );
+
+      final messages = await db.getMessages(conversationId);
+      expect(messages.single.isRead, 0);
+    });
+
+    test('a message of your own is born read', () async {
+      await db.insertMessage(conversationId: conversationId, content: 'mine');
+
+      final messages = await db.getMessages(conversationId);
+      expect(messages.single.isRead, 1);
+    });
+
+    test('opening the conversation clears the badge', () async {
+      await db.insertReceivedMessage(
+        conversationId: conversationId,
+        content: 'unread',
+        externalMessageId: 'ext-1',
+      );
+      final before = await db.watchConversationDigests().first;
+      expect(before[conversationId]!.unread, 1);
+
+      await db.markConversationRead(conversationId);
+
+      final after = await db.watchConversationDigests().first;
+      expect(after[conversationId]!.unread, 0);
+    });
+
+    test('mark all read answers the menu item it is wired to', () async {
+      final otherId = await db.createConversation('Other');
+      await db.insertReceivedMessage(
+        conversationId: conversationId,
+        content: 'a',
+        externalMessageId: 'x1',
+      );
+      await db.insertReceivedMessage(
+        conversationId: otherId,
+        content: 'b',
+        externalMessageId: 'x2',
+      );
+
+      await db.markAllConversationsRead();
+
+      final digests = await db.watchConversationDigests().first;
+      expect(digests[conversationId]!.unread, 0);
+      expect(digests[otherId]!.unread, 0);
+    });
+
+    test('the digest carries the newest message', () async {
+      await db.insertMessage(
+        conversationId: conversationId,
+        content: 'first',
+      );
+      await db.insertMessage(
+        conversationId: conversationId,
+        content: 'second',
+      );
+
+      final digests = await db.watchConversationDigests().first;
+      expect(digests[conversationId]!.preview, 'second');
+      expect(digests[conversationId]!.unread, 0);
+    });
+
+    test('a conversation nobody has written to previews as empty', () async {
+      final digests = await db.watchConversationDigests().first;
+      expect(digests[conversationId]!.preview, '');
+    });
+
+    test('one conversation never borrows another\'s message', () async {
+      final otherId = await db.createConversation('Other');
+      await db.insertMessage(
+        conversationId: conversationId,
+        content: 'only mine',
+      );
+
+      final digests = await db.watchConversationDigests().first;
+      expect(digests[conversationId]!.preview, 'only mine');
+      expect(digests[otherId]!.preview, '');
     });
   });
 }

@@ -435,11 +435,12 @@ void main() {
 
   // ── Schema migration test ────────────────────────────────
 
-  group('Schema v11 migration', () {
+  group('Schema migration', () {
     test('migration adds trust columns to peer_identities', () async {
       final db = createTestDb();
-      // Schema version 11 includes trust columns and lastSeenBleAddress.
-      expect(db.schemaVersion, 11);
+      // The current schema carries the trust columns and
+      // lastSeenBleAddress alongside the read flag.
+      expect(db.schemaVersion, 12);
 
       // Verify trust columns exist by inserting a peer and checking.
       await db.upsertPeerIdentity(

@@ -55,6 +55,22 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   Message? _replyingTo;
 
   @override
+  void initState() {
+    super.initState();
+    // The badge on the list stays lit until someone actually opens the
+    // chat, and goes out again as new messages land while it is open.
+    _markConversationRead();
+    ref.listenManual(
+      messagesProvider(widget.conversationId),
+      (previous, next) => _markConversationRead(),
+    );
+  }
+
+  void _markConversationRead() {
+    ref.read(databaseProvider).markConversationRead(widget.conversationId);
+  }
+
+  @override
   void dispose() {
     _controller.dispose();
     _scrollController.dispose();

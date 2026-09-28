@@ -6,12 +6,13 @@ import 'package:onebit/app/app.dart';
 import 'package:onebit/core/theme/app_theme.dart';
 import 'package:onebit/data/database/app_database.dart';
 import 'package:onebit/features/conversations/providers/conversation_providers.dart';
+import 'package:onebit/features/conversations/models/reply_tag.dart';
 import 'package:onebit/features/ui/components/components.dart';
 
 /// F3 Conversations / Home Screen.
 ///
-/// Chat list with real last messages, encryption indicators,
-/// and mesh network status.
+/// Chat list with the last message in each chat and how many of them
+/// are still unread.
 class ConversationListScreen extends ConsumerWidget {
   const ConversationListScreen({super.key});
 
@@ -49,14 +50,14 @@ class ConversationListScreen extends ConsumerWidget {
 
 // -- App Bar --
 
-class _ChatsAppBar extends StatelessWidget implements PreferredSizeWidget {
+class _ChatsAppBar extends ConsumerWidget implements PreferredSizeWidget {
   const _ChatsAppBar();
 
   @override
   Size get preferredSize => const Size.fromHeight(56);
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return AppBar(
       leading: Padding(
         padding: const EdgeInsets.all(10),
@@ -74,7 +75,8 @@ class _ChatsAppBar extends StatelessWidget implements PreferredSizeWidget {
           tooltip: 'Search',
         ),
         _OverflowMenu(
-          onMarkAllRead: () {},
+          onMarkAllRead: () =>
+              ref.read(databaseProvider).markAllConversationsRead(),
           onPinnedChats: () {},
           onSettings: () => context.push('/settings'),
         ),
@@ -257,6 +259,19 @@ class _ConversationItemState extends ConsumerState<_ConversationItem>
   @override
   Widget build(BuildContext context) {
     final conversation = widget.conversation;
+
+    final digest = ref
+        .watch(conversationDigestsProvider)
+        .valueOrNull?[conversation.id];
+    final preview = digest?.preview ?? '';
+    final unread = digest?.unread ?? 0;
+
+    // An attachment or a reply reads as words rather than as the marker
+    // it travels in.
+    final previewText = preview.isEmpty
+        ? 'No messages yet'
+        : ReplyTag.quoteFor(preview);
+
     return GestureDetector(
       onTapDown: (_) => _pressController.forward(),
       onTapUp: (_) => _pressController.reverse(),
@@ -309,7 +324,9 @@ class _ConversationItemState extends ConsumerState<_ConversationItem>
                           child: Text(
                             conversation.title,
                             style: AppTheme.bodyLarge.copyWith(
-                              fontWeight: FontWeight.w500,
+                              fontWeight: unread > 0
+                                  ? FontWeight.w600
+                                  : FontWeight.w500,
                               color: AppTheme.textPrimary,
                             ),
                             maxLines: 1,
@@ -328,23 +345,39 @@ class _ConversationItemState extends ConsumerState<_ConversationItem>
                     const SizedBox(height: 6),
                     Row(
                       children: [
-                        // Encryption indicator
-                        const Icon(
-                          Icons.lock_outline,
-                          size: 12,
-                          color: AppTheme.trust,
-                        ),
-                        const SizedBox(width: 4),
                         Expanded(
                           child: Text(
-                            'E2E encrypted',
+                            previewText,
                             style: AppTheme.bodySmall.copyWith(
                               color: AppTheme.textTertiary,
+                              fontWeight: unread > 0
+                                  ? FontWeight.w500
+                                  : FontWeight.normal,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        if (unread > 0) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 1,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppTheme.accent,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              unread > 99 ? '99+' : '$unread',
+                              style: AppTheme.caption.copyWith(
+                                color: AppTheme.bgBase,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ],

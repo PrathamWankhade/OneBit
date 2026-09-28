@@ -31,6 +31,15 @@ class Messages extends Table {
   TextColumn get status => text().withDefault(const Constant('local'))();
   TextColumn get externalMessageId => text().nullable()();
   DateTimeColumn get createdAt => dateTime()();
+
+  /// Whether the local user has opened this message.
+  ///
+  /// Inbound rows are born unread and cleared when the conversation is
+  /// opened. Outbound ones are born read — a badge for your own message
+  /// would be nonsense — and the count only ever looks at inbound rows,
+  /// so the default is what keeps existing history from lighting up the
+  /// badge the moment the column arrives.
+  IntColumn get isRead => integer().withDefault(const Constant(1))();
 }
 
 /// Peer identities discovered via BLE or QR.
@@ -89,7 +98,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.test(DatabaseConnection super.e);
 
   @override
-  int get schemaVersion => 11;
+  int get schemaVersion => 12;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -193,6 +202,20 @@ class AppDatabase extends _$AppDatabase {
               }
             }
           }
+          if (from < 12) {
+            // Read receipts. Existing rows land as read so that history
+            // does not arrive dressed as unread the first time this
+            // version opens the app.
+            final hasCol = await customSelect(
+              "SELECT 1 FROM pragma_table_info('messages') WHERE name='is_read'",
+            ).getSingleOrNull();
+            if (hasCol == null) {
+              await customStatement(
+                'ALTER TABLE messages ADD COLUMN is_read INTEGER '
+                'NOT NULL DEFAULT 1',
+              );
+            }
+          }
         },
         beforeOpen: (details) async {
           AppLogger.info(
@@ -277,6 +300,51 @@ class AppDatabase extends _$AppDatabase {
         .go();
   }
 
+  /// What the conversation list needs per row: the newest message's
+  /// text and how many inbound messages nobody has opened yet.
+  ///
+  /// One query rather than one per row, so a hundred chats do not turn
+  /// into two hundred round trips.
+  Stream<Map<int, ({String preview, int unread})>>
+      watchConversationDigests() {
+    return customSelect(
+      '''
+      SELECT c.id AS conversation_id,
+             (SELECT m.content FROM messages m
+               WHERE m.conversation_id = c.id
+               ORDER BY m.id DESC LIMIT 1) AS preview,
+             (SELECT COUNT(*) FROM messages m
+               WHERE m.conversation_id = c.id
+                 AND m.is_read = 0 AND m.status = 'received') AS unread
+      FROM conversations c
+      ''',
+      readsFrom: {conversations, messages},
+    ).watch().map((rows) {
+      return {
+        for (final row in rows)
+          row.read<int>('conversation_id'): (
+            preview: row.readNullable<String>('preview') ?? '',
+            unread: row.read<int>('unread'),
+          ),
+      };
+    });
+  }
+
+  /// Clear the unread flag on every message in [conversationId].
+  Future<void> markConversationRead(int conversationId) {
+    return (update(messages)
+          ..where((t) =>
+              t.conversationId.equals(conversationId) & t.isRead.equals(0)))
+        .write(const MessagesCompanion(isRead: Value(1)));
+  }
+
+  /// Clear the unread flag everywhere — the answer to "Mark all read",
+  /// which used to be a menu item wired to nothing.
+  Future<void> markAllConversationsRead() {
+    return (update(messages)..where((t) => t.isRead.equals(0)))
+        .write(const MessagesCompanion(isRead: Value(1)));
+  }
+
   Future<int> deleteMessage(int id) {
     return (delete(messages)..where((t) => t.id.equals(id))).go();
   }
@@ -339,6 +407,7 @@ class AppDatabase extends _$AppDatabase {
         content: content,
         status: const Value('received'),
         externalMessageId: Value(externalMessageId),
+        isRead: const Value(0),
         createdAt: DateTime.now(),
       ),
     );
