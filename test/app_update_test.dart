@@ -10,6 +10,16 @@ import 'package:onebit/features/settings/presentation/screens/app_update_screen.
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  /// An upstream version built from this build's own major/minor, so the
+  /// assertions stay meaningful every time the app is bumped — hardcoded
+  /// numbers here would silently stop being "newer" on the next release.
+  String upstream(int minorOffset, int patch) {
+    final parts = AppVersion.current.split('+').first.split('.');
+    final major = int.parse(parts[0]);
+    final minor = int.parse(parts[1]);
+    return '$major.${minor + minorOffset}.$patch';
+  }
+
   group('AppVersion', () {
     test('orders versions numerically', () {
       expect(AppVersion.compare('1.0.1', '1.0.0'), greaterThan(0));
@@ -36,9 +46,15 @@ void main() {
     });
 
     test('isNewerThanCurrent matches the running build', () {
+      final parts = AppVersion.current.split('+').first.split('.');
+      final major = int.parse(parts[0]);
+      final minor = int.parse(parts[1]);
+
       expect(AppVersion.isNewerThanCurrent('v${AppVersion.current}'), isFalse);
-      expect(AppVersion.isNewerThanCurrent('0.9.9'), isFalse);
-      expect(AppVersion.isNewerThanCurrent('1.0.1'), isTrue);
+      // At or below this build's own minor is never an update.
+      expect(AppVersion.isNewerThanCurrent('$major.$minor.0'), isFalse);
+      // One minor ahead always is.
+      expect(AppVersion.isNewerThanCurrent('$major.${minor + 1}.0'), isTrue);
       expect(AppVersion.isNewerThanCurrent('v99.0.0'), isTrue);
     });
   });
@@ -87,51 +103,54 @@ void main() {
     });
 
     test('reports a newer upstream tag', () async {
+      final tag = 'v${upstream(1, 0)}';
       final service = serviceWith(tags: [
-        {'name': 'v1.0.2'},
+        {'name': tag},
       ]);
 
       final updates = await service.checkForUpdates();
       expect(updates, hasLength(1));
-      expect(updates!.first.version, 'v1.0.2');
-      expect((await service.checkForUpdate())!.version, 'v1.0.2');
+      expect(updates!.first.version, tag);
+      expect((await service.checkForUpdate())!.version, tag);
     });
 
     test('picks the newest version across releases and tags', () async {
+      final releaseTag = 'v${upstream(1, 1)}';
       final service = serviceWith(
         releases: [
           {
-            'tag_name': 'v1.0.1',
-            'html_url': 'https://example.com/onebit/v1.0.1',
+            'tag_name': releaseTag,
+            'html_url': 'https://example.com/onebit/$releaseTag',
           },
         ],
         tags: [
-          {'name': 'v1.0.4'},
-          {'name': 'v1.0.3'},
+          {'name': 'v${upstream(1, 4)}'},
+          {'name': 'v${upstream(1, 3)}'},
         ],
       );
 
       final updates = await service.checkForUpdates();
       expect(updates, hasLength(3));
-      expect(updates!.first.version, 'v1.0.4');
-      expect(updates.last.version, 'v1.0.1');
+      expect(updates!.first.version, 'v${upstream(1, 4)}');
+      expect(updates.last.version, releaseTag);
     });
 
     test('links straight to a published release when one exists', () async {
+      final tag = 'v${upstream(1, 1)}';
       final service = serviceWith(releases: [
         {
-          'tag_name': 'v1.0.1',
-          'html_url': 'https://example.com/onebit/v1.0.1',
+          'tag_name': tag,
+          'html_url': 'https://example.com/onebit/$tag',
         },
       ]);
 
       final update = await service.checkForUpdate();
-      expect(update!.releaseUrl, 'https://example.com/onebit/v1.0.1');
+      expect(update!.releaseUrl, 'https://example.com/onebit/$tag');
     });
 
     test('falls back to the repository when only a tag exists', () async {
       final service = serviceWith(tags: [
-        {'name': 'v1.0.1'},
+        {'name': 'v${upstream(1, 1)}'},
       ]);
 
       final update = await service.checkForUpdate();
