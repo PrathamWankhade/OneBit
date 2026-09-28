@@ -23,13 +23,26 @@ class SheetAction {
     required this.icon,
     required this.label,
     this.onTap,
+    this.result,
     this.isDestructive = false,
     this.trailing,
   });
 
   final IconData icon;
   final String label;
+
+  /// Work the row carries out itself, once the sheet has closed.
   final VoidCallback? onTap;
+
+  /// The value an awaiting caller receives when this row is chosen.
+  ///
+  /// Without it the sheet pops `null`, which is also what a dismissive
+  /// tap-outside returns — so every `show…Actions` helper in the app
+  /// read its own menu as "the user changed their mind" and quietly did
+  /// nothing. Rows that answer with an enum set this; rows that do their
+  /// own work through [onTap] can leave it unset.
+  final Object? result;
+
   final bool isDestructive;
   final Widget? trailing;
 }
@@ -147,7 +160,7 @@ class _ActionTile extends StatelessWidget {
 
     return GestureDetector(
       onTap: () {
-        Navigator.of(context).pop();
+        Navigator.of(context).pop(action.result);
         action.onTap?.call();
       },
       behavior: HitTestBehavior.opaque,

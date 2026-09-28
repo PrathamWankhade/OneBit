@@ -1,11 +1,13 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:onebit/app/app.dart';
 import 'package:onebit/core/theme/app_theme.dart';
+import 'package:onebit/data/database/app_database.dart';
 import 'package:onebit/features/conversations/presentation/attachment_sheet.dart';
 import 'package:onebit/features/conversations/presentation/message_bubble.dart';
 import 'package:onebit/features/conversations/presentation/voice_recording_widget.dart';
@@ -86,6 +88,48 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
       }
     });
+  }
+
+  /// Handle a long-press on one message.
+  ///
+  /// Both branches used to be a snackbar claiming work that never
+  /// happened: nothing reached the clipboard and nothing left the
+  /// database.
+  Future<void> _showMessageActions(BuildContext context, Message msg) async {
+    final db = ref.read(databaseProvider);
+    final action = await showMessageActions(
+      context,
+      canCopy: !msg.content.startsWith('['),
+    );
+    if (action == null || !context.mounted) return;
+
+    switch (action) {
+      case MessageActionType.copy:
+        try {
+          await Clipboard.setData(ClipboardData(text: msg.content));
+        } catch (e) {
+          // No clipboard on some platforms; say so rather than cheer
+          // about a copy that never happened.
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Could not copy: $e')),
+            );
+          }
+          return;
+        }
+        if (context.mounted) showCopySnackbar(context);
+      case MessageActionType.delete:
+        final confirmed = await showDestructiveDialog(
+          context,
+          title: 'Delete message?',
+          body: 'This removes the message from this device only. '
+              'Anyone you sent it to keeps their copy.',
+          confirmLabel: 'Delete',
+        );
+        if (!confirmed || !context.mounted) return;
+        await db.deleteMessage(msg.id);
+        if (context.mounted) showDeleteSnackbar(context);
+    }
   }
 
   Future<void> _showAttachmentMenu() async {
@@ -279,6 +323,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                     return _MessageList(
                       messages: messages,
                       scrollController: _scrollController,
+                      onMessageAction: _showMessageActions,
                     );
                   },
                 ),
@@ -537,10 +582,16 @@ class _MessageList extends StatelessWidget {
   const _MessageList({
     required this.messages,
     required this.scrollController,
+    required this.onMessageAction,
   });
 
   final List<dynamic> messages;
   final ScrollController scrollController;
+
+  /// Handles a long-press; lives on the screen because deleting needs
+  /// the database and the reply strip needs `setState`.
+  final Future<void> Function(BuildContext context, Message msg)
+      onMessageAction;
 
   @override
   Widget build(BuildContext context) {
@@ -564,7 +615,7 @@ class _MessageList extends StatelessWidget {
               if (showDateDivider)
                 DateDivider(date: msg.createdAt as DateTime),
               GestureDetector(
-                onLongPress: () => _showMessageActions(context, msg),
+                onLongPress: () => onMessageAction(context, msg),
                 child: _buildMessageWidget(msg, isReceived),
               ),
             ],
@@ -639,25 +690,6 @@ class _MessageList extends StatelessWidget {
       isReceived: isReceived,
       status: status,
     );
-  }
-
-  void _showMessageActions(BuildContext context, dynamic msg) async {
-    final isOwnMessage = msg.status != 'received';
-    final action = await showMessageActions(
-      context,
-      isOwnMessage: isOwnMessage,
-      canEdit: isOwnMessage,
-    );
-    if (action == null || !context.mounted) return;
-
-    switch (action) {
-      case MessageActionType.copy:
-        showCopySnackbar(context);
-      case MessageActionType.delete:
-        showDeleteSnackbar(context);
-      default:
-        break;
-    }
   }
 }
 

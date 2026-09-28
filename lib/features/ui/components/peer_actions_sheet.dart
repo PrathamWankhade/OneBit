@@ -23,38 +23,38 @@ Future<PeerActionType?> showPeerActions(
 }) {
   return showAppBottomSheet<PeerActionType>(
     context,
-    actions: [
-      const SheetAction(
+    actions: const [
+      SheetAction(
         icon: Icons.chat_bubble_outline,
         label: 'Start conversation',
-        onTap: null,
+        result: PeerActionType.startConversation,
       ),
-      const SheetAction(
+      SheetAction(
         icon: Icons.verified_outlined,
         label: 'Verify identity',
-        onTap: null,
+        result: PeerActionType.verifyIdentity,
       ),
-      const SheetAction(
+      SheetAction(
         icon: Icons.person_outline,
         label: 'View identity',
-        onTap: null,
+        result: PeerActionType.viewIdentity,
       ),
-      const SheetAction(
+      SheetAction(
         icon: Icons.copy,
         label: 'Copy OneBit ID',
-        onTap: null,
+        result: PeerActionType.copyId,
       ),
       SheetAction(
         icon: Icons.block,
         label: 'Block peer',
         isDestructive: true,
-        onTap: () {},
+        result: PeerActionType.block,
       ),
       SheetAction(
         icon: Icons.delete_outline,
         label: 'Forget peer',
         isDestructive: true,
-        onTap: () {},
+        result: PeerActionType.forget,
       ),
     ],
   );

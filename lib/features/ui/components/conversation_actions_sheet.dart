@@ -3,12 +3,13 @@ import 'package:onebit/features/ui/components/app_bottom_sheet.dart';
 
 /// F10 — Conversation actions bottom sheet.
 ///
-/// Shown on long-press of a conversation: Pin, Mute, Hide, Delete.
-/// Includes peer header (avatar + name + last seen).
+/// Shown on long-press of a conversation.
+///
+/// Pin, mute and hide used to be listed here with no handler behind
+/// them, so only deletion was ever reachable — and it needs to be
+/// reachable for real, since it is the one thing a user can do to a
+/// chat they no longer want.
 enum ConversationActionType {
-  pin,
-  mute,
-  hide,
   delete,
 }
 
@@ -20,27 +21,12 @@ Future<ConversationActionType?> showConversationActions(
 }) {
   return showAppBottomSheet<ConversationActionType>(
     context,
-    actions: [
-      SheetAction(
-        icon: Icons.push_pin_outlined,
-        label: 'Pin conversation',
-        onTap: () {},
-      ),
-      SheetAction(
-        icon: Icons.notifications_off_outlined,
-        label: 'Mute notifications',
-        onTap: () {},
-      ),
-      SheetAction(
-        icon: Icons.visibility_off_outlined,
-        label: 'Hide conversation',
-        onTap: () {},
-      ),
+    actions: const [
       SheetAction(
         icon: Icons.delete_outline,
         label: 'Delete conversation',
         isDestructive: true,
-        onTap: () {},
+        result: ConversationActionType.delete,
       ),
     ],
   );

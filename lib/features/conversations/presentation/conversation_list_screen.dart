@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:onebit/app/app.dart';
 import 'package:onebit/core/theme/app_theme.dart';
 import 'package:onebit/data/database/app_database.dart';
 import 'package:onebit/features/conversations/providers/conversation_providers.dart';
@@ -221,16 +222,16 @@ class _SectionHeader extends StatelessWidget {
 
 // -- Conversation Item --
 
-class _ConversationItem extends StatefulWidget {
+class _ConversationItem extends ConsumerStatefulWidget {
   const _ConversationItem({required this.conversation});
 
   final Conversation conversation;
 
   @override
-  State<_ConversationItem> createState() => _ConversationItemState();
+  ConsumerState<_ConversationItem> createState() => _ConversationItemState();
 }
 
-class _ConversationItemState extends State<_ConversationItem>
+class _ConversationItemState extends ConsumerState<_ConversationItem>
     with SingleTickerProviderStateMixin {
   late AnimationController _pressController;
   late Animation<double> _scaleAnimation;
@@ -357,6 +358,7 @@ class _ConversationItemState extends State<_ConversationItem>
   }
 
   void _showActions(BuildContext context) async {
+    final db = ref.read(databaseProvider);
     final action = await showConversationActions(
       context,
       peerName: widget.conversation.title,
@@ -373,11 +375,11 @@ class _ConversationItemState extends State<_ConversationItem>
               'This action cannot be undone.',
           confirmLabel: 'Delete',
         );
-        if (confirmed && context.mounted) {
-          showDeleteSnackbar(context);
-        }
-      default:
-        break;
+        if (!confirmed || !context.mounted) return;
+        // The rows go too: the dialog promised a permanent delete and
+        // used to settle for a toast.
+        await db.deleteConversation(widget.conversation.id);
+        if (context.mounted) showDeleteSnackbar(context);
     }
   }
 
