@@ -63,9 +63,9 @@ class AboutScreen extends StatelessWidget {
             ),
             child: Column(
               children: [
-                const _InfoRow(label: 'Version', value: AppVersion.current),
+                _InfoRow(label: 'Version', value: AppVersion.current),
                 const Divider(height: 24, color: AppTheme.bgMuted),
-                const _InfoRow(label: 'Build', value: AppVersion.build),
+                _InfoRow(label: 'Build', value: AppVersion.build),
                 const Divider(height: 24, color: AppTheme.bgMuted),
                 GestureDetector(
                   onTap: () => showLicensePage(context: context),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:onebit/core/version/app_version.dart';
 import 'package:onebit/features/settings/data/settings_providers.dart';
 import 'package:onebit/features/settings/data/settings_repository.dart';
 import 'package:onebit/features/settings/presentation/screens/about_screen.dart';
@@ -514,11 +515,11 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.scrollUntilVisible(
-        find.text('v1.0.0+1'),
+        find.text('v${AppVersion.fallback}'),
         100,
         scrollable: find.byType(Scrollable),
       );
-      expect(find.text('v1.0.0+1'), findsOneWidget);
+      expect(find.text('v${AppVersion.fallback}'), findsOneWidget);
     });
   });
 
@@ -615,7 +616,7 @@ void main() {
       await tester.pumpWidget(buildApp());
       await tester.pumpAndSettle();
 
-      expect(find.text('1.0.0+1'), findsOneWidget);
+      expect(find.text(AppVersion.fallback), findsOneWidget);
     });
 
     testWidgets('renders description text', (tester) async {

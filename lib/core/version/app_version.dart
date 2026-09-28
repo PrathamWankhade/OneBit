@@ -1,21 +1,90 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:onebit/core/logging/app_logger.dart';
+
 /// Single source of truth for the version of this build.
 ///
-/// The version is duplicated in `pubspec.yaml` (`version: 1.0.0+1`) and
-/// surfaced in the UI in several places. Rather than pulling in a native
-/// package-info plugin, every screen reads it from here.
+/// [load] reads the version back through the update channel, which asks the
+/// package manager for the name and code Gradle stamped in — and Gradle
+/// takes both from `version:` in `pubspec.yaml`. That leaves one place the
+/// number originates, so the About screen, the release tag and the update
+/// comparison cannot drift apart the way a duplicated Dart constant
+/// eventually does — a mismatch there is what puts the app into an endless
+/// "update available" loop.
 ///
-/// Keep [current] in sync with the `version:` field in `pubspec.yaml`.
+/// Until it resolves, [current] reads [fallback], copied from that same
+/// `version:` line, so nothing renders an empty string on the first frame.
 class AppVersion {
   const AppVersion._();
 
+  /// The `version:` line in `pubspec.yaml`, used until [load] succeeds and
+  /// wherever the host cannot answer.
+  ///
+  /// Keep in sync with `pubspec.yaml`. [load] replaces it with the value
+  /// the package manager reports, which is the same string.
+  static const String fallback = '1.1.0+2';
+
+  /// The host channel that knows what was stamped into this build.
+  ///
+  /// Shared with the installer because both belong to the same feature: one
+  /// place on the native side owns "what version is this, and may I install
+  /// the next one".
+  static const MethodChannel _channel =
+      MethodChannel('dev.onebit.onebit/update');
+
+  static const String _getVersion = 'getVersion';
+
+  static String _current = fallback;
+  static String _build = fallback.split('+').last;
+  static bool _loaded = false;
+
+  /// Whether the platform has answered and [current] now reads the value
+  /// stamped into the binary rather than [fallback].
+  static bool get isLoaded => _loaded;
+
   /// The running build's version in `name+build` form, e.g. `1.0.0+1`.
-  static const String current = '1.0.0+1';
+  static String get current => _current;
 
   /// The numeric build number from [current] (the part after `+`).
-  static const String build = '1';
+  static String get build => _build;
 
-  /// [current] written the way git tags are written, e.g. `v1.0.0+1`.
-  static const String tagged = 'v$current';
+  /// Reads the stamped version from the host.
+  ///
+  /// Idempotent, and safe to call before the first frame: the channel is
+  /// bound while the activity configures the engine, which happens before
+  /// any Dart runs. A failure leaves [fallback] in place rather than
+  /// throwing, and stays retryable, so one flaky first attempt does not
+  /// pin the app to [fallback] forever.
+  static Future<void> load() async {
+    if (_loaded) return;
+    try {
+      final info = await _channel.invokeMapMethod<String, dynamic>(_getVersion);
+      final name = _text(info?['version']);
+      if (name.isEmpty) return;
+      final number = _text(info?['buildNumber']);
+      _current = number.isEmpty ? name : '$name+$number';
+      _build = number.isEmpty ? _current.split('+').last : number;
+      _loaded = true;
+    } catch (e) {
+      AppLogger.warning('AppVersion: host version unavailable, using the '
+          'pubspec fallback: $e');
+    }
+  }
+
+  /// A platform value as a trimmed string, whatever type it arrived as.
+  static String _text(Object? value) => (value?.toString() ?? '').trim();
+
+  /// Puts [current] back on [fallback].
+  ///
+  /// Tests that mock the platform channel need this: [load] latches on
+  /// success, so without it the first test to answer would leak its version
+  /// into every test that ran after it.
+  @visibleForTesting
+  static void resetForTesting() {
+    _current = fallback;
+    _build = fallback.split('+').last;
+    _loaded = false;
+  }
 
   /// Compares two version strings numerically.
   ///
