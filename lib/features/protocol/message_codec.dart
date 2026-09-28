@@ -10,7 +10,7 @@ import 'dart:typed_data';
 /// [timestampMs: 8 bytes]
 /// ```
 ///
-/// Total overhead: 12 bytes. Max content: 255 bytes (UTF-8).
+/// Total overhead: 12 bytes. Max content: [maxContentLength] bytes (UTF-8).
 class MessageCodec {
   MessageCodec._();
 
@@ -18,7 +18,15 @@ class MessageCodec {
   static const int minSize = 12;
 
   /// Maximum content length in bytes (UTF-8 encoded).
-  static const int maxContentLength = 255;
+  ///
+  /// This used to be 255, one packet's worth of payload, which meant a
+  /// message of about 240 characters was refused outright. The frame
+  /// carries a two-byte length and the transport splits a frame that
+  /// outgrows one packet, so the only thing bounding it now is the
+  /// envelope the frame travels inside: 4096 bytes minus this frame's
+  /// own overhead (12) and a wire id, with room to spare for one that
+  /// has grown to twenty digits.
+  static const int maxContentLength = 4000;
 
   // ── Encoding ──────────────────────────────────────────────
 

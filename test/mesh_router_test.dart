@@ -16,6 +16,7 @@ import 'package:onebit/features/message/models/message_id.dart';
 import 'package:onebit/features/peer_registry/peer_connection_manager.dart';
 import 'package:onebit/features/protocol/message_codec.dart';
 import 'package:onebit/features/protocol/onebit_packet.dart';
+import 'package:onebit/features/protocol/packet_chunking.dart';
 import 'package:onebit/features/protocol/packet_codec.dart';
 import 'package:onebit/features/protocol/message_transport.dart';
 import 'package:onebit/features/reliable/transfer.dart';
@@ -533,6 +534,43 @@ void main() {
       expect(await db.queuedMessages(), isEmpty);
     });
 
+    test('a message too long for one packet goes out in pieces', () async {
+      transport = buildTransport();
+      final convId = await db.createConversationWithPeer('Peer B', deviceB);
+      final content = 'x' * 600;
+
+      final result = await transport!.sendMessage(
+        peerDeviceId: deviceB,
+        conversationId: convId,
+        content: content,
+      );
+      expect(result, TransferResult.delivered);
+
+      // deviceId / payload, repeated once per packet.
+      final captured = verify(ble.sendReliable(captureAny, captureAny)).captured;
+      expect(captured.length, greaterThan(2));
+      expect(captured.whereType<String>(), everyElement(deviceB));
+
+      final reassembler = PacketChunkReassembler();
+      Uint8List? envelopeBytes;
+      for (var i = 1; i < captured.length; i += 2) {
+        final packet = packetOf(captured[i]);
+        expect(packet.type, PacketType.message);
+        envelopeBytes = reassembler.accept(
+          'peer',
+          packet.packetId,
+          Uint8List.fromList(packet.payload),
+        );
+      }
+
+      expect(envelopeBytes, isNotNull);
+      final envelope = MessageEnvelopeCodec.decode(envelopeBytes!);
+      expect(envelope.destinationPeerId, peerB);
+      expect(MessageCodec.decode(envelope.payload).content, content);
+
+      expect((await db.getMessages(convId)).single.status, 'sent');
+    });
+
     test('a message that can never fit is failed, not queued', () async {
       transport = buildTransport(withRoute: false);
       final convId = await db.createConversationWithPeer('Peer B', deviceB);
@@ -540,7 +578,7 @@ void main() {
       final result = await transport!.sendMessage(
         peerDeviceId: deviceB,
         conversationId: convId,
-        content: 'x' * 600,
+        content: 'x' * (MessageCodec.maxContentLength + 1),
       );
 
       expect(result, isNot(TransferResult.delivered));
