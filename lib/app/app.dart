@@ -10,12 +10,15 @@ import 'package:onebit/data/database/app_database.dart';
 import 'package:onebit/data/preferences/onboarding_repository.dart';
 import 'package:onebit/features/ble/ble_lifecycle_observer.dart';
 import 'package:onebit/features/ble/ble_providers.dart';
+import 'package:onebit/features/identity/identity_providers.dart';
+import 'package:onebit/features/peer_registry/peer_connection_providers.dart';
 import 'package:onebit/features/protocol/message_transport.dart';
 import 'package:onebit/features/message/application/message_relay_service.dart';
 import 'package:onebit/features/message/providers/message_providers.dart';
 import 'package:onebit/features/settings/application/app_update_watcher.dart';
 import 'package:onebit/features/settings/data/settings_repository.dart';
 import 'package:onebit/features/settings/data/settings_providers.dart';
+import 'package:onebit/features/routing/providers/routing_providers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 final databaseProvider = Provider<AppDatabase>((ref) {
@@ -64,18 +67,39 @@ final messageRelayServiceProvider = Provider<MessageRelayService?>((ref) {
   return MessageRelayService(
     localPeerId: localPeerId,
     transmissionService: transmissionService,
+    forwardingAllowed: () {
+      try {
+        return ref.read(settingsRelayEnabledProvider);
+      } catch (_) {
+        return true;
+      }
+    },
   );
 });
 
 /// App-scoped message transport bridging DB ↔ BLE.
+///
+/// Also hands the transport the routing/identity lookups it needs to
+/// decide between a mesh send and a direct one.
 final messageTransportProvider = Provider<MessageTransport>((ref) {
   final bleService = ref.watch(bleServiceProvider);
   final db = ref.watch(databaseProvider);
   final relayService = ref.watch(messageRelayServiceProvider);
+  final localPeerId = ref.watch(localPeerIdForMessageProvider);
+  final transmissionService = ref.watch(messageTransmissionServiceProvider);
+  final routingTable = ref.watch(routingTableProvider);
+  final connectionManager = ref.watch(peerConnectionManagerProvider);
+  final resolver = ref.watch(bleIdentityResolverProvider);
+
   final transport = MessageTransport(
     bleService: bleService,
     database: db,
     relayService: relayService,
+    localPeerId: localPeerId,
+    identityForDevice: (deviceId) => resolver.deviceToPeerId[deviceId],
+    deviceForPeer: connectionManager.deviceForPeer,
+    routeLookup: routingTable.bestRoute,
+    transmissionService: transmissionService,
   );
   transport.startListening();
   ref.onDispose(() => transport.dispose());
@@ -163,6 +187,9 @@ class _OneBitAppBodyState extends ConsumerState<_OneBitAppBody> {
   @override
   Widget build(BuildContext context) {
     ref.watch(bleLifecycleObserverProvider);
+    // Lazy providers are never built until something watches them.
+    // The mesh only routes if this is held alive for the app's life.
+    ref.watch(meshRouterProvider);
 
     return AppUpdateWatcher(
       scaffoldMessengerKey: _scaffoldMessengerKey,

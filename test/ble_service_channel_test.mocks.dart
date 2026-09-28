@@ -168,6 +168,13 @@ class MockBleService extends _i1.Mock implements _i3.BleService {
   ) as _i4.Future<void>);
 
   @override
+  _i4.Future<void> setForegroundHold(bool? hold) => (super.noSuchMethod(
+    Invocation.method(#setForegroundHold, [hold]),
+    returnValue: _i4.Future<void>.value(),
+    returnValueForMissingStub: _i4.Future<void>.value(),
+  ) as _i4.Future<void>);
+
+  @override
   _i4.Future<String> startAdvertising(_i7.BleAdvertiseConfig? config) =>
       (super.noSuchMethod(
         Invocation.method(#startAdvertising, [config]),

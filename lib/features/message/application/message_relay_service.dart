@@ -137,10 +137,18 @@ class MessageRelayService {
   MessageRelayService({
     required this.localPeerId,
     required this._transmissionService,
+    this.forwardingAllowed,
   });
 
   final String localPeerId;
   final MessageTransmissionService _transmissionService;
+
+  /// Whether this node is currently willing to forward other peers'
+  /// traffic, read from the *Relay participation* setting on each call
+  /// so toggling it takes effect without a restart.
+  ///
+  /// Null means "always forward" (the default, and what tests use).
+  final bool Function()? forwardingAllowed;
 
   /// In-memory diagnostic event log (bounded at [_maxRelayEvents]).
   final List<RelayEvent> _events = [];
@@ -177,7 +185,20 @@ class MessageRelayService {
       return const LocalDestination();
     }
 
-    // 3. Construct OneBitMessage preserving original identity.
+    // 3. Honour the relay-participation setting. A node that opted out
+    //    still accepts messages addressed to it, but never carries
+    //    somebody else's traffic. Read on every call so flipping the
+    //    switch takes effect immediately.
+    if (forwardingAllowed != null && !forwardingAllowed!()) {
+      const result = RelayFailed(reason: 'Relaying disabled');
+      AppLogger.info(
+        'Relay: ${_shortId(envelope.messageId)} dropped — relaying is off',
+      );
+      _recordEvent(envelope, result);
+      return result;
+    }
+
+    // 4. Construct OneBitMessage preserving original identity.
     //
     // The relay node does NOT become the source. The original
     // sourcePeerId and destinationPeerId are preserved exactly.
@@ -190,7 +211,7 @@ class MessageRelayService {
       payloadSizeBytes: envelope.payload.length,
     );
 
-    // 4. Forward via existing I9.4 transmission service.
+    // 5. Forward via existing I9.4 transmission service.
     //
     // This reuses the same route-lookup → device-resolve → encode
     // → BLE-send pipeline used by origin transmission.
@@ -205,7 +226,7 @@ class MessageRelayService {
       envelope: envelope,
     );
 
-    // 5. Map transmission result to relay result.
+    // 6. Map transmission result to relay result.
     final result = switch (transmissionResult) {
       TransmissionSent(:final nextHopPeerId, :final routeMetric) =>
         Forwarded(

@@ -221,6 +221,9 @@ class BluetoothManager(private val activity: Activity) {
         permissionManager.onRequestPermissionsResult(activity)
     }
 
+    private var backgroundScanHold = false
+    private var backgroundAdvertiseHold = false
+
     fun startScan(args: Map<*, *>): Map<String, Any> {
         requireRadioReady()
         val id = scanner.startScan(
@@ -233,7 +236,14 @@ class BluetoothManager(private val activity: Activity) {
             rssiIntervalMs = (args["rssiIntervalMs"] as? Number)?.toLong() ?: 0,
             adaptive = args["adaptive"] as? Boolean ?: true,
         ) ?: throw BleException(BleErrorCodes.SCAN_FAILED, "scan could not start")
-        if (args["background"] == true) foreground.start("background scan $id")
+        // Only a background scan holds the service, and only that scan may
+        // release it — otherwise stopping an ordinary foreground scan
+        // decrements a hold the app took when it went backgrounded, and
+        // the transport freezes mid-session.
+        if (args["background"] == true) {
+            foreground.start("background scan $id")
+            backgroundScanHold = true
+        }
         return mapOf("id" to id)
     }
 
@@ -242,7 +252,10 @@ class BluetoothManager(private val activity: Activity) {
             BleErrorCodes.INVALID_ARGUMENTS, "scanId required",
         )
         scanner.stopScan(scanId)
-        foreground.stop()
+        if (backgroundScanHold) {
+            foreground.stop()
+            backgroundScanHold = false
+        }
         return emptyMap()
     }
 
@@ -276,7 +289,10 @@ class BluetoothManager(private val activity: Activity) {
             background = args["background"] as? Boolean ?: false,
             rotationCount = (args["rotationCount"] as? Number)?.toInt() ?: 0,
         ) ?: throw BleException(BleErrorCodes.ADVERTISE_FAILED, "advertising could not start")
-        if (args["background"] == true) foreground.start("background advertising $id")
+        if (args["background"] == true) {
+            foreground.start("background advertising $id")
+            backgroundAdvertiseHold = true
+        }
         return mapOf("id" to id)
     }
 
@@ -286,7 +302,12 @@ class BluetoothManager(private val activity: Activity) {
         )
         advertiser.stopAdvertising(advertisingId)
         gattServer.stop()
-        foreground.stop()
+        // Mirror of stopScan: release only a hold this session acquired,
+        // so an app-level foreground hold survives the session ending.
+        if (backgroundAdvertiseHold) {
+            foreground.stop()
+            backgroundAdvertiseHold = false
+        }
         return emptyMap()
     }
 

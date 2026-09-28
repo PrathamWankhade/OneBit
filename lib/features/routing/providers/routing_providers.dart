@@ -1,7 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:onebit/features/ble/ble_providers.dart';
 import 'package:onebit/features/identity/identity_providers.dart';
 import 'package:onebit/features/peer_registry/peer_connection_providers.dart';
 import 'package:onebit/features/peer_registry/peer_registry_providers.dart';
+import 'package:onebit/features/routing/mesh_router.dart';
 import 'package:onebit/features/routing/neighbor_table.dart';
 import 'package:onebit/features/routing/peer_reachability.dart';
 import 'package:onebit/features/routing/route_discovery.dart';
@@ -94,4 +96,32 @@ final routeRecoveryServiceProvider = Provider<RouteRecoveryService>((ref) {
   );
   ref.onDispose(service.dispose);
   return service;
+});
+
+/// Keeps the routing table in sync with the live topology.
+///
+/// Riverpod providers are lazy, so this must be watched from the app
+/// root — otherwise nothing ever installs a route and every non-local
+/// send resolves to `NoRoute`. The router stays inert until the local
+/// identity loads, at which point the identity dependency changes and
+/// the provider is recreated with a usable peer ID.
+final meshRouterProvider = Provider<MeshRouter>((ref) {
+  final localPeerId =
+      ref.watch(localIdentityProvider).valueOrNull?.identityId ?? '';
+  final reachability = ref.watch(peerReachabilityProvider);
+  final discovery = ref.watch(routeDiscoveryProvider);
+
+  final router = MeshRouter(
+    localPeerId: localPeerId,
+    neighborTable: ref.watch(neighborTableProvider),
+    topologyExchange: ref.watch(topologyExchangeServiceProvider),
+    topologyRepository: ref.watch(topologyRepositoryProvider),
+    routingTable: ref.watch(routingTableProvider),
+    bleService: ref.watch(bleServiceProvider),
+    getReachableNeighbors: reachability.getReachableNeighbors,
+    discoverRoute: discovery.discoverRoute,
+  );
+  router.start();
+  ref.onDispose(router.dispose);
+  return router;
 });

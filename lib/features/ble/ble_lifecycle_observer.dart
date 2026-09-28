@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:onebit/features/ble/ble_providers.dart';
+import 'package:onebit/features/ble/ble_service.dart';
 import 'package:onebit/features/ble/ble_state.dart';
 
 /// Monitors app lifecycle (foreground/background) and pauses/resumes
@@ -8,6 +11,10 @@ import 'package:onebit/features/ble/ble_state.dart';
 ///
 /// Does NOT disconnect active connections — those survive background transitions.
 /// Does NOT stop advertising — the native layer handles background advertising.
+///
+/// While backgrounded it also holds a foreground-service slot, which is what
+/// keeps Android from freezing advertising and killing the process the moment
+/// the screen goes off.
 ///
 /// Also monitors BLE radio state changes: if Bluetooth turns off while
 /// scanning is active, the scan is stopped proactively.
@@ -22,6 +29,12 @@ class BleLifecycleObserver extends WidgetsBindingObserver {
   /// Whether the observer has been initialized.
   bool _initialized = false;
 
+  /// Whether we currently hold the native foreground-service slot.
+  bool _hasForegroundHold = false;
+
+  /// Cached so disposal does not have to touch `ref` after teardown.
+  BleService? _bleService;
+
   /// Initialize by adding this observer to the binding.
   ///
   /// Also sets up a listener on BLE radio state to stop scanning
@@ -30,6 +43,7 @@ class BleLifecycleObserver extends WidgetsBindingObserver {
     if (_initialized) return;
     _initialized = true;
     WidgetsBinding.instance.addObserver(this);
+    _bleService = _ref.read(bleServiceProvider);
 
     // Listen for BLE radio state changes and stop scanning when Bluetooth
     // turns off, preventing the native layer from erroring on an active scan.
@@ -44,6 +58,15 @@ class BleLifecycleObserver extends WidgetsBindingObserver {
     });
   }
 
+  /// Take or release the native foreground-service hold, at most once each way.
+  void _setForegroundHold(bool hold) {
+    if (_hasForegroundHold == hold) return;
+    _hasForegroundHold = hold;
+    final ble = _bleService;
+    if (ble == null) return;
+    unawaited(ble.setForegroundHold(hold).catchError((Object _) {}));
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final bleNotifier = _ref.read(bleStateProvider.notifier);
@@ -56,10 +79,14 @@ class BleLifecycleObserver extends WidgetsBindingObserver {
         if (_wasScanning) {
           bleNotifier.stopScan();
         }
+        // Hold a foreground-service slot so advertising and any live
+        // connections survive screen-off instead of being frozen the
+        // moment the app leaves the foreground.
+        _setForegroundHold(true);
         break;
 
       case AppLifecycleState.resumed:
-        // App came back to foreground.
+        _setForegroundHold(false);
         // Do NOT auto-resume scanning — let the user decide.
         // Active connections survive the background transition.
         break;
@@ -83,6 +110,9 @@ class BleLifecycleObserver extends WidgetsBindingObserver {
   /// Remove the observer from the binding.
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    if (_hasForegroundHold) {
+      _setForegroundHold(false);
+    }
   }
 }
 

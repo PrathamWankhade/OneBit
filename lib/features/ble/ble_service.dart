@@ -249,6 +249,32 @@ class BleService {
     }
   }
 
+  /// Take or release a foreground-service hold.
+  ///
+  /// The native side ref-counts these, so a hold taken while the app is
+  /// backgrounded keeps the transport (and therefore advertising) alive
+  /// instead of letting Android freeze the session the moment the screen
+  /// goes off.
+  Future<void> setForegroundHold(bool hold) async {
+    if (_disposed) return;
+    try {
+      if (hold) {
+        await _methods.invokeMethod(
+          'startForegroundService',
+          <String, dynamic>{'reason': 'OneBit backgrounded'},
+        );
+        AppLogger.info('BLE foreground hold taken');
+      } else {
+        await _methods.invokeMethod('stopForegroundService');
+        AppLogger.info('BLE foreground hold released');
+      }
+    } on PlatformException catch (e) {
+      AppLogger.warning('BLE foreground hold $hold failed: ${e.message}');
+    } on MissingPluginException {
+      // Tests and platforms without the native transport.
+    }
+  }
+
   // ── Advertising ────────────────────────────────────────────
 
   /// Start BLE advertising with the given [config].
