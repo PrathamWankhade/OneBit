@@ -1,0 +1,117 @@
+name: release
+
+# Publishing is driven by the `version:` line in pubspec.yaml rather than by
+# hand-made tags, so the tag, the APK stamped on the file and the version the
+# running binary reports are always the same number. Merging a bump is the
+# release.
+on:
+  push:
+    branches: [main]
+    paths:
+      - pubspec.yaml
+      - .github/workflows/release.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# One release at a time, and never cancel a publish half way through.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Publish tagged release
+    runs-on: ubuntu-latest
+    steps:
+      # Tags have to be visible to tell a new version from a re-run.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read app version
+        id: version
+        shell: pwsh
+        run: |
+          $line = Select-String -Path pubspec.yaml -Pattern '^version:\s*(\S+)' |
+                  Select-Object -First 1
+          "version=$($line.Matches[0].Groups[1].Value)" >> $env:GITHUB_OUTPUT
+
+      # Idempotent by design: a push that touched pubspec.yaml without moving
+      # the version, or a re-run of a job that already published, is a no-op
+      # rather than a second release for the same binary.
+      #
+      # `git tag --list` rather than `rev-parse --verify`, because the runner
+      # appends `exit $LASTEXITCODE` to pwsh steps: the "tag is missing"
+      # answer would arrive as exit code 1 and fail the step it exists to
+      # authorise. Listing exits 0 either way and reports the same fact.
+      - name: Decide whether this version is unpublished
+        id: decide
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $tag = git tag --list "v$env:VERSION"
+          if ($tag) {
+            "publish=false" >> $env:GITHUB_OUTPUT
+            Write-Host "v$env:VERSION is already tagged - nothing to release."
+          } else {
+            "publish=true" >> $env:GITHUB_OUTPUT
+            Write-Host "v$env:VERSION has not been released yet."
+          }
+
+      - uses: subosito/flutter-action@v2
+        if: steps.decide.outputs.publish == 'true'
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        if: steps.decide.outputs.publish == 'true'
+        run: flutter pub get
+
+      # Drift/Mockito sources are gitignored, so they must be regenerated or
+      # neither `flutter analyze` nor the APK build resolves.
+      - name: Code generation
+        if: steps.decide.outputs.publish == 'true'
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      # Nothing ships that would not have passed on the same commit.
+      - name: Static analysis (zero issues)
+        if: steps.decide.outputs.publish == 'true'
+        run: flutter analyze
+
+      - name: Unit & widget tests
+        if: steps.decide.outputs.publish == 'true'
+        run: flutter test
+
+      - name: Assemble release apk
+        if: steps.decide.outputs.publish == 'true'
+        run: flutter build apk --release
+
+      # Fail loudly rather than attaching a file the update screen could not
+      # match against the version it is announcing.
+      - name: Verify versioned artifact
+        if: steps.decide.outputs.publish == 'true'
+        shell: pwsh
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          $stamped = "build/app/outputs/flutter-apk/OneBit-$version-release.apk"
+          if (-not (Test-Path $stamped)) { throw "expected $stamped" }
+          Get-ChildItem (Split-Path $stamped) -Filter *.apk |
+            ForEach-Object { '{0}  {1:N1} MB' -f $_.Name, ($_.Length / 1MB) }
+
+      # `gh release create` also makes the tag, pointed at this commit, so the
+      # tag and the binary on the release describe the same source.
+      - name: Publish GitHub release
+        if: steps.decide.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "v$VERSION" \
+            "build/app/outputs/flutter-apk/OneBit-$VERSION-release.apk" \
+            --target "$GITHUB_SHA" \
+            --title "v$VERSION" \
+            --generate-notes
