@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Where a downloaded update is staged before the system installs it.
+         Kept as a directory rather than a single file so the name can carry
+         the version and a half-written download can never be handed to the
+         installer under the current one's name. -->
+    <cache-path name="updates" path="updates/" />
+</paths>

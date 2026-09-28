@@ -33,6 +33,15 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Camera for QR code scanning. -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Reading releases and downloading an update. Android only grants
+         this to the debug and profile source sets on its own, which is why
+         the update check silently reported "could not verify" for anyone
+         running an APK from the Releases page. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Installing a downloaded update without leaving the app. The app
+         still has to send the user to the "install unknown apps" screen
+         once, which REQUEST_INSTALL_PACKAGES is what makes available. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 
@@ -79,6 +88,19 @@
             android:name=".bluetooth.foreground.BluetoothForegroundService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
+
+        <!-- Publishes a downloaded update to the package installer.
+             The APK lives in this app's private cache, which the installer
+             cannot read; FileProvider hands it a URI and a one-off grant. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

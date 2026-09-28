@@ -5,6 +5,7 @@ import dev.onebit.onebit.bluetooth.BluetoothChannel
 import dev.onebit.onebit.bluetooth.BluetoothManager
 import dev.onebit.onebit.bluetooth.logging.BleLog
 import dev.onebit.onebit.bluetooth.permissions.PermissionManager
+import dev.onebit.onebit.update.AppUpdater
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -89,6 +90,46 @@ class MainActivity : FlutterActivity() {
         }
 
         bindBluetooth(flutterEngine)
+        bindUpdateInstaller(flutterEngine)
+    }
+
+    /**
+     * Binds the in-app updater.
+     *
+     * Kept separate from Bluetooth because it has no lifecycle of its own:
+     * it is asked a question and answers it, and the activity reference is
+     * only ever used while a call is in flight. The version read lives here
+     * too — same feature, same native owner.
+     */
+    private fun bindUpdateInstaller(flutterEngine: FlutterEngine) {
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            PlatformChannels.UPDATE,
+        ).setMethodCallHandler { call, result ->
+            val updater = AppUpdater(this)
+            when (call.method) {
+                PlatformMethods.GET_VERSION ->
+                    result.success(updater.version())
+                PlatformMethods.CAN_INSTALL ->
+                    result.success(updater.canInstall())
+                PlatformMethods.OPEN_INSTALL_PERMISSION ->
+                    result.success(updater.openInstallPermissionSettings())
+                PlatformMethods.INSTALL_APK -> {
+                    val path = call.argument<String>("path")
+                    if (path == null) {
+                        result.error("BAD_ARGS", "path is required", null)
+                    } else {
+                        val error = updater.install(path)
+                        if (error == null) {
+                            result.success(null)
+                        } else {
+                            result.error("INSTALL_FAILED", error, null)
+                        }
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
     }
 
     /** Binds the BLE transport once per engine configuration. */
@@ -136,11 +177,16 @@ class MainActivity : FlutterActivity() {
 private object PlatformChannels {
     const val ROOT = "dev.onebit.onebit/native"
     const val IDENTITY = "dev.onebit.onebit/identity"
+    const val UPDATE = "dev.onebit.onebit/update"
 }
 
 private object PlatformMethods {
     const val GET_DEVICE_INFO = "getDeviceInfo"
     const val PING = "ping"
+    const val GET_VERSION = "getVersion"
+    const val CAN_INSTALL = "canInstall"
+    const val OPEN_INSTALL_PERMISSION = "openInstallPermission"
+    const val INSTALL_APK = "installApk"
 }
 
 private object IdentityMethods {
