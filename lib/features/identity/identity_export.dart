@@ -17,6 +17,7 @@ class PublicIdentity {
     required this.publicKeyHex,
     this.displayName,
     this.fingerprint,
+    this.keyAgreementPublicKeyHex,
   });
 
   /// Format version of the identity serialization.
@@ -34,6 +35,12 @@ class PublicIdentity {
   /// Optional pre-computed fingerprint for verification.
   final String? fingerprint;
 
+  /// Optional hex-encoded X25519 key-agreement public key (32 bytes).
+  ///
+  /// Present from format version 2. Whoever scans this can encrypt
+  /// from the very first message instead of waiting a round trip.
+  final String? keyAgreementPublicKeyHex;
+
   /// Convert to JSON-encodable map.
   Map<String, dynamic> toJson() => {
         'formatVersion': formatVersion,
@@ -41,6 +48,8 @@ class PublicIdentity {
         'publicKey': publicKeyHex,
         if (displayName != null) 'displayName': displayName,
         if (fingerprint != null) 'fingerprint': fingerprint,
+        if (keyAgreementPublicKeyHex != null)
+          'keyAgreement': keyAgreementPublicKeyHex,
       };
 
   /// Serialize to JSON string.
@@ -54,6 +63,7 @@ class PublicIdentity {
       publicKeyHex: json['publicKey'] as String,
       displayName: json['displayName'] as String?,
       fingerprint: json['fingerprint'] as String?,
+      keyAgreementPublicKeyHex: json['keyAgreement'] as String?,
     );
   }
 
@@ -70,8 +80,13 @@ class PublicIdentity {
 /// Export a local identity as a public identity payload.
 ///
 /// This function never accesses the private key. It reads only public
-/// metadata from [identity] and computes the fingerprint.
-Future<String> exportPublicIdentity(IdentityInfo identity) async {
+/// metadata from [identity] and computes the fingerprint. Pass the
+/// local X25519 key in [keyAgreementPublicKeyHex] so the peer can
+/// encrypt from the first message; it is public material.
+Future<String> exportPublicIdentity(
+  IdentityInfo identity, {
+  String? keyAgreementPublicKeyHex,
+}) async {
   if (identity.publicKeyBytes == null || identity.identityId == null) {
     throw ArgumentError('Identity has no cryptographic material');
   }
@@ -84,6 +99,7 @@ Future<String> exportPublicIdentity(IdentityInfo identity) async {
     publicKeyHex: identity.identityId!,
     displayName: identity.displayName,
     fingerprint: fingerprint,
+    keyAgreementPublicKeyHex: keyAgreementPublicKeyHex,
   );
 
   return public.toJsonString();
@@ -200,6 +216,19 @@ ImportResult importPublicIdentity(
     throw ImportError('fingerprint must be a string');
   }
 
+  // Validate optional key-agreement key: public material, but a
+  // malformed one must not reach the peer table.
+  if (json.containsKey('keyAgreement')) {
+    final agreement = json['keyAgreement'];
+    if (agreement is! String) {
+      throw ImportError('keyAgreement must be a string');
+    }
+    if (agreement.length != 64 ||
+        !RegExp(r'^[0-9a-fA-F]+$').hasMatch(agreement)) {
+      throw ImportError('keyAgreement must be 64 hex characters (32 bytes)');
+    }
+  }
+
   // Parse and construct
   final public = PublicIdentity.fromJson(json);
 
@@ -239,6 +268,7 @@ Future<PublicIdentity> resolvePublicIdentity(PublicIdentity identity) async {
     fingerprint: await computeFingerprint(
       IdentityRepository.hexToBytes(publicKeyHex),
     ),
+    keyAgreementPublicKeyHex: identity.keyAgreementPublicKeyHex,
   );
 }
 

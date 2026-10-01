@@ -15,6 +15,7 @@ class MessageBubble extends StatefulWidget {
     this.status = 'sent',
     this.replyQuote,
     this.animate = false,
+    this.encrypted = false,
     super.key,
   });
 
@@ -22,6 +23,10 @@ class MessageBubble extends StatefulWidget {
   final DateTime timestamp;
   final bool isReceived;
   final String status;
+
+  /// Whether the bytes traveled encrypted. Read from the row, never
+  /// promised: a bubble without the lock makes no claim.
+  final bool encrypted;
 
   /// The message this one answers, as the sender quoted it.
   ///
@@ -136,6 +141,14 @@ class _MessageBubbleState extends State<MessageBubble>
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      if (widget.encrypted) ...[
+                        const Icon(
+                          Icons.lock_outline,
+                          size: 10,
+                          color: AppTheme.trust,
+                        ),
+                        const SizedBox(width: 3),
+                      ],
                       Text(
                         _formatTime(widget.timestamp),
                         style: AppTheme.caption.copyWith(

@@ -3,11 +3,15 @@ import 'dart:async';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:cryptography/cryptography.dart';
 import 'package:mockito/annotations.dart';
 import 'package:mockito/mockito.dart';
 import 'package:onebit/data/database/app_database.dart';
 import 'package:onebit/features/ble/ble_service.dart';
 import 'package:onebit/features/ble/ble_state.dart';
+import 'package:onebit/features/crypto/e2ee_frame.dart';
+import 'package:onebit/features/identity/identity_repository.dart';
+import 'package:onebit/features/protocol/key_announcement.dart';
 import 'package:onebit/features/message/application/message_relay_service.dart';
 import 'package:onebit/features/message/application/message_transmission_service.dart';
 import 'package:onebit/features/message/models/message_envelope.dart';
@@ -817,6 +821,312 @@ void main() {
       expect(receipt, isNotNull);
       expect(receipt!.kind, ReceiptKind.read);
       expect(receipt.messageIds, ['m_1', 'm_2', 'm_3']);
+    });
+  });
+
+  group('MessageTransport end-to-end encryption', () {
+    late AppDatabase db;
+    late MockBleService ble;
+    late StreamController<ReliableDataReceived> inbound;
+    MessageTransport? transport;
+
+    late SimpleKeyPair localEd;
+    late Uint8List localXBytes;
+    late SimpleKeyPair localX;
+    late Uint8List localEdBytes;
+    late SimpleKeyPair peerEd;
+    late SimpleKeyPair peerX;
+    late Uint8List peerXBytes;
+    late String peerEdHex;
+    const deviceP = 'AA:BB:CC:DD:EE';
+
+    String hexOf(Uint8List bytes) => IdentityRepository.bytesToHex(bytes);
+
+    setUp(() async {
+      db = AppDatabase.test(DatabaseConnection(NativeDatabase.memory()));
+      ble = MockBleService();
+      inbound = StreamController<ReliableDataReceived>.broadcast();
+
+      when(ble.reliableDataReceived).thenAnswer((_) => inbound.stream);
+      when(ble.sendReliable(any, any))
+          .thenAnswer((_) async => TransferResult.delivered);
+
+      localEd = await Ed25519().newKeyPair();
+      localX = await X25519().newKeyPair();
+      localXBytes =
+          Uint8List.fromList((await localX.extractPublicKey()).bytes);
+      localEdBytes =
+          Uint8List.fromList((await localEd.extractPublicKey()).bytes);
+      peerEd = await Ed25519().newKeyPair();
+      peerX = await X25519().newKeyPair();
+      peerXBytes = Uint8List.fromList((await peerX.extractPublicKey()).bytes);
+      peerEdHex = hexOf(
+        Uint8List.fromList((await peerEd.extractPublicKey()).bytes),
+      );
+    });
+
+    tearDown(() async {
+      transport?.dispose();
+      await inbound.close();
+      await db.close();
+    });
+
+    Route routeToPeerFor(String peer) => Route(
+          destinationPeerId: peer,
+          nextHopPeerId: peer,
+          metric: 1,
+          state: RouteState.active,
+          source: RouteSource.direct,
+          createdAt: DateTime.now(),
+          lastValidatedAt: DateTime.now(),
+        );
+
+    Route? routeTo(String dest) =>
+        dest == peerEdHex ? routeToPeerFor(peerEdHex) : null;
+
+    String? deviceFor(String peer) => peer == peerEdHex ? deviceP : null;
+
+    MessageTransport buildKeyedTransport() {
+      final transmission = MessageTransmissionService(
+        localPeerId: localId,
+        bleService: ble,
+        routeLookup: routeTo,
+        deviceResolver: deviceFor,
+        isPeerConnected: (peer) => deviceFor(peer) != null,
+      );
+
+      final built = MessageTransport(
+        bleService: ble,
+        database: db,
+        localPeerId: localId,
+        identityForDevice: (device) => device == deviceP ? peerEdHex : null,
+        deviceForPeer: deviceFor,
+        routeLookup: routeTo,
+        transmissionService: transmission,
+        localKeyAgreement: () async => localX,
+        localSign: (message) async => Uint8List.fromList(
+          (await Ed25519().sign(message, keyPair: localEd)).bytes,
+        ),
+      );
+      built.startListening();
+      return built;
+    }
+
+    /// Every outbound frame payload, unwrapped from its packets and
+    /// envelope: what actually traveled. Reassembles chunked sends, so
+    /// a frame that outgrew one packet still arrives here whole.
+    Future<List<Uint8List>> outboundPayloads() async {
+      final captured =
+          verify(ble.sendReliable(captureAny, captureAny)).captured;
+      final reassembler = PacketChunkReassembler();
+      final out = <Uint8List>[];
+      for (var i = 1; i < captured.length; i += 2) {
+        final packet = packetOf(captured[i]);
+        final whole = reassembler.accept(
+          captured[i - 1] as String,
+          packet.packetId,
+          Uint8List.fromList(packet.payload),
+        );
+        if (whole == null) continue;
+        out.add(
+          whole.first == messageProtocolVersion
+              ? MessageEnvelopeCodec.decode(whole).payload
+              : whole,
+        );
+      }
+      return out;
+    }
+
+    void hearEnvelope({
+      required Uint8List framePayload,
+      required String from,
+    }) {
+      final envelope = MessageEnvelope(
+        protocolVersion: messageProtocolVersion,
+        messageId: MessageId(),
+        sourcePeerId: from,
+        destinationPeerId: localId,
+        payload: framePayload,
+      );
+      // Production sends chunk; the test link must too, or anything
+      // past one packet throws in PacketCodec instead of arriving.
+      final slices = splitPayload(MessageEnvelopeCodec.encode(envelope));
+      var transferId = 1;
+      for (final slice in slices) {
+        inbound.add(ReliableDataReceived(
+          deviceId: deviceP,
+          payload: PacketCodec.encode(
+            OneBitPacket(
+              type: PacketType.message,
+              packetId: 1,
+              payload: slice,
+            ),
+          ),
+          transferId: transferId++,
+        ));
+      }
+    }
+
+    test('encrypts when the peer key is known', () async {
+      transport = buildKeyedTransport();
+      await db.storePeerKeyAgreementPublicKey(
+        identityId: peerEdHex,
+        keyAgreementPublicKey: hexOf(peerXBytes),
+      );
+      final convId = await db.createConversationWithPeer('Peer', peerEdHex);
+
+      final result = await transport!.sendMessage(
+        peerDeviceId: peerEdHex,
+        conversationId: convId,
+        content: 'secret',
+      );
+      expect(result, TransferResult.delivered);
+
+      // The peer has not proven they hold our key yet, so our
+      // announcement rides along with the encrypted message.
+      final payloads = await outboundPayloads();
+      expect(payloads, hasLength(2));
+
+      final opened = <DecodedMessage>[];
+      ({String keyHex, Uint8List signature})? announcement;
+      for (final payload in payloads) {
+        final decrypted = await E2eeFrame.decrypt(
+          localKeyPair: peerX,
+          payload: payload,
+        );
+        if (decrypted != null) {
+          expect(decrypted.senderKey, localXBytes);
+          opened.add(MessageCodec.decode(decrypted.frame));
+        } else {
+          announcement = KeyAnnouncement.decodeFrame(payload);
+        }
+      }
+
+      expect(opened.single.content, 'secret');
+      expect((await db.getMessages(convId)).single.isEncrypted, 1);
+      expect(announcement, isNotNull);      expect(
+        await KeyAnnouncement.verify(
+          content: KeyAnnouncement.encode(
+            x25519Hex: announcement!.keyHex,
+            signature: announcement.signature,
+          ),
+          senderEdPublicKey: localEdBytes,
+        ),
+        isTrue,
+      );
+
+      // And on the wire it is opaque: no strict decode reads it.
+      for (final payload in payloads) {
+        if (KeyAnnouncement.decodeFrame(payload) == null) {
+          expect(() => MessageCodec.decode(payload), throwsArgumentError);
+        }
+      }
+    });
+
+    test('sends plaintext plus an announcement when the key is unknown',
+        () async {
+      transport = buildKeyedTransport();
+      final convId = await db.createConversationWithPeer('Peer', peerEdHex);
+
+      final result = await transport!.sendMessage(
+        peerDeviceId: peerEdHex,
+        conversationId: convId,
+        content: 'hello',
+      );
+      expect(result, TransferResult.delivered);
+
+      final payloads = await outboundPayloads();
+      expect(payloads, hasLength(2));
+
+      var sawPlaintext = false;
+      var sawAnnouncement = false;
+      for (final payload in payloads) {
+        final announcement = KeyAnnouncement.decodeFrame(payload);
+        if (announcement != null) {
+          sawAnnouncement = true;
+          expect(
+            await KeyAnnouncement.verify(
+              content: KeyAnnouncement.encode(
+                x25519Hex: announcement.keyHex,
+                signature: announcement.signature,
+              ),
+              senderEdPublicKey: localEdBytes,
+            ),
+            isTrue,
+          );
+        } else {
+          expect(MessageCodec.decode(payload).content, 'hello');
+          sawPlaintext = true;
+        }
+      }
+      expect(sawPlaintext, isTrue);
+      expect(sawAnnouncement, isTrue);
+      expect((await db.getMessages(convId)).single.isEncrypted, 0);
+    });
+
+    test('a received encrypted frame decrypts and teaches the key',
+        () async {
+      transport = buildKeyedTransport();
+
+      final inner = MessageCodec.encode(
+        externalMessageId: 'm_99',
+        content: 'secret',
+        timestampMs: 1700000000000,
+      );
+      hearEnvelope(
+        framePayload: await E2eeFrame.encrypt(
+          localKeyPair: peerX,
+          peerPublicKey: localXBytes,
+          frame: inner,
+        ),
+        from: peerEdHex,
+      );
+      await pumpEventQueue();
+
+      final conversation = await db.getConversationByPeerDevice(peerEdHex);
+      expect(conversation, isNotNull);
+      final messages = await db.getMessages(conversation!.id);
+      expect(messages.single.content, 'secret');
+      expect(messages.single.isEncrypted, 1);
+
+      expect(await db.peerKeyAgreementKey(peerEdHex), hexOf(peerXBytes));
+    });
+
+    test('a signed announcement is stored, never displayed', () async {
+      transport = buildKeyedTransport();
+
+      final signature = await Ed25519().sign(peerXBytes, keyPair: peerEd);
+      hearEnvelope(
+        framePayload: KeyAnnouncement.encodeFrame(
+          x25519Hex: hexOf(peerXBytes),
+          signature: Uint8List.fromList(signature.bytes),
+          timestampMs: 1700000000000,
+        ),
+        from: peerEdHex,
+      );
+      await pumpEventQueue();
+
+      expect(await db.peerKeyAgreementKey(peerEdHex), hexOf(peerXBytes));
+      expect(await db.getConversationByPeerDevice(peerEdHex), isNull);
+    });
+
+    test('a forged announcement is dropped', () async {
+      transport = buildKeyedTransport();
+
+      final malloryEd = await Ed25519().newKeyPair();
+      final forged = await Ed25519().sign(peerXBytes, keyPair: malloryEd);
+      hearEnvelope(
+        framePayload: KeyAnnouncement.encodeFrame(
+          x25519Hex: hexOf(peerXBytes),
+          signature: Uint8List.fromList(forged.bytes),
+          timestampMs: 1700000000000,
+        ),
+        from: peerEdHex,
+      );
+      await pumpEventQueue();
+
+      expect(await db.peerKeyAgreementKey(peerEdHex), isNull);
+      expect(await db.getConversationByPeerDevice(peerEdHex), isNull);
     });
   });
 

@@ -4,6 +4,7 @@ import 'package:qr/qr.dart' as qr;
 import 'package:onebit/core/theme/app_motion.dart';
 import 'package:onebit/core/theme/app_theme.dart';
 import 'package:onebit/features/identity/identity_export.dart';
+import 'package:onebit/features/identity/identity_models.dart';
 import 'package:onebit/features/identity/identity_providers.dart';
 import 'package:onebit/features/identity/presentation/identity_qr_scanner_view.dart';
 import 'package:onebit/features/peer_registry/peer_entry.dart';
@@ -33,6 +34,19 @@ class _IdentityQrScreenState extends ConsumerState<IdentityQrScreen> {
   Future<String>? _exportFuture;
   late final PageController _pageController;
   late int _page;
+
+  /// Export with our X25519 key attached, so whoever scans this can
+  /// encrypt from their very first message. Absent when no identity
+  /// is loaded — the payload is still a valid v2 export without it.
+  Future<String> _exportWithKey(IdentityInfo identity) {
+    final service = ref.read(identityServiceProvider);
+    return service.keyAgreementPublicKeyHex().then(
+          (keyHex) => exportPublicIdentity(
+            identity,
+            keyAgreementPublicKeyHex: keyHex,
+          ),
+        );
+  }
 
   @override
   void initState() {
@@ -144,7 +158,7 @@ class _IdentityQrScreenState extends ConsumerState<IdentityQrScreen> {
                     }
 
                     return FutureBuilder<String>(
-                      future: _exportFuture ??= exportPublicIdentity(identity),
+                      future: _exportFuture ??= _exportWithKey(identity),
                       builder: (context, snapshot) {
                         if (!snapshot.hasData) {
                           return const Center(

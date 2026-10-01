@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
 import 'package:onebit/core/logging/app_logger.dart';
+import 'package:onebit/features/crypto/key_material.dart';
 import 'package:onebit/features/identity/identity_export.dart';
 import 'package:onebit/features/identity/identity_models.dart';
 import 'package:onebit/features/identity/identity_repository.dart';
@@ -31,6 +32,7 @@ class IdentityService {
 
   final IdentityRepository _repository;
   final PrivateKeyStore _privateKeyStore;
+  SimpleKeyPair? _keyAgreementPair;
 
   IdentityInfo? _localIdentity;
   SimpleKeyPair? _keyPair;
@@ -44,6 +46,48 @@ class IdentityService {
 
   /// The current Ed25519 key pair (in-memory after creation or initialize).
   SimpleKeyPair? get keyPair => _keyPair;
+
+  /// Our X25519 key-agreement pair, derived from the identity seed.
+  ///
+  /// The seed never leaves this service except through this derivation:
+  /// callers get the agreement pair, never the seed. Cached, because the
+  /// seed — and therefore this pair — is stable for the life of the
+  /// identity. Throws [StateError] when no identity is loaded.
+  Future<SimpleKeyPair> keyAgreementKeyPair() async {
+    final pair = _keyPair;
+    if (pair == null) throw StateError('No local identity loaded');
+    return _keyAgreementPair ??= await KeyMaterial.deriveLocalKeyAgreementKey(
+      // extract().bytes on an Ed25519 pair is the private seed — the
+      // one correct use of it outside secure storage, immediately
+      // hashed into a different key.
+      ed25519Seed: Uint8List.fromList((await pair.extract()).bytes),
+    );
+  }
+
+  /// Our X25519 key-agreement public key as hex, or null when no
+  /// identity is loaded. Public material — safe to print on a QR code.
+  Future<String?> keyAgreementPublicKeyHex() async {
+    try {
+      final pair = await keyAgreementKeyPair();
+      final public = await pair.extractPublicKey();
+      return IdentityRepository.bytesToHex(
+        Uint8List.fromList(public.bytes),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Sign [message] with the identity key.
+  ///
+  /// Used for key announcements, which bind our X25519 key to this
+  /// identity. Throws [StateError] when no identity is loaded.
+  Future<Uint8List> signBytes(Uint8List message) async {
+    final pair = _keyPair;
+    if (pair == null) throw StateError('No local identity loaded');
+    final signature = await Ed25519().sign(message, keyPair: pair);
+    return Uint8List.fromList(signature.bytes);
+  }
 
   /// Initialize identity from stored metadata and private key.
   ///
@@ -208,6 +252,7 @@ class IdentityService {
     final (peer, result) = await _repository.findOrCreatePeer(
       publicIdentity: publicIdentity,
       localPublicKeyHex: localKey,
+      keyAgreementPublicKeyHex: publicIdentity.keyAgreementPublicKeyHex,
     );
 
     switch (result) {

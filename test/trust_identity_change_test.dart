@@ -573,7 +573,7 @@ void main() {
     tearDown(() async => await db.close());
 
     test('schema version is 12', () {
-      expect(db.schemaVersion, 13);
+      expect(db.schemaVersion, 14);
     });
 
     test('upsertPeerIdentity stores lastSeenBleAddress', () async {

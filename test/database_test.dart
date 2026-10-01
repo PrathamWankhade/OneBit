@@ -153,6 +153,98 @@ void main() {
     });
   });
 
+  group('Key agreement storage', () {
+    final identity = 'ab' * 32;
+    final key = 'cd' * 32;
+
+    test('unknown peers have no key', () async {
+      expect(await db.peerKeyAgreementKey(identity), isNull);
+    });
+
+    test('a learned key is stored and found', () async {
+      await db.storePeerKeyAgreementPublicKey(
+        identityId: identity,
+        keyAgreementPublicKey: key,
+      );
+
+      expect(await db.peerKeyAgreementKey(identity), key);
+    });
+
+    test('storing the same key twice changes nothing', () async {
+      await db.storePeerKeyAgreementPublicKey(
+        identityId: identity,
+        keyAgreementPublicKey: key,
+      );
+      await db.storePeerKeyAgreementPublicKey(
+        identityId: identity,
+        keyAgreementPublicKey: key,
+      );
+
+      expect(await db.peerKeyAgreementKey(identity), key);
+      expect((await db.getAllPeerIdentities()).length, 1);
+    });
+
+    test('first contact creates the peer without a name', () async {
+      await db.storePeerKeyAgreementPublicKey(
+        identityId: identity,
+        keyAgreementPublicKey: key,
+      );
+
+      final peer = await db.getPeerIdentityByIdentityId(identity);
+      expect(peer, isNotNull);
+      expect(peer!.displayName, 'Unknown');
+      expect(peer.publicKey, identity);
+    });
+
+    test('a changed key replaces the old one', () async {
+      await db.storePeerKeyAgreementPublicKey(
+        identityId: identity,
+        keyAgreementPublicKey: key,
+      );
+      await db.storePeerKeyAgreementPublicKey(
+        identityId: identity,
+        keyAgreementPublicKey: 'ef' * 32,
+      );
+
+      expect(await db.peerKeyAgreementKey(identity), 'ef' * 32);
+    });
+  });
+
+  group('Encryption flags', () {
+    test('history lands unencrypted and only the encrypting path flips it',
+        () async {
+      final convId = await db.createConversation('Chat');
+      final id = await db.insertMessage(
+        conversationId: convId,
+        content: 'before',
+        status: 'sent',
+      );
+      expect((await db.getMessages(convId)).single.isEncrypted, 0);
+
+      await db.setMessageEncrypted(id);
+      expect((await db.getMessages(convId)).single.isEncrypted, 1);
+    });
+
+    test('received rows record whether they decrypted', () async {
+      final convId = await db.createConversation('Chat');
+      await db.insertReceivedMessage(
+        conversationId: convId,
+        content: 'plain',
+        externalMessageId: 'm_1',
+      );
+      await db.insertReceivedMessage(
+        conversationId: convId,
+        content: 'secret',
+        externalMessageId: 'm_2',
+        isEncrypted: true,
+      );
+
+      final messages = await db.getMessages(convId);
+      final byContent = {for (final m in messages) m.content: m.isEncrypted};
+      expect(byContent, {'plain': 0, 'secret': 1});
+    });
+  });
+
   group('Cascade behavior', () {
     test('deleting conversation does not leave orphaned messages', () async {
       final convId = await db.createConversation('Chat');
@@ -169,7 +261,7 @@ void main() {
 
   group('Schema', () {
     test('schema version is 12', () {
-      expect(db.schemaVersion, 13);
+      expect(db.schemaVersion, 14);
     });
   });
 

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:cryptography/cryptography.dart';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
@@ -252,6 +254,96 @@ void main() {
       final expected = await pair.extractPublicKey();
 
       expect(public, Uint8List.fromList(expected.bytes));
+    });
+  });
+
+  group('key-agreement exchange over QR', () {
+    IdentityInfo testIdentity() => IdentityInfo(
+          id: 1,
+          identityId: 'ab' * 32,
+          displayName: 'Me',
+          createdAt: DateTime(2025),
+          publicKeyBytes: Uint8List.fromList(List.generate(32, (i) => i)),
+        );
+
+    test('export carries the key when provided, omits it otherwise',
+        () async {
+      final withKey = await exportPublicIdentity(
+        testIdentity(),
+        keyAgreementPublicKeyHex: 'cd' * 32,
+      );
+      expect(
+        (jsonDecode(withKey) as Map<String, dynamic>)['keyAgreement'],
+        'cd' * 32,
+      );
+
+      final withoutKey = await exportPublicIdentity(testIdentity());
+      expect(
+        (jsonDecode(withoutKey) as Map<String, dynamic>)
+            .containsKey('keyAgreement'),
+        isFalse,
+      );
+    });
+
+    test('import rejects a malformed keyAgreement', () {
+      final malformed = <Object?>['xyz', 'ab' * 31, 'gg' * 32, 42, true];
+      for (final bad in malformed) {
+        final payload = jsonEncode({
+          'formatVersion': identityFormatVersion,
+          'identityType': 'ed25519',
+          'publicKey': 'ab' * 32,
+          'keyAgreement': bad,
+        });
+        expect(
+          () => importPublicIdentity(payload),
+          throwsA(isA<ImportError>()),
+          reason: 'keyAgreement=$bad',
+        );
+      }
+    });
+
+    test('import keeps a well-formed keyAgreement through resolution',
+        () async {
+      final payload = jsonEncode({
+        'formatVersion': identityFormatVersion,
+        'identityType': 'ed25519',
+        'publicKey': 'ab' * 32,
+        'keyAgreement': 'cd' * 32,
+      });
+
+      final result = await importAndResolvePublicIdentity(payload);
+
+      expect(result.identity.formatVersion, identityFormatVersion);
+      expect(result.identity.keyAgreementPublicKeyHex, 'cd' * 32);
+    });
+
+    test('associate stores the scanned key, including on re-scan',
+        () async {
+      final db = AppDatabase.test(DatabaseConnection(NativeDatabase.memory()));
+      addTearDown(db.close);
+      final repo = IdentityRepository(db);
+      final service = IdentityService(repo, MemoryKeyStore());
+      await service.createIdentity('Me');
+      final peerHex = await publicHexOfSeed(testSeed());
+
+      PublicIdentity scanned(String? keyHex) => PublicIdentity(
+            formatVersion: identityFormatVersion,
+            identityType: 'ed25519',
+            publicKeyHex: peerHex,
+            displayName: 'Peer',
+            keyAgreementPublicKeyHex: keyHex,
+          );
+
+      final (peer, result) = await service.associatePeer(scanned('cd' * 32));
+      expect(result, AssociationResult.created);
+      expect(peer!.keyAgreementPublicKeyHex, 'cd' * 32);
+
+      final (_, again) = await service.associatePeer(scanned('ef' * 32));
+      expect(again, AssociationResult.existing);
+      expect(
+        (await repo.getPeerByIdentityId(peerHex))!.keyAgreementPublicKeyHex,
+        'ef' * 32,
+      );
     });
   });
 }

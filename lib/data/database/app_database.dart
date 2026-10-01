@@ -41,6 +41,14 @@ class Messages extends Table {
   /// so the default is what keeps existing history from lighting up the
   /// badge the moment the column arrives.
   IntColumn get isRead => integer().withDefault(const Constant(1))();
+
+  /// Whether the content traveled encrypted.
+  ///
+  /// The lock in the thread reads this, never a promise: history from
+  /// before encryption existed lands as 0, and a row becomes 1 only on
+  /// the exact path that encrypted (outbound) or decrypted (inbound)
+  /// its bytes.
+  IntColumn get isEncrypted => integer().withDefault(const Constant(0))();
 }
 
 /// Peer identities discovered via BLE or QR.
@@ -99,7 +107,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.test(DatabaseConnection super.e);
 
   @override
-  int get schemaVersion => 13;
+  int get schemaVersion => 14;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -223,6 +231,20 @@ class AppDatabase extends _$AppDatabase {
             // the public keys they correspond to so the secret stops
             // being stored — and broadcast — as the identity.
             await migrateIdentityIdsToPublicKeys(this);
+          }
+          if (from < 14) {
+            // Encryption flags. Everything stored before this version
+            // traveled as plaintext, so existing rows land as 0 and only
+            // rows that actually pass through encryption read 1.
+            final hasCol = await customSelect(
+              "SELECT 1 FROM pragma_table_info('messages') WHERE name='is_encrypted'",
+            ).getSingleOrNull();
+            if (hasCol == null) {
+              await customStatement(
+                'ALTER TABLE messages ADD COLUMN is_encrypted INTEGER '
+                'NOT NULL DEFAULT 0',
+              );
+            }
           }
         },
         beforeOpen: (details) async {
@@ -436,6 +458,7 @@ class AppDatabase extends _$AppDatabase {
     required int conversationId,
     required String content,
     required String externalMessageId,
+    bool isEncrypted = false,
   }) async {
     // Deduplication: check if this external message ID already exists.
     final existing = await (select(messages)
@@ -451,6 +474,7 @@ class AppDatabase extends _$AppDatabase {
         status: const Value('received'),
         externalMessageId: Value(externalMessageId),
         isRead: const Value(0),
+        isEncrypted: Value(isEncrypted ? 1 : 0),
         createdAt: DateTime.now(),
       ),
     );
@@ -597,6 +621,17 @@ class AppDatabase extends _$AppDatabase {
     );
   }
 
+  /// Mark a message row as having traveled encrypted.
+  ///
+  /// Called on the exact path that encrypted the bytes — never
+  /// speculatively — so the lock in the thread describes history,
+  /// not intent.
+  Future<void> setMessageEncrypted(int messageId) {
+    return (update(messages)..where((t) => t.id.equals(messageId))).write(
+      const MessagesCompanion(isEncrypted: Value(1)),
+    );
+  }
+
   /// Delete a peer identity.
   Future<int> deletePeerIdentity(int id) {
     return (delete(peerIdentities)..where((t) => t.id.equals(id))).go();
@@ -621,6 +656,53 @@ class AppDatabase extends _$AppDatabase {
       PeerIdentitiesCompanion(
         keyAgreementPublicKey: Value(keyAgreementPublicKey),
       ),
+    );
+  }
+
+  /// The X25519 key-agreement public key we hold for [identityId], if any.
+  Future<String?> peerKeyAgreementKey(String identityId) async {
+    final peer = await getPeerIdentityByIdentityId(identityId);
+    return peer?.keyAgreementPublicKey;
+  }
+
+  /// Record a peer's X25519 key-agreement public key.
+  ///
+  /// Creates the peer row (as 'Unknown') when first contact arrives
+  /// before QR: someone who messages us is a peer, verified or not.
+  /// A key that changes for a known identity is overwritten with a
+  /// warning — keys derive deterministically from the identity seed, so
+  /// an honest peer's key never changes, and clinging to a stale one
+  /// would only break encryption without stopping an attack.
+  Future<void> storePeerKeyAgreementPublicKey({
+    required String identityId,
+    required String keyAgreementPublicKey,
+  }) async {
+    final existing = await getPeerIdentityByIdentityId(identityId);
+    if (existing == null) {
+      await into(peerIdentities).insert(
+        PeerIdentitiesCompanion.insert(
+          identityId: Value(identityId),
+          publicKey: Value(identityId),
+          displayName: 'Unknown',
+          createdAt: DateTime.now(),
+          keyAgreementPublicKey: Value(keyAgreementPublicKey),
+        ),
+      );
+      return;
+    }
+    if (existing.keyAgreementPublicKey?.toLowerCase() ==
+        keyAgreementPublicKey.toLowerCase()) {
+      return;
+    }
+    if (existing.keyAgreementPublicKey != null) {
+      AppLogger.warning(
+        'AppDatabase: key-agreement key changed for $identityId — '
+        'replacing',
+      );
+    }
+    await updatePeerKeyAgreementPublicKey(
+      id: existing.id,
+      keyAgreementPublicKey: keyAgreementPublicKey,
     );
   }
 

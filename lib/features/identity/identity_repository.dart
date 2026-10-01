@@ -223,6 +223,20 @@ class IdentityRepository {
           existing.publicKeyHex!.toLowerCase() != publicKeyHex.toLowerCase()) {
         return (null, AssociationResult.conflict);
       }
+      // A re-scan still teaches us the key: the peer may have added it
+      // to their code since we first met.
+      if (keyAgreementPublicKeyHex != null &&
+          existing.keyAgreementPublicKeyHex?.toLowerCase() !=
+              keyAgreementPublicKeyHex.toLowerCase()) {
+        await _db.updatePeerKeyAgreementPublicKey(
+          id: existing.id,
+          keyAgreementPublicKey: keyAgreementPublicKeyHex,
+        );
+        return (
+          await getPeerByIdentityId(publicKeyHex),
+          AssociationResult.existing
+        );
+      }
       return (existing, AssociationResult.existing);
     }
 

@@ -15,7 +15,10 @@ import 'package:onebit/features/conversations/presentation/voice_recording_widge
 import 'package:onebit/features/ble/ble_providers.dart';
 import 'package:onebit/features/ble/ble_state.dart';
 import 'package:onebit/features/conversations/providers/conversation_providers.dart';
+import 'package:onebit/features/identity/identity_models.dart';
+import 'package:onebit/features/identity/identity_providers.dart';
 import 'package:onebit/features/reliable/transfer.dart';
+import 'package:onebit/features/routing/routing_validators.dart';
 import 'package:onebit/features/ui/components/components.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -328,10 +331,23 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     final messagesAsync =
         ref.watch(messagesProvider(widget.conversationId));
 
+    // Conversation-level encryption state for the header and the
+    // empty thread: true only while we actually hold the peer's key.
+    final peers =
+        ref.watch(peerIdentitiesProvider).valueOrNull ?? const <PeerInfo>[];
+    final deviceToPeer =
+        ref.watch(bleIdentityResolverProvider).deviceToPeerId;
+    final encrypted = _peerKeyKnown(
+      peerKey: conversationAsync.valueOrNull?.peerDeviceId,
+      peers: peers,
+      deviceToPeer: deviceToPeer,
+    );
+
     return Scaffold(
       appBar: _ChatHeader(
         conversationAsync: conversationAsync,
         conversationId: widget.conversationId,
+        encrypted: encrypted,
       ),
       body: conversationAsync.when(
         loading: () => const ChatSkeleton(),
@@ -375,6 +391,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                     if (messages.isEmpty) {
                       return _EmptyConversation(
                         peerName: conversation.title,
+                        encrypted: encrypted,
                       );
                     }
                     return _MessageList(
@@ -429,14 +446,41 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
 // ── Header ─────────────────────────────────────────────────────────
 
+/// Whether the peer behind [peerKey] holds a key we can encrypt to.
+///
+/// Resolves BLE addresses through the association table first, because
+/// a conversation may still be keyed by one. False covers every
+/// unknown — no peer, no key, no address mapping — so the header never
+/// claims encryption it cannot perform.
+bool _peerKeyKnown({
+  required String? peerKey,
+  required List<PeerInfo> peers,
+  required Map<String, String> deviceToPeer,
+}) {
+  if (peerKey == null) return false;
+  final identity = RoutingValidators.isValidPeerId(peerKey)
+      ? peerKey
+      : deviceToPeer[peerKey];
+  if (identity == null) return false;
+  return peers.any(
+    (p) =>
+        (p.identityId == identity || p.publicKeyHex == identity) &&
+        p.keyAgreementPublicKeyHex != null,
+  );
+}
+
 class _ChatHeader extends ConsumerWidget implements PreferredSizeWidget {
   const _ChatHeader({
     required this.conversationAsync,
     required this.conversationId,
+    required this.encrypted,
   });
 
   final AsyncValue<dynamic> conversationAsync;
   final int conversationId;
+
+  /// Whether the peer can receive encrypted messages right now.
+  final bool encrypted;
 
   @override
   Size get preferredSize => const Size.fromHeight(56);
@@ -521,13 +565,17 @@ class _ChatHeader extends ConsumerWidget implements PreferredSizeWidget {
                 Row(
                   children: [
                     Icon(
-                      Icons.lock_outline,
+                      encrypted
+                          ? Icons.lock_outline
+                          : Icons.lock_open,
                       size: 10,
-                      color: AppTheme.trust.withValues(alpha: 0.6),
+                      color: encrypted
+                          ? AppTheme.trust.withValues(alpha: 0.6)
+                          : AppTheme.textTertiary,
                     ),
                     const SizedBox(width: 3),
                     Text(
-                      statusText,
+                      '$statusText · ${encrypted ? 'Encrypted' : 'Not encrypted'}',
                       style: AppTheme.caption.copyWith(
                         color: statusColor,
                       ),
@@ -704,6 +752,7 @@ class _MessageList extends StatelessWidget {
     final raw = msg.content as String;
     final timestamp = msg.createdAt as DateTime;
     final status = isReceived ? '' : (msg.status as String? ?? 'sent');
+    final encrypted = (msg.isEncrypted as int?) == 1;
 
     // A reply is one message, not two: strip the quote off for the body
     // and hand it to the bubble beside it.
@@ -766,6 +815,7 @@ class _MessageList extends StatelessWidget {
       timestamp: timestamp,
       isReceived: isReceived,
       status: status,
+      encrypted: encrypted,
     );
   }
 }
@@ -773,9 +823,13 @@ class _MessageList extends StatelessWidget {
 // ── Empty Conversation ─────────────────────────────────────────────
 
 class _EmptyConversation extends StatelessWidget {
-  const _EmptyConversation({required this.peerName});
+  const _EmptyConversation({required this.peerName, required this.encrypted});
 
   final String peerName;
+
+  /// Whether the first message here will go out encrypted. The pill
+  /// describes the thread honestly instead of promising it.
+  final bool encrypted;
 
   @override
   Widget build(BuildContext context) {
@@ -810,16 +864,24 @@ class _EmptyConversation extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: AppTheme.trustMuted,
+              color: encrypted ? AppTheme.trustMuted : AppTheme.bgElevated,
               borderRadius: BorderRadius.circular(AppTheme.radiusSm),
             ),
-            child: const Row(
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.lock_outline, size: 12, color: AppTheme.trust),
-                SizedBox(width: 4),
+                Icon(
+                  encrypted ? Icons.lock_outline : Icons.lock_open,
+                  size: 12,
+                  color: encrypted
+                      ? AppTheme.trust
+                      : AppTheme.textTertiary,
+                ),
+                const SizedBox(width: 4),
                 Text(
-                  'End-to-end encrypted',
+                  encrypted
+                      ? 'End-to-end encrypted'
+                      : 'Keys exchange on first contact',
                   style: AppTheme.caption,
                 ),
               ],

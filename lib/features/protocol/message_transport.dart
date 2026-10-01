@@ -1,11 +1,14 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:cryptography/cryptography.dart';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:onebit/core/logging/app_logger.dart';
 import 'package:onebit/data/database/app_database.dart';
 import 'package:onebit/features/ble/ble_service.dart';
 import 'package:onebit/features/ble/ble_state.dart';
+import 'package:onebit/features/crypto/e2ee_frame.dart';
+import 'package:onebit/features/identity/identity_repository.dart';
 import 'package:onebit/features/message/application/message_relay_service.dart';
 import 'package:onebit/features/message/application/message_transmission_service.dart';
 import 'package:onebit/features/message/models/message_envelope.dart';
@@ -13,6 +16,7 @@ import 'package:onebit/features/message/models/message_envelope_codec.dart';
 import 'package:onebit/features/message/models/message_id.dart';
 import 'package:onebit/features/message/models/message_state.dart';
 import 'package:onebit/features/message/models/onebit_message.dart';
+import 'package:onebit/features/protocol/key_announcement.dart';
 import 'package:onebit/features/protocol/message_codec.dart';
 import 'package:onebit/features/protocol/onebit_packet.dart';
 import 'package:onebit/features/protocol/packet_chunking.dart';
@@ -30,6 +34,13 @@ typedef IdentityToDevice = String? Function(String peerIdentityId);
 
 /// Looks up the best route to a destination.
 typedef RouteLookup = Route? Function(String destinationPeerId);
+
+/// Loads our X25519 key-agreement pair. Null when no identity is loaded
+/// — the transport then behaves exactly as it did before encryption.
+typedef LocalKeyAgreement = Future<SimpleKeyPair> Function();
+
+/// Signs bytes with the local Ed25519 identity key.
+typedef LocalSigner = Future<Uint8List> Function(Uint8List message);
 
 /// Bridges the message database layer with the BLE transport stack.
 ///
@@ -73,6 +84,8 @@ class MessageTransport {
     this._transmissionService,
     this._routeEvents,
     this._connectionEvents,
+    this._localKeyAgreement,
+    this._localSign,
   });
 
   final BleService _bleService;
@@ -87,6 +100,30 @@ class MessageTransport {
   final IdentityToDevice? _deviceForPeer;
   final RouteLookup? _routeLookup;
   final MessageTransmissionService? _transmissionService;
+
+  /// Agreement pair and signer for end-to-end encryption. Both absent
+  /// in tests and before the identity loads — everything then travels
+  /// exactly as it used to.
+  final LocalKeyAgreement? _localKeyAgreement;
+  final LocalSigner? _localSign;
+
+  /// Our X25519 pair once loaded. Stable per identity, so one load
+  /// serves the life of the transport.
+  SimpleKeyPair? _keyAgreementPair;
+
+  /// X25519 keys learned from direct-link frames whose sender has no
+  /// resolved Ed identity yet: BLE address → key. The database only
+  /// ever holds keys attributed to an identity.
+  final Map<String, Uint8List> _transientKeys = {};
+
+  /// Peers that proved they hold our key by decrypting one of our
+  /// frames. Only they are spared the announcement that rides along
+  /// with plaintext sends.
+  final Set<String> _peersKnowingUs = {};
+
+  /// Last announcement per peer, so a peer that never answers does not
+  /// get one stapled to every single message.
+  final Map<String, DateTime> _lastAnnounced = {};
 
   /// Announces that the route table was recomputed — a neighbour
   /// appeared, left, or advertised somebody new.
@@ -251,9 +288,22 @@ class MessageTransport {
       await _migrateConversationKey(conversationId, peerIdentity);
     }
 
+    // Encrypt when we hold the peer's key; otherwise send as before
+    // and staple our signed key to the exchange so the peer can
+    // encrypt back. Either way the bytes below are what travels.
+    final protected = await _protectForPeer(
+      peerKey: peerDeviceId,
+      peerIdentity: peerIdentity,
+      frame: messageBytes,
+    );
+    final outbound = protected.payload;
+    if (protected.encrypted) {
+      await _database.setMessageEncrypted(localMsgId);
+    }
+
     // Prefer the mesh — an envelope can cross hops we are not on.
     if (peerIdentity != null) {
-      final viaMesh = await _sendViaMesh(peerIdentity, messageBytes);
+      final viaMesh = await _sendViaMesh(peerIdentity, outbound);
       if (viaMesh != null) {
         await _updateMessageStatus(
           localMsgId,
@@ -269,8 +319,132 @@ class MessageTransport {
       peerDeviceId: peerDeviceId,
       peerIdentity: peerIdentity,
       localMsgId: localMsgId,
-      messageBytes: messageBytes,
+      messageBytes: outbound,
     );
+  }
+
+  /// Our X25519 pair once loaded, or null when encryption is
+  /// unavailable — no identity yet, or none wired in at all.
+  Future<SimpleKeyPair?> _loadKeyAgreement() async {
+    if (_keyAgreementPair != null) return _keyAgreementPair;
+    final load = _localKeyAgreement;
+    if (load == null) return null;
+    try {
+      return _keyAgreementPair = await load();
+    } catch (e) {
+      AppLogger.warning('MessageTransport: no local agreement key ($e)');
+      return null;
+    }
+  }
+
+  /// Encrypt [frame] for the peer when we hold their key.
+  ///
+  /// Anything else travels exactly as it used to, plus a signed key
+  /// announcement so the peer can encrypt back: their reply is what
+  /// teaches us their key, and the first message of a thread is
+  /// therefore the last thing in it that goes out readable.
+  Future<({Uint8List payload, bool encrypted})> _protectForPeer({
+    required String peerKey,
+    required String? peerIdentity,
+    required Uint8List frame,
+  }) async {
+    final agreement = await _loadKeyAgreement();
+    if (agreement == null) return (payload: frame, encrypted: false);
+
+    String? keyHex;
+    if (peerIdentity != null) {
+      keyHex = await _database.peerKeyAgreementKey(peerIdentity);
+    }
+    keyHex ??= _transientHex(
+      _resolveDevice(peerKey, peerIdentity) ?? peerKey,
+    );
+
+    if (keyHex == null) {
+      await _maybeAnnounce(peerKey: peerKey, peerIdentity: peerIdentity);
+      return (payload: frame, encrypted: false);
+    }
+
+    try {
+      final encrypted = await E2eeFrame.encrypt(
+        localKeyPair: agreement,
+        peerPublicKey: IdentityRepository.hexToBytes(keyHex),
+        frame: frame,
+      );
+      await _maybeAnnounce(peerKey: peerKey, peerIdentity: peerIdentity);
+      return (payload: encrypted, encrypted: true);
+    } catch (e) {
+      AppLogger.error(
+        'MessageTransport: encrypt failed, sending plaintext',
+        e,
+      );
+      return (payload: frame, encrypted: false);
+    }
+  }
+
+  /// Publish our signed X25519 key unless the peer proved they hold
+  /// it — or we knocked recently. Announcements are idempotent, so a
+  /// repeat only costs a packet, but a peer that never answers should
+  /// not get one stapled to every message.
+  Future<void> _maybeAnnounce({
+    required String peerKey,
+    required String? peerIdentity,
+  }) async {
+    final attribution = peerIdentity ?? peerKey;
+    if (_peersKnowingUs.contains(attribution)) return;
+
+    final now = DateTime.now();
+    final last = _lastAnnounced[attribution];
+    if (last != null && now.difference(last) < const Duration(hours: 1)) {
+      return;
+    }
+
+    final agreement = await _loadKeyAgreement();
+    final sign = _localSign;
+    if (agreement == null || sign == null) return;
+
+    late Uint8List pubBytes;
+    late Uint8List signature;
+    try {
+      pubBytes =
+          Uint8List.fromList((await agreement.extractPublicKey()).bytes);
+      signature = await sign(pubBytes);
+    } catch (e) {
+      AppLogger.error('MessageTransport: could not sign announcement', e);
+      return;
+    }
+
+    final frame = KeyAnnouncement.encodeFrame(
+      x25519Hex: IdentityRepository.bytesToHex(pubBytes),
+      signature: signature,
+      timestampMs: now.toUtc().millisecondsSinceEpoch,
+    );
+
+    final routedIdentity = peerIdentity ?? _resolveIdentity(peerKey);
+    if (routedIdentity != null &&
+        await _sendViaMesh(routedIdentity, frame) != null) {
+      _lastAnnounced[attribution] = now;
+      return;
+    }
+
+    final deviceId =
+        _resolveDevice(peerKey, routedIdentity) ?? peerKey;
+    if (!RoutingValidators.isValidPeerId(deviceId)) {
+      await sendInPackets(
+        frame,
+        type: PacketType.message,
+        packetId: _nextPacketId(),
+        send: (bytes) => _bleService.sendReliable(deviceId, bytes),
+      );
+      _lastAnnounced[attribution] = now;
+    } else {
+      AppLogger.info('MessageTransport: no route for a key announcement');
+    }
+  }
+
+  /// A learned key for a BLE address, if one arrived unattributed.
+  String? _transientHex(String deviceId) {
+    final key = _transientKeys[deviceId];
+    return key == null ? null : IdentityRepository.bytesToHex(key);
   }
 
   /// Route the message through I8/I9. Returns null when the mesh cannot
@@ -466,17 +640,43 @@ class MessageTransport {
 
   /// Persist an envelope addressed to the local peer.
   Future<void> _deliverEnvelope(MessageEnvelope envelope) async {
+    var payload = envelope.payload;
+
+    // The outer layer comes off first: what decrypts was encrypted
+    // for us, and its header teaches us the sender's key.
+    final opened = await _tryDecrypt(payload);
+    if (opened != null) {
+      await _database.storePeerKeyAgreementPublicKey(
+        identityId: envelope.sourcePeerId,
+        keyAgreementPublicKey:
+            IdentityRepository.bytesToHex(opened.senderKey).toLowerCase(),
+      );
+      _peersKnowingUs.add(envelope.sourcePeerId);
+      payload = opened.frame;
+    }
+
     // A receipt arrives before the message decoder ever sees it — the
     // frame ends in a byte that decode would call trailing.
-    final receipt = ReceiptTag.decodeFrame(envelope.payload);
+    final receipt = ReceiptTag.decodeFrame(payload);
     if (receipt != null) {
       await _applyReceipt(receipt);
       return;
     }
 
+    // A key announcement is verified against the identity the envelope
+    // already names, then stored — never displayed, never persisted.
+    final announcement = KeyAnnouncement.decodeFrame(payload);
+    if (announcement != null) {
+      await _applyAnnouncement(
+        announcement,
+        senderPeerId: envelope.sourcePeerId,
+      );
+      return;
+    }
+
     final DecodedMessage decoded;
     try {
-      decoded = MessageCodec.decode(envelope.payload);
+      decoded = MessageCodec.decode(payload);
     } catch (e) {
       AppLogger.error('MessageTransport: undecodable envelope payload', e);
       return;
@@ -486,25 +686,128 @@ class MessageTransport {
       peerKey: envelope.sourcePeerId,
       fallbackDeviceId: _deviceForPeer?.call(envelope.sourcePeerId),
       decoded: decoded,
+      isEncrypted: opened != null,
     );
   }
 
   /// Handle an incoming legacy MessageCodec message.
-  void _handleLegacyMessage(String deviceId, Uint8List payload) {
+  Future<void> _handleLegacyMessage(
+    String deviceId,
+    Uint8List payload,
+  ) async {
+    final opened = await _tryDecrypt(payload);
+    if (opened != null) {
+      // No envelope names the sender here, so the key is attributed to
+      // the resolved identity when there is one — and remembered
+      // against the address either way, so the reply can encrypt.
+      _transientKeys[deviceId] = opened.senderKey;
+      final identity = _resolveIdentity(deviceId);
+      if (identity != null) {
+        await _database.storePeerKeyAgreementPublicKey(
+          identityId: identity,
+          keyAgreementPublicKey:
+              IdentityRepository.bytesToHex(opened.senderKey).toLowerCase(),
+        );
+        _peersKnowingUs.add(identity);
+      }
+      payload = opened.frame;
+    }
+
     final receipt = ReceiptTag.decodeFrame(payload);
     if (receipt != null) {
-      _applyReceipt(receipt);
+      await _applyReceipt(receipt);
       return;
     }
 
-    final decoded = MessageCodec.decode(payload);
+    final announcement = KeyAnnouncement.decodeFrame(payload);
+    if (announcement != null) {
+      final identity = _resolveIdentity(deviceId);
+      if (identity == null) {
+        AppLogger.info(
+          'MessageTransport: dropping announcement from unknown $deviceId',
+        );
+        return;
+      }
+      await _applyAnnouncement(announcement, senderPeerId: identity);
+      return;
+    }
+
+    final DecodedMessage decoded;
+    try {
+      decoded = MessageCodec.decode(payload);
+    } catch (e) {
+      AppLogger.error('MessageTransport: undecodable legacy payload', e);
+      return;
+    }
 
     AppLogger.info(
       'MessageTransport: received legacy message from $deviceId, '
       'id=${decoded.externalMessageId}',
     );
 
-    _persistIncoming(peerKey: deviceId, fallbackDeviceId: deviceId, decoded: decoded);
+    await _persistIncoming(
+      peerKey: deviceId,
+      fallbackDeviceId: deviceId,
+      decoded: decoded,
+      isEncrypted: opened != null,
+    );
+  }
+
+  /// Peel the encryption layer off [payload], or null when there is
+  /// none for us to peel — no key loaded, not a frame, not ours.
+  Future<({Uint8List senderKey, Uint8List frame})?> _tryDecrypt(
+    Uint8List payload,
+  ) async {
+    final agreement = await _loadKeyAgreement();
+    if (agreement == null) return null;
+    return E2eeFrame.decrypt(localKeyPair: agreement, payload: payload);
+  }
+
+  /// Verify a key announcement and store the key it carries.
+  ///
+  /// The signature ties the announced key to the sender's Ed25519
+  /// identity; anything else — malformed, misattributed, forged — is
+  /// dropped without touching the database.
+  Future<void> _applyAnnouncement(
+    ({String keyHex, Uint8List signature}) announcement, {
+    required String senderPeerId,
+  }) async {
+    if (!RoutingValidators.isValidPeerId(senderPeerId)) {
+      AppLogger.warning(
+        'MessageTransport: announcement from non-identity $senderPeerId',
+      );
+      return;
+    }
+
+    final content = KeyAnnouncement.encode(
+      x25519Hex: announcement.keyHex,
+      signature: announcement.signature,
+    );
+    late final bool genuine;
+    try {
+      genuine = await KeyAnnouncement.verify(
+        content: content,
+        senderEdPublicKey: IdentityRepository.hexToBytes(senderPeerId),
+      );
+    } catch (_) {
+      genuine = false;
+    }
+    if (!genuine) {
+      AppLogger.warning(
+        'MessageTransport: forged announcement from '
+        '${senderPeerId.substring(0, 8)}… — dropped',
+      );
+      return;
+    }
+
+    await _database.storePeerKeyAgreementPublicKey(
+      identityId: senderPeerId,
+      keyAgreementPublicKey: announcement.keyHex.toLowerCase(),
+    );
+    AppLogger.info(
+      'MessageTransport: learned key-agreement key for '
+      '${senderPeerId.substring(0, 8)}…',
+    );
   }
 
   /// Raise our own messages to whatever a peer said about them.
@@ -623,6 +926,7 @@ class MessageTransport {
     required String peerKey,
     String? fallbackDeviceId,
     required DecodedMessage decoded,
+    bool isEncrypted = false,
   }) async {
     var conversation = await _database.getConversationByPeerDevice(peerKey);
 
@@ -664,6 +968,7 @@ class MessageTransport {
       conversationId: convId,
       content: decoded.content,
       externalMessageId: decoded.externalMessageId,
+      isEncrypted: isEncrypted,
     );
 
     if (msgId != null) {

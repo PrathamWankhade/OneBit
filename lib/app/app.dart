@@ -93,6 +93,12 @@ final messageTransportProvider = Provider<MessageTransport>((ref) {
   final resolver = ref.watch(bleIdentityResolverProvider);
   final meshRouter = ref.watch(meshRouterProvider);
 
+  // Encryption material comes from the identity, not the transport:
+  // the seed never leaves IdentityService except through these two
+  // closures, and both throw while no identity is loaded — which the
+  // transport reads as "send plaintext".
+  final identityService = ref.watch(identityServiceProvider);
+
   final transport = MessageTransport(
     bleService: bleService,
     database: db,
@@ -104,6 +110,8 @@ final messageTransportProvider = Provider<MessageTransport>((ref) {
     transmissionService: transmissionService,
     routeEvents: meshRouter.routesChanged,
     connectionEvents: connectionManager.connectionStream,
+    localKeyAgreement: identityService.keyAgreementKeyPair,
+    localSign: identityService.signBytes,
   );
   transport.startListening();
   ref.onDispose(() => transport.dispose());
