@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
@@ -11,6 +12,7 @@ import 'package:onebit/features/ble/ble_service.dart';
 import 'package:onebit/features/ble/ble_state.dart';
 import 'package:onebit/features/crypto/e2ee_frame.dart';
 import 'package:onebit/features/identity/identity_repository.dart';
+import 'package:onebit/features/protocol/attachment_segment.dart';
 import 'package:onebit/features/protocol/key_announcement.dart';
 import 'package:onebit/features/message/application/message_relay_service.dart';
 import 'package:onebit/features/message/application/message_transmission_service.dart';
@@ -353,6 +355,7 @@ void main() {
     MessageTransport buildTransport({
       bool? withRoute,
       Stream<void>? routeEvents,
+      AttachmentDirectory? attachmentDirectory,
     }) {
       // The group body runs once, so every test re-establishes the
       // fixture here; the outbox cases then bring peerC up by hand.
@@ -380,6 +383,7 @@ void main() {
         routeLookup: routeTo,
         transmissionService: transmission,
         routeEvents: routeEvents,
+        attachmentDirectory: attachmentDirectory,
       );
       built.startListening();
       return built;
@@ -822,6 +826,210 @@ void main() {
       expect(receipt!.kind, ReceiptKind.read);
       expect(receipt.messageIds, ['m_1', 'm_2', 'm_3']);
     });
+
+    group('attachments travel as manifest plus slices', () {
+      late Directory tempDir;
+
+      setUp(() async {
+        tempDir = await Directory.systemTemp.createTemp('onebit_seg_');
+      });
+
+      tearDown(() async {
+        // Windows may still hold a fresh file (indexer, antivirus)
+        // when the test ends; retry rather than flake on its handle.
+        for (var i = 0; i < 20; i++) {
+          try {
+            await tempDir.delete(recursive: true);
+            break;
+          } on FileSystemException {
+            await pumpEventQueue();
+          }
+        }
+      });
+
+      MessageTransport buildAttachmentTransport() => buildTransport(
+            attachmentDirectory: () async => tempDir,
+          );
+
+      /// Outbound frame payloads in send order, unwrapped from packets
+      /// and envelopes. Reassembles chunked sends, so a slice that
+      /// outgrew one packet still arrives here whole.
+      Future<List<Uint8List>> outboundFrames() async {
+        final captured =
+            verify(ble.sendReliable(captureAny, captureAny)).captured;
+        final reassembler = PacketChunkReassembler();
+        final frames = <Uint8List>[];
+        for (var i = 1; i < captured.length; i += 2) {
+          final packet = packetOf(captured[i]);
+          final whole = reassembler.accept(
+            captured[i - 1] as String,
+            packet.packetId,
+            Uint8List.fromList(packet.payload),
+          );
+          if (whole == null) continue;
+          frames.add(
+            whole.first == messageProtocolVersion
+                ? MessageEnvelopeCodec.decode(whole).payload
+                : whole,
+          );
+        }
+        return frames;
+      }
+
+      /// Feed one frame back down the legacy path, chunked as the
+      /// radio would chunk it.
+      void hearFrame(Uint8List frame, int packetId) {
+        final slices = splitPayload(frame);
+        var transferId = packetId * 100;
+        for (final slice in slices) {
+          inbound.add(ReliableDataReceived(
+            deviceId: deviceB,
+            payload: PacketCodec.encode(
+              OneBitPacket(
+                type: PacketType.message,
+                packetId: packetId,
+                payload: slice,
+              ),
+            ),
+            transferId: transferId++,
+          ));
+        }
+      }
+
+      Uint8List fileBytes() =>
+          Uint8List.fromList(List.generate(6000, (i) => i % 256));
+
+      /// Bounded wait for the reassembled file: dozens of packets and
+      /// isolate round-trips separate the last slice from the bytes on
+      /// disk, which is more drain than one bare pump guarantees. The
+      /// trailing pump lets the final database reads settle behind the
+      /// write they follow.
+      Future<void> settleFile(String name, int length) async {
+        final path = '${tempDir.path}/$name';
+        for (var i = 0; i < 200; i++) {
+          await pumpEventQueue();
+          final file = File(path);
+          if (await file.exists() && await file.length() == length) {
+            await pumpEventQueue();
+            return;
+          }
+        }
+        fail('attachment $name did not land whole');
+      }
+
+      test('slices reassemble into the file and stay out of the thread',
+          () async {
+        transport = buildAttachmentTransport();
+        final convId = await db.createConversationWithPeer('Peer B', deviceB);
+
+        final result = await transport!.sendAttachment(
+          peerDeviceId: deviceB,
+          conversationId: convId,
+          kind: 'image',
+          fileName: 'photo.jpg',
+          bytes: fileBytes(),
+        );
+        expect(result, TransferResult.delivered);
+
+        // One manifest plus three slices, in that order.
+        final frames = await outboundFrames();
+        expect(frames.length, 4);
+        final manifest = AttachmentManifest.parse(
+          MessageCodec.decode(frames.first).content,
+        );
+        expect(manifest, isNotNull);
+        expect(manifest!.kind, 'image');
+        expect(manifest.name, 'photo.jpg');
+        expect(manifest.count, 3);
+
+        for (var i = 0; i < frames.length; i++) {
+          hearFrame(frames[i], i + 1);
+        }
+        await settleFile('photo.jpg', 6000);
+
+        // The bytes land whole.
+        final written = await File('${tempDir.path}/photo.jpg').readAsBytes();
+        expect(written, fileBytes());
+
+        // Four rows went out, four came back: one visible manifest
+        // each way, three silent slices each way. A badge for
+        // machinery would be nonsense, and the list preview looks
+        // past the slices at the manifest.
+        final rows = await db.getMessages(convId);
+        expect(rows.length, 8);
+        final manifests =
+            rows.where((r) => !r.content.startsWith('[seg:')).toList();
+        expect(manifests.length, 2);
+        expect(
+          manifests.every((r) => r.content.startsWith('[image:photo.jpg:')),
+          isTrue,
+        );
+        expect(manifests.where((r) => r.isRead == 0).length, 1);
+        final slices =
+            rows.where((r) => r.content.startsWith('[seg:')).toList();
+        expect(slices.length, 6);
+        expect(slices.every((r) => r.isRead == 1), isTrue);
+
+        final digests = await db.watchConversationDigests().first;
+        expect(
+          digests[convId]!.preview,
+          startsWith('[image:photo.jpg:'),
+        );
+        expect(digests[convId]!.unread, 1);
+      });
+
+      test('out-of-order slices still complete', () async {
+        transport = buildAttachmentTransport();
+        final convId = await db.createConversationWithPeer('Peer B', deviceB);
+
+        await transport!.sendAttachment(
+          peerDeviceId: deviceB,
+          conversationId: convId,
+          kind: 'image',
+          fileName: 'photo.jpg',
+          bytes: fileBytes(),
+        );
+
+        final frames = await outboundFrames();
+        // Manifest first so the thread reads sanely, slices reversed.
+        hearFrame(frames.first, 1);
+        hearFrame(frames[3], 2);
+        hearFrame(frames[2], 3);
+        hearFrame(frames[1], 4);
+        await settleFile('photo.jpg', 6000);
+
+        final written = await File('${tempDir.path}/photo.jpg').readAsBytes();
+        expect(written, fileBytes());
+      });
+
+      test('a duplicate slice is ignored', () async {
+        transport = buildAttachmentTransport();
+        final convId = await db.createConversationWithPeer('Peer B', deviceB);
+
+        await transport!.sendAttachment(
+          peerDeviceId: deviceB,
+          conversationId: convId,
+          kind: 'image',
+          fileName: 'photo.jpg',
+          bytes: fileBytes(),
+        );
+
+        final frames = await outboundFrames();
+        for (var i = 0; i < frames.length; i++) {
+          hearFrame(frames[i], i + 1);
+        }
+        // Slice zero again: dedup drops it before reassembly, so the
+        // thread holds the four outbound rows and the four inbound
+        // ones — nothing more.
+        hearFrame(frames[1], 10);
+        await settleFile('photo.jpg', 6000);
+
+        final written = await File('${tempDir.path}/photo.jpg').readAsBytes();
+        expect(written, fileBytes());
+        final rows = await db.getMessages(convId);
+        expect(rows.length, 8);
+      });
+    });
   });
 
   group('MessageTransport end-to-end encryption', () {
@@ -1127,6 +1335,59 @@ void main() {
 
       expect(await db.peerKeyAgreementKey(peerEdHex), isNull);
       expect(await db.getConversationByPeerDevice(peerEdHex), isNull);
+    });
+
+    test('an attachment encrypts when the peer key is known', () async {
+      transport = buildKeyedTransport();
+      await db.storePeerKeyAgreementPublicKey(
+        identityId: peerEdHex,
+        keyAgreementPublicKey: hexOf(peerXBytes),
+      );
+      final convId = await db.createConversationWithPeer('Peer', peerEdHex);
+
+      final bytes =
+          Uint8List.fromList(List.generate(6000, (i) => i % 256));
+      final result = await transport!.sendAttachment(
+        peerDeviceId: peerEdHex,
+        conversationId: convId,
+        kind: 'image',
+        fileName: 'photo.jpg',
+        bytes: bytes,
+      );
+      expect(result, TransferResult.delivered);
+
+      // Manifest plus three slices, all encrypted, plus the one
+      // announcement the peer has not yet proven redundant.
+      final payloads = await outboundPayloads();
+      expect(payloads.length, 5);
+
+      final parts = <int, Uint8List>{};
+      var manifests = 0;
+      for (final payload in payloads) {
+        if (KeyAnnouncement.decodeFrame(payload) != null) continue;
+        final opened = await E2eeFrame.decrypt(
+          localKeyPair: peerX,
+          payload: payload,
+        );
+        expect(opened, isNotNull);
+        final content = MessageCodec.decode(opened!.frame).content;
+        final manifest = AttachmentManifest.parse(content);
+        if (manifest != null && !content.startsWith('[seg:')) {
+          manifests++;
+          expect(manifest.name, 'photo.jpg');
+        } else {
+          final seg = SegTag.parse(content)!;
+          parts[seg.index] = seg.bytes;
+        }
+      }
+
+      expect(manifests, 1);
+      expect(parts.length, 3);
+      final out = <int>[];
+      for (var i = 0; i < 3; i++) {
+        out.addAll(parts[i]!);
+      }
+      expect(out, bytes.toList());
     });
   });
 

@@ -33,6 +33,9 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Camera for QR code scanning. -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Microphone for voice notes. Requested at record time, and the
+         recorder refuses honestly when it is denied. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Reading releases and downloading an update. Android only grants
          this to the debug and profile source sets on its own, which is why
          the update check silently reported "could not verify" for anyone

@@ -334,7 +334,8 @@ class AppDatabase extends _$AppDatabase {
   /// text and how many inbound messages nobody has opened yet.
   ///
   /// One query rather than one per row, so a hundred chats do not turn
-  /// into two hundred round trips.
+  /// into two hundred round trips. Attachment slices are machinery, not
+  /// mail, so the preview looks past them at the newest human row.
   Stream<Map<int, ({String preview, int unread})>>
       watchConversationDigests() {
     return customSelect(
@@ -342,6 +343,7 @@ class AppDatabase extends _$AppDatabase {
       SELECT c.id AS conversation_id,
              (SELECT m.content FROM messages m
                WHERE m.conversation_id = c.id
+                 AND m.content NOT LIKE '[seg:%'
                ORDER BY m.id DESC LIMIT 1) AS preview,
              (SELECT COUNT(*) FROM messages m
                WHERE m.conversation_id = c.id
@@ -454,11 +456,16 @@ class AppDatabase extends _$AppDatabase {
   ///
   /// Returns the message ID, or null if a message with the same
   /// [externalMessageId] already exists (duplicate).
+  ///
+  /// [silent] is for protocol rows — attachment slices — that must
+  /// persist for reassembly without ever reading as mail: no badge,
+  /// no receipt owed, no preview.
   Future<int?> insertReceivedMessage({
     required int conversationId,
     required String content,
     required String externalMessageId,
     bool isEncrypted = false,
+    bool silent = false,
   }) async {
     // Deduplication: check if this external message ID already exists.
     final existing = await (select(messages)
@@ -473,7 +480,7 @@ class AppDatabase extends _$AppDatabase {
         content: content,
         status: const Value('received'),
         externalMessageId: Value(externalMessageId),
-        isRead: const Value(0),
+        isRead: Value(silent ? 1 : 0),
         isEncrypted: Value(isEncrypted ? 1 : 0),
         createdAt: DateTime.now(),
       ),
@@ -492,6 +499,18 @@ class AppDatabase extends _$AppDatabase {
           ..limit(1))
         .getSingleOrNull();
     return existing != null;
+  }
+
+  /// Every slice of one attachment held in [conversationId].
+  ///
+  /// Read back on each arrival so a restarted app resumes where the
+  /// radio left off instead of nursing half a file in memory.
+  Future<List<Message>> segmentsFor(int conversationId, String segId) {
+    return (select(messages)
+          ..where((t) =>
+              t.conversationId.equals(conversationId) &
+              t.content.like('[seg:$segId:%')))
+        .get();
   }
 
   // ── Local Identity operations ──

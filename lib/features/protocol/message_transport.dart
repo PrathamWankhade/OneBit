@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:cryptography/cryptography.dart';
@@ -16,6 +17,7 @@ import 'package:onebit/features/message/models/message_envelope_codec.dart';
 import 'package:onebit/features/message/models/message_id.dart';
 import 'package:onebit/features/message/models/message_state.dart';
 import 'package:onebit/features/message/models/onebit_message.dart';
+import 'package:onebit/features/protocol/attachment_segment.dart';
 import 'package:onebit/features/protocol/key_announcement.dart';
 import 'package:onebit/features/protocol/message_codec.dart';
 import 'package:onebit/features/protocol/onebit_packet.dart';
@@ -25,6 +27,7 @@ import 'package:onebit/features/protocol/receipt_tag.dart';
 import 'package:onebit/features/reliable/transfer.dart';
 import 'package:onebit/features/routing/route.dart';
 import 'package:onebit/features/routing/routing_validators.dart';
+import 'package:path_provider/path_provider.dart';
 
 /// Resolves a BLE device address to a peer's cryptographic identity.
 typedef DeviceToIdentity = String? Function(String deviceId);
@@ -41,6 +44,15 @@ typedef LocalKeyAgreement = Future<SimpleKeyPair> Function();
 
 /// Signs bytes with the local Ed25519 identity key.
 typedef LocalSigner = Future<Uint8List> Function(Uint8List message);
+
+/// Where received attachment files land. Overridable in tests, where
+/// the platform plugin has nothing to answer with.
+typedef AttachmentDirectory = Future<Directory> Function();
+
+/// The app documents directory: the same folder the sender's copy
+/// lives in and the thread's renderers read from.
+Future<Directory> _defaultAttachmentDirectory() =>
+    getApplicationDocumentsDirectory();
 
 /// Bridges the message database layer with the BLE transport stack.
 ///
@@ -86,6 +98,7 @@ class MessageTransport {
     this._connectionEvents,
     this._localKeyAgreement,
     this._localSign,
+    this._attachmentDirectory,
   });
 
   final BleService _bleService;
@@ -106,6 +119,12 @@ class MessageTransport {
   /// exactly as it used to.
   final LocalKeyAgreement? _localKeyAgreement;
   final LocalSigner? _localSign;
+
+  /// Where completed attachments are written. Null in production,
+  /// which uses the app documents directory — and in any test that
+  /// never completes one, where the platform plugin has nothing to
+  /// answer with.
+  final AttachmentDirectory? _attachmentDirectory;
 
   /// Our X25519 pair once loaded. Stable per identity, so one load
   /// serves the life of the transport.
@@ -248,6 +267,76 @@ class MessageTransport {
   /// get through after all. It is also the name a receipt runs back on:
   /// the peer reports `m_7`, and `_localRowIdFor` turns that into row 7.
   String _externalIdFor(int messageId) => 'm_$messageId';
+
+  /// Send a file as a visible manifest plus hidden slices.
+  ///
+  /// Every row travels the ordinary path — queued, encrypted when the
+  /// peer's key is held, receipted, retried by the outbox — so a file
+  /// needs no second transport. The manifest renders in the thread;
+  /// the slices never do. Returns the worst outcome across the parts:
+  /// anything not `delivered` stays queued for a later flush.
+  Future<TransferResult> sendAttachment({
+    required String peerDeviceId,
+    required int conversationId,
+    required String kind,
+    required String fileName,
+    required Uint8List bytes,
+    List<String> extra = const [],
+  }) async {
+    if (bytes.isEmpty) {
+      AppLogger.error('MessageTransport: refusing empty attachment');
+      return TransferResult.failed;
+    }
+
+    final name = AttachmentManifest.sanitize(fileName);
+    final segId = _newSegId();
+    late final List<String> slices;
+    try {
+      slices = SegTag.encodeSlices(segId: segId, fileName: name, bytes: bytes);
+    } catch (e) {
+      AppLogger.error('MessageTransport: attachment does not fit frames', e);
+      return TransferResult.failed;
+    }
+
+    Future<TransferResult> sendRow(String content) async {
+      final localMsgId = await _database.insertMessage(
+        conversationId: conversationId,
+        content: content,
+        status: 'queued',
+      );
+      return _deliver(
+        peerDeviceId: peerDeviceId,
+        conversationId: conversationId,
+        localMsgId: localMsgId,
+        content: content,
+      );
+    }
+
+    var result = await sendRow(
+      AttachmentManifest.encode(
+        kind: kind,
+        fileName: name,
+        segId: segId,
+        count: slices.length,
+        extra: extra,
+      ),
+    );
+    for (final slice in slices) {
+      final leg = await sendRow(slice);
+      if (leg != TransferResult.delivered) result = leg;
+    }
+    return result;
+  }
+
+  /// Sixteen hex chars of channel randomness naming one attachment.
+  String _newSegId() {
+    final random = math.Random.secure();
+    final bytes = Uint8List(8);
+    for (var i = 0; i < bytes.length; i++) {
+      bytes[i] = random.nextInt(256);
+    }
+    return IdentityRepository.bytesToHex(bytes);
+  }
 
   /// Push one already-stored message out to its peer.
   ///
@@ -682,6 +771,20 @@ class MessageTransport {
       return;
     }
 
+    // A slice is machinery, not mail: persist it silently and complete
+    // the file when its parts are all present.
+    final envelopeSegment = SegTag.parse(decoded.content);
+    if (envelopeSegment != null) {
+      await _handleSegment(
+        peerKey: envelope.sourcePeerId,
+        fallbackDeviceId: _deviceForPeer?.call(envelope.sourcePeerId),
+        decoded: decoded,
+        segment: envelopeSegment,
+        isEncrypted: opened != null,
+      );
+      return;
+    }
+
     await _persistIncoming(
       peerKey: envelope.sourcePeerId,
       fallbackDeviceId: _deviceForPeer?.call(envelope.sourcePeerId),
@@ -737,6 +840,18 @@ class MessageTransport {
       decoded = MessageCodec.decode(payload);
     } catch (e) {
       AppLogger.error('MessageTransport: undecodable legacy payload', e);
+      return;
+    }
+
+    final legacySegment = SegTag.parse(decoded.content);
+    if (legacySegment != null) {
+      await _handleSegment(
+        peerKey: deviceId,
+        fallbackDeviceId: deviceId,
+        decoded: decoded,
+        segment: legacySegment,
+        isEncrypted: opened != null,
+      );
       return;
     }
 
@@ -928,8 +1043,58 @@ class MessageTransport {
     required DecodedMessage decoded,
     bool isEncrypted = false,
   }) async {
+    final conversation = await _conversationForPeer(
+      peerKey: peerKey,
+      fallbackDeviceId: fallbackDeviceId,
+    );
+
+    final convId = conversation.id;
+    final msgId = await _database.insertReceivedMessage(
+      conversationId: convId,
+      content: decoded.content,
+      externalMessageId: decoded.externalMessageId,
+      isEncrypted: isEncrypted,
+    );
+
+    if (msgId != null) {
+      AppLogger.info(
+        'MessageTransport: persisted message $msgId in conversation $convId',
+      );
+      // A duplicate never gets here, so the sender hears this exactly
+      // once per message it managed to land.
+      _sendReceipt(
+        peerKey: peerKey,
+        fallbackDeviceId: fallbackDeviceId,
+        kind: ReceiptKind.delivered,
+        messageIds: [decoded.externalMessageId],
+      );
+    } else {
+      AppLogger.info(
+        'MessageTransport: duplicate message ${decoded.externalMessageId} '
+        'ignored',
+      );
+    }
+  }
+
+  /// The conversation for an inbound frame, creating and re-keying
+  /// exactly as a message would — segments share the thread, not a
+  /// side channel.
+  Future<Conversation> _conversationForPeer({
+    required String peerKey,
+    String? fallbackDeviceId,
+  }) async {
     var conversation = await _database.getConversationByPeerDevice(peerKey);
 
+    // A legacy address whose identity we know belongs to the
+    // identity's thread: without this, a conversation re-keyed on
+    // send would fork a duplicate the moment a direct-link frame
+    // arrived from the same device.
+    if (conversation == null) {
+      final identity = _resolveIdentity(peerKey);
+      if (identity != null && identity != peerKey) {
+        conversation = await _database.getConversationByPeerDevice(identity);
+      }
+    }
     if (conversation == null) {
       final legacyKey =
           (fallbackDeviceId != null && fallbackDeviceId != peerKey)
@@ -963,31 +1128,80 @@ class MessageTransport {
       );
     }
 
-    final convId = conversation!.id;
-    final msgId = await _database.insertReceivedMessage(
-      conversationId: convId,
+    return conversation!;
+  }
+
+  /// A slice of an attachment: persist silently, and complete the
+  /// file the moment its parts are all present.
+  ///
+  /// Slices earn no delivered receipt — one per slice would flood the
+  /// channel for a large file, and the link layer already ACKs every
+  /// packet. The manifest's receipt is the arrival signal the sender
+  /// watches. Completion reads back from the database, so a restart
+  /// resumes where the radio left off instead of nursing half a file
+  /// in memory.
+  Future<void> _handleSegment({
+    required String peerKey,
+    String? fallbackDeviceId,
+    required DecodedMessage decoded,
+    required ({
+      String id,
+      int index,
+      int count,
+      String name,
+      Uint8List bytes
+    }) segment,
+    required bool isEncrypted,
+  }) async {
+    final conversation = await _conversationForPeer(
+      peerKey: peerKey,
+      fallbackDeviceId: fallbackDeviceId,
+    );
+
+    await _database.insertReceivedMessage(
+      conversationId: conversation.id,
       content: decoded.content,
       externalMessageId: decoded.externalMessageId,
       isEncrypted: isEncrypted,
+      silent: true,
     );
 
-    if (msgId != null) {
+    final parts =
+        await _database.segmentsFor(conversation.id, segment.id);
+    final byIndex = <int, Uint8List>{};
+    for (final row in parts) {
+      final parsed = SegTag.parse(row.content);
+      if (parsed == null ||
+          parsed.count != segment.count ||
+          parsed.name != segment.name) {
+        continue;
+      }
+      byIndex.putIfAbsent(parsed.index, () => parsed.bytes);
+    }
+    if (byIndex.length < segment.count) return;
+
+    var total = 0;
+    for (var i = 0; i < segment.count; i++) {
+      total += byIndex[i]!.length;
+    }
+    final file = Uint8List(total);
+    var offset = 0;
+    for (var i = 0; i < segment.count; i++) {
+      final slice = byIndex[i]!;
+      file.setAll(offset, slice);
+      offset += slice.length;
+    }
+
+    try {
+      final dir = await (_attachmentDirectory ?? _defaultAttachmentDirectory)();
+      await File('${dir.path}/${segment.name}')
+          .writeAsBytes(file, flush: true);
       AppLogger.info(
-        'MessageTransport: persisted message $msgId in conversation $convId',
+        'MessageTransport: attachment ${segment.name} complete '
+        '(${file.length} bytes)',
       );
-      // A duplicate never gets here, so the sender hears this exactly
-      // once per message it managed to land.
-      _sendReceipt(
-        peerKey: peerKey,
-        fallbackDeviceId: fallbackDeviceId,
-        kind: ReceiptKind.delivered,
-        messageIds: [decoded.externalMessageId],
-      );
-    } else {
-      AppLogger.info(
-        'MessageTransport: duplicate message ${decoded.externalMessageId} '
-        'ignored',
-      );
+    } catch (e) {
+      AppLogger.error('MessageTransport: could not write attachment', e);
     }
   }
 

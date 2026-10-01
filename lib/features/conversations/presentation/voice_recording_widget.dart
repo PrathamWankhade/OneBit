@@ -1,11 +1,19 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:onebit/core/theme/app_theme.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 
-/// WhatsApp-style voice recording UI.
+/// WhatsApp-style voice recording UI, backed by a real microphone.
 ///
-/// Shows waveform, timer, slide-to-cancel, pause/resume, delete, send.
+/// Bars track the live amplitude stream; the timer tracks the
+/// recorder, not a guess. Recording stops itself at [maxDuration —
+/// anything longer would not fit the transport — and the finished
+/// file goes out through [onSend]. When the microphone is unavailable
+/// the widget says so instead of performing a recording.
 class VoiceRecordingWidget extends StatefulWidget {
   const VoiceRecordingWidget({
     required this.onCancel,
@@ -14,7 +22,13 @@ class VoiceRecordingWidget extends StatefulWidget {
   });
 
   final VoidCallback onCancel;
-  final ValueChanged<Duration> onSend;
+
+  /// The finished recording and how long it runs.
+  final void Function(File file, Duration duration) onSend;
+
+  /// Longest note we will send: past this the slices outnumber
+  /// patience and the radio. Recording stops itself here.
+  static const Duration maxDuration = Duration(seconds: 60);
 
   @override
   State<VoiceRecordingWidget> createState() => _VoiceRecordingWidgetState();
@@ -23,11 +37,22 @@ class VoiceRecordingWidget extends StatefulWidget {
 class _VoiceRecordingWidgetState extends State<VoiceRecordingWidget>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
-  late Timer _timer;
+  Timer? _timer;
+  StreamSubscription<Amplitude>? _amplitudeSub;
+  final AudioRecorder _recorder = AudioRecorder();
+
   Duration _elapsed = Duration.zero;
   bool _isPaused = false;
   bool _isCancelled = false;
-  late List<double> _waveformData;
+  bool _sending = false;
+
+  /// Microphone refused or recorder failed: an explanation, not a show.
+  String? _error;
+
+  /// Last twenty live levels, oldest first. Flat until the first
+  /// amplitude event — silence drawn as silence.
+  final List<double> _levels = List.filled(20, 0.05);
+
   double _slideOffset = 0;
 
   @override
@@ -37,42 +62,97 @@ class _VoiceRecordingWidgetState extends State<VoiceRecordingWidget>
       vsync: this,
       duration: const Duration(milliseconds: 100),
     )..repeat();
-    _timer = Timer.periodic(const Duration(seconds: 1), _onTick);
-    _waveformData = _generateWaveform();
+    _begin();
   }
 
   @override
   void dispose() {
-    _timer.cancel();
+    _timer?.cancel();
+    _amplitudeSub?.cancel();
     _controller.dispose();
+    _recorder.dispose();
     super.dispose();
   }
 
-  void _onTick(Timer timer) {
-    if (!_isPaused && mounted) {
-      setState(() {
-        _elapsed += const Duration(seconds: 1);
-        _waveformData = _generateWaveform();
-      });
+  Future<void> _begin() async {
+    final permitted = await _recorder.hasPermission();
+    if (!permitted) {
+      if (mounted) {
+        setState(() => _error = 'Microphone unavailable — nothing recorded.');
+      }
+      return;
     }
+
+    final dir = await getTemporaryDirectory();
+    final path =
+        '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+    try {
+      await _recorder.start(
+        const RecordConfig(
+          encoder: AudioEncoder.aacLc,
+          bitRate: 32000,
+          sampleRate: 22050,
+          numChannels: 1,
+        ),
+        path: path,
+      );
+    } catch (_) {
+      if (mounted) {
+        setState(() => _error = 'Could not start recording.');
+      }
+      return;
+    }
+
+    _timer = Timer.periodic(const Duration(seconds: 1), _onTick);
+    _amplitudeSub = _recorder
+        .onAmplitudeChanged(const Duration(milliseconds: 200))
+        .listen(_onAmplitude);
   }
 
-  List<double> _generateWaveform() {
-    final random = Random(_elapsed.inSeconds);
-    return List.generate(20, (_) => 0.2 + random.nextDouble() * 0.8);
+  void _onTick(Timer timer) {
+    if (_isPaused || !mounted) return;
+    setState(() => _elapsed += const Duration(seconds: 1));
+    if (_elapsed >= VoiceRecordingWidget.maxDuration) _send();
+  }
+
+  void _onAmplitude(Amplitude amplitude) {
+    if (_isPaused || !mounted) return;
+    // dBFS below −60 is room tone; 0 is full scale.
+    final level = ((amplitude.current + 60) / 60).clamp(0.0, 1.0);
+    setState(() {
+      _levels.removeAt(0);
+      _levels.add(0.05 + 0.95 * level);
+    });
   }
 
   void _togglePause() {
+    if (_error != null) return;
     setState(() => _isPaused = !_isPaused);
+    if (_isPaused) {
+      _recorder.pause();
+    } else {
+      _recorder.resume();
+    }
   }
 
   void _cancel() {
     setState(() => _isCancelled = true);
+    _recorder.cancel().ignore();
     widget.onCancel();
   }
 
-  void _send() {
-    widget.onSend(_elapsed);
+  Future<void> _send() async {
+    if (_sending || _error != null) return;
+    setState(() => _sending = true);
+    _timer?.cancel();
+    await _amplitudeSub?.cancel();
+
+    final path = await _recorder.stop();
+    if (path == null) {
+      if (mounted) setState(() => _error = 'Recording was empty.');
+      return;
+    }
+    widget.onSend(File(path), _elapsed);
   }
 
   String _formatDuration(Duration d) {
@@ -84,6 +164,48 @@ class _VoiceRecordingWidgetState extends State<VoiceRecordingWidget>
   @override
   Widget build(BuildContext context) {
     if (_isCancelled) return const SizedBox.shrink();
+
+    if (_error != null) {
+      return Container(
+        height: 80,
+        padding: EdgeInsets.only(
+          left: 8,
+          right: 8,
+          top: 8,
+          bottom: MediaQuery.of(context).padding.bottom + 8,
+        ),
+        decoration: const BoxDecoration(
+          color: AppTheme.bgBase,
+          border: Border(
+            top: BorderSide(color: AppTheme.divider, width: 0.5),
+          ),
+        ),
+        child: Row(
+          children: [
+            GestureDetector(
+              onTap: _cancel,
+              child: Container(
+                width: 44,
+                height: 44,
+                decoration: const BoxDecoration(
+                  color: AppTheme.red,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.delete_outline,
+                  size: 22,
+                  color: AppTheme.brightWhite,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(_error!, style: AppTheme.bodyMedium),
+            ),
+          ],
+        ),
+      );
+    }
 
     return Container(
       height: 80,
@@ -156,7 +278,7 @@ class _VoiceRecordingWidgetState extends State<VoiceRecordingWidget>
                       // Waveform
                       Expanded(
                         child: _LiveWaveform(
-                          data: _waveformData,
+                          data: _levels,
                           controller: _controller,
                         ),
                       ),

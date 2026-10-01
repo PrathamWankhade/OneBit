@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,15 +9,18 @@ import 'package:path_provider/path_provider.dart';
 import 'package:onebit/app/app.dart';
 import 'package:onebit/core/theme/app_theme.dart';
 import 'package:onebit/data/database/app_database.dart';
+import 'package:onebit/features/conversations/models/attachment_prep.dart';
 import 'package:onebit/features/conversations/models/reply_tag.dart';
 import 'package:onebit/features/conversations/presentation/attachment_sheet.dart';
 import 'package:onebit/features/conversations/presentation/message_bubble.dart';
+import 'package:onebit/features/conversations/presentation/voice_message.dart';
 import 'package:onebit/features/conversations/presentation/voice_recording_widget.dart';
 import 'package:onebit/features/ble/ble_providers.dart';
 import 'package:onebit/features/ble/ble_state.dart';
 import 'package:onebit/features/conversations/providers/conversation_providers.dart';
 import 'package:onebit/features/identity/identity_models.dart';
 import 'package:onebit/features/identity/identity_providers.dart';
+import 'package:onebit/features/protocol/attachment_segment.dart';
 import 'package:onebit/features/reliable/transfer.dart';
 import 'package:onebit/features/routing/routing_validators.dart';
 import 'package:onebit/features/ui/components/components.dart';
@@ -201,14 +205,15 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         final picker = ImagePicker();
         final image = await picker.pickImage(source: ImageSource.camera);
         if (image != null && mounted) {
-          await _sendFileMessage(File(image.path), 'image');
+          await _sendImageMessage(image);
         }
       case AttachmentType.gallery:
         final picker = ImagePicker();
         final images = await picker.pickMultiImage();
         if (images.isNotEmpty && mounted) {
           for (final image in images) {
-            await _sendFileMessage(File(image.path), 'image');
+            if (!mounted) break;
+            await _sendImageMessage(image);
           }
         }
       case AttachmentType.document:
@@ -222,19 +227,112 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     }
   }
 
-  Future<void> _showDocumentPicker() async {
-    if (!mounted) return;
+  /// Send a structured text marker: location, contact, poll.
+  ///
+  /// These carry no bytes — the renderers already display them — so
+  /// they travel the text path instead of pretending to be files.
+  Future<void> _sendMarker(String content) async {
+    final db = ref.read(databaseProvider);
+    final transport = ref.read(messageTransportProvider);
 
-    final result = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) => _DocumentPickerSheet(),
-    );
+    final conversation = await db.getConversation(widget.conversationId);
+    final peerDeviceId = conversation?.peerDeviceId;
 
-    if (result != null && mounted) {
-      await _sendFileMessage(File(result), 'file');
+    if (peerDeviceId != null) {
+      final result = await transport.sendMessage(
+        peerDeviceId: peerDeviceId,
+        conversationId: widget.conversationId,
+        content: content,
+      );
+      if (!mounted) return;
+      if (result != TransferResult.delivered) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to send')),
+        );
+      }
+    } else {
+      await db.insertMessage(
+        conversationId: widget.conversationId,
+        content: content,
+      );
     }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+      }
+    });
+  }
+
+  /// Send a picked document's bytes in slices. Refuses past the cap:
+  /// a document cannot be shrunk, so an oversize one is declined
+  /// instead of dribbled out over an hour of radio time.
+  Future<void> _sendDocMessage(PlatformFile picked) async {
+    const maxDocBytes = 200 * 1024;
+
+    final bytes = picked.bytes ??
+        (picked.path != null ? await File(picked.path!).readAsBytes() : null);
+    if (bytes == null || bytes.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not read that file')),
+        );
+      }
+      return;
+    }
+    if (bytes.length > maxDocBytes) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('File too large to send — 200 KB max'),
+          ),
+        );
+      }
+      return;
+    }
+
+    final db = ref.read(databaseProvider);
+    final transport = ref.read(messageTransportProvider);
+    final conversation = await db.getConversation(widget.conversationId);
+    final peerDeviceId = conversation?.peerDeviceId;
+
+    final name = AttachmentManifest.sanitize(picked.name);
+    final appDir = await getApplicationDocumentsDirectory();
+    await File('${appDir.path}/$name')
+        .writeAsBytes(Uint8List.fromList(bytes), flush: true);
+
+    if (peerDeviceId != null) {
+      final result = await transport.sendAttachment(
+        peerDeviceId: peerDeviceId,
+        conversationId: widget.conversationId,
+        kind: 'file',
+        fileName: name,
+        bytes: Uint8List.fromList(bytes),
+      );
+      if (!mounted) return;
+      if (result != TransferResult.delivered) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('File queued — sends on reconnect')),
+        );
+      }
+    } else {
+      await db.insertMessage(
+        conversationId: widget.conversationId,
+        content: '[file:$name]',
+      );
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+      }
+    });
+  }
+
+  Future<void> _showDocumentPicker() async {
+    final result = await FilePicker.pickFiles(withData: true);
+    if (result == null || result.files.isEmpty || !mounted) return;
+    await _sendDocMessage(result.files.single);
   }
 
   Future<void> _showLocationPicker() async {
@@ -248,7 +346,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     );
 
     if (result != null && mounted) {
-      await _sendFileMessage(File(result), 'location');
+      await _sendMarker('[location:$result]');
     }
   }
 
@@ -263,7 +361,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     );
 
     if (result != null && result.isNotEmpty && mounted) {
-      await _sendFileMessage(File(result), 'contact');
+      await _sendMarker('[contact:$result]');
     }
   }
 
@@ -278,42 +376,115 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     );
 
     if (result != null && mounted) {
-      await _sendFileMessage(File(result), 'poll');
+      await _sendMarker('[poll:$result]');
     }
   }
 
-  Future<void> _sendFileMessage(File file, String type) async {
+  /// Shrink a picked picture, keep our own copy for the thread, and
+  /// send the bytes in slices. Refuses with a reason instead of a
+  /// crash when the picture is unreadable or stays too big.
+  /// Send a finished recording in slices. Refuses with a reason when
+  /// the file outgrew the transport instead of dribbling it out over
+  /// an hour of radio time.
+  Future<void> _sendVoiceMessage(File file, Duration duration) async {
+    const maxVoiceBytes = 300 * 1024;
+
+    final bytes = await file.readAsBytes();
+    if (bytes.length > maxVoiceBytes) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Voice note too long to send — keep it shorter'),
+          ),
+        );
+      }
+      return;
+    }
+
     final db = ref.read(databaseProvider);
     final transport = ref.read(messageTransportProvider);
-
     final conversation = await db.getConversation(widget.conversationId);
+    final peerDeviceId = conversation?.peerDeviceId;
 
-    // Copy file to persistent app storage
     final appDir = await getApplicationDocumentsDirectory();
-    final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final ext = file.path.split('.').last;
-    final savedFile = await file.copy('${appDir.path}/${type}_$timestamp.$ext');
-    final savedName = savedFile.path.split('/').last;
+    final name =
+        'voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+    await File('${appDir.path}/$name').writeAsBytes(bytes, flush: true);
 
-    final content = '[$type:$savedName]';
-
-    if (conversation != null && conversation.peerDeviceId != null) {
-      final result = await transport.sendMessage(
-        peerDeviceId: conversation.peerDeviceId!,
+    if (peerDeviceId != null) {
+      final result = await transport.sendAttachment(
+        peerDeviceId: peerDeviceId,
         conversationId: widget.conversationId,
-        content: content,
+        kind: 'voice',
+        fileName: name,
+        bytes: bytes,
+        extra: ['${duration.inMilliseconds}'],
       );
-
       if (!mounted) return;
       if (result != TransferResult.delivered) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to send')),
+          const SnackBar(content: Text('Voice note queued — sends on reconnect')),
         );
       }
     } else {
       await db.insertMessage(
         conversationId: widget.conversationId,
-        content: content,
+        content: '[voice:$name]',
+      );
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+      }
+    });
+  }
+
+  Future<void> _sendImageMessage(XFile picked) async {
+    final db = ref.read(databaseProvider);
+    final transport = ref.read(messageTransportProvider);
+
+    final raw = await picked.readAsBytes();
+    final prepared = AttachmentPrep.prepareImage(raw);
+    if (prepared == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('That image is unreadable or too large to send'),
+          ),
+        );
+      }
+      return;
+    }
+
+    final conversation = await db.getConversation(widget.conversationId);
+    final peerDeviceId = conversation?.peerDeviceId;
+
+    final appDir = await getApplicationDocumentsDirectory();
+    final name =
+        'image_${DateTime.now().millisecondsSinceEpoch}.jpg';
+    await File('${appDir.path}/$name').writeAsBytes(prepared, flush: true);
+
+    if (peerDeviceId != null) {
+      final result = await transport.sendAttachment(
+        peerDeviceId: peerDeviceId,
+        conversationId: widget.conversationId,
+        kind: 'image',
+        fileName: name,
+        bytes: prepared,
+      );
+      if (!mounted) return;
+      if (result != TransferResult.delivered) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Image queued — sends on reconnect')),
+        );
+      }
+    } else {
+      // No peer yet: the thread keeps a local marker, exactly like an
+      // unsent text. It renders from our copy and goes nowhere.
+      await db.insertMessage(
+        conversationId: widget.conversationId,
+        content: '[image:$name]',
       );
     }
 
@@ -405,14 +576,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
               if (_isRecording)
                 VoiceRecordingWidget(
                   onCancel: () => setState(() => _isRecording = false),
-                  onSend: (duration) {
+                  onSend: (file, duration) {
                     setState(() => _isRecording = false);
-                    // TODO: Send voice message with duration
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Voice message (${duration.inSeconds}s) ready to send'),
-                      ),
-                    );
+                    _sendVoiceMessage(file, duration);
                   },
                 )
               else
@@ -714,17 +880,22 @@ class _MessageList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Attachment slices are machinery: they persist for reassembly but
+    // never render. The manifest row is what the thread shows.
+    final visible = messages
+        .where((msg) => !(msg.content as String).startsWith(SegTag.prefix))
+        .toList();
     return ListView.builder(
       controller: scrollController,
       padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: messages.length,
+      itemCount: visible.length,
       itemBuilder: (context, index) {
-        final msg = messages[index];
+        final msg = visible[index];
         final isReceived = msg.status == 'received';
 
         final showDateDivider = index == 0 ||
             !_sameDay(
-              messages[index - 1].createdAt as DateTime,
+              visible[index - 1].createdAt as DateTime,
               msg.createdAt as DateTime,
             );
 
@@ -760,7 +931,11 @@ class _MessageList extends StatelessWidget {
     final content = reply?.text ?? raw;
 
     if (content.startsWith('[image:') && content.endsWith(']')) {
-      final fileName = content.substring(7, content.length - 1);
+      // New manifests name the transfer; legacy ones name a local
+      // file. Either way the renderer gets a bare file name — the
+      // transfer id is routing, not display.
+      final manifest = AttachmentManifest.parse(content);
+      final fileName = manifest?.name ?? content.substring(7, content.length - 1);
       return _ImageMessage(
         fileName: fileName,
         timestamp: timestamp,
@@ -770,13 +945,30 @@ class _MessageList extends StatelessWidget {
     }
 
     if (content.startsWith('[file:') && content.endsWith(']')) {
-      final fileName = content.substring(6, content.length - 1);
+      final manifest = AttachmentManifest.parse(content);
+      final fileName = manifest?.name ?? content.substring(6, content.length - 1);
       return _FileMessage(
         fileName: fileName,
         timestamp: timestamp,
         isReceived: isReceived,
         status: status,
       );
+    }
+
+    if (content.startsWith('[voice:') && content.endsWith(']')) {
+      final manifest = AttachmentManifest.parse(content);
+      if (manifest != null) {
+        final durationMs = manifest.extra.isNotEmpty
+            ? int.tryParse(manifest.extra.first) ?? 0
+            : 0;
+        return VoiceMessage(
+          fileName: manifest.name,
+          timestamp: timestamp,
+          isReceived: isReceived,
+          status: status,
+          durationMs: durationMs,
+        );
+      }
     }
 
     if (content.startsWith('[location:') && content.endsWith(']')) {
@@ -1498,12 +1690,14 @@ class _ContactMessage extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          contactName,
+                          contactName.split('|').first,
                           style: AppTheme.bodySmall.copyWith(color: AppTheme.textPrimary),
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          'Contact',
+                          contactName.contains('|')
+                              ? contactName.split('|').sublist(1).join('|')
+                              : 'Contact',
                           style: AppTheme.caption.copyWith(color: AppTheme.textTertiary),
                         ),
                       ],
@@ -1647,49 +1841,6 @@ class _PollMessage extends StatelessWidget {
 
 // ── Picker Sheets ──────────────────────────────────────────────────
 
-class _DocumentPickerSheet extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: AppTheme.bgElevated,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      child: SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 36,
-              height: 4,
-              margin: const EdgeInsets.only(top: 8),
-              decoration: BoxDecoration(
-                color: AppTheme.bgMuted,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.insert_drive_file, color: AppTheme.blue),
-              title: const Text('Browse files'),
-              onTap: () {
-                Navigator.pop(context, 'document');
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.audiotrack, color: AppTheme.green),
-              title: const Text('Audio file'),
-              onTap: () {
-                Navigator.pop(context, 'audio');
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _LocationPickerSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
@@ -1829,7 +1980,11 @@ class _ContactPickerSheetState extends State<_ContactPickerSheet> {
                   onPressed: () {
                     final name = _nameController.text.trim();
                     if (name.isNotEmpty) {
-                      Navigator.pop(context, name);
+                      final phone = _phoneController.text.trim();
+                      Navigator.pop(
+                        context,
+                        phone.isEmpty ? name : '$name|$phone',
+                      );
                     }
                   },
                   child: const Text('Share Contact'),
