@@ -66,8 +66,31 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     );
   }
 
-  void _markConversationRead() {
-    ref.read(databaseProvider).markConversationRead(widget.conversationId);
+  /// Put the badge out, and tell the peer what was behind it.
+  ///
+  /// The ids are gathered before the flag goes down — after it there is
+  /// no way to tell what was unread — and only `sent`/`delivered` rows
+  /// count, since those are the ones the peer could actually be holding.
+  /// Gathering them first is also what makes this safe to call again
+  /// when a message lands while the screen is open: by then the earlier
+  /// ones read `read`, so nothing is acknowledged twice.
+  Future<void> _markConversationRead() async {
+    final db = ref.read(databaseProvider);
+    final transport = ref.read(messageTransportProvider);
+
+    final pending = await db.readPendingIds(widget.conversationId);
+    await db.markConversationRead(widget.conversationId);
+    if (pending.isEmpty) return;
+
+    final conversation = await db.getConversation(widget.conversationId);
+    final peerKey = conversation?.peerDeviceId;
+    if (peerKey == null || !mounted) return;
+
+    await transport.ackRead(
+      peerKey: peerKey,
+      fallbackDeviceId: peerKey,
+      messageIds: pending,
+    );
   }
 
   @override

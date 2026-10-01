@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:onebit/core/logging/app_logger.dart';
@@ -16,6 +17,7 @@ import 'package:onebit/features/protocol/message_codec.dart';
 import 'package:onebit/features/protocol/onebit_packet.dart';
 import 'package:onebit/features/protocol/packet_chunking.dart';
 import 'package:onebit/features/protocol/packet_codec.dart';
+import 'package:onebit/features/protocol/receipt_tag.dart';
 import 'package:onebit/features/reliable/transfer.dart';
 import 'package:onebit/features/routing/route.dart';
 import 'package:onebit/features/routing/routing_validators.dart';
@@ -206,7 +208,8 @@ class MessageTransport {
   /// Derived from the primary key rather than stored, so a retry carries
   /// exactly the id the receiver saw the first time — that is what lets a
   /// receiving conversation drop the duplicate if the first attempt did
-  /// get through after all.
+  /// get through after all. It is also the name a receipt runs back on:
+  /// the peer reports `m_7`, and `_localRowIdFor` turns that into row 7.
   String _externalIdFor(int messageId) => 'm_$messageId';
 
   /// Push one already-stored message out to its peer.
@@ -463,6 +466,14 @@ class MessageTransport {
 
   /// Persist an envelope addressed to the local peer.
   Future<void> _deliverEnvelope(MessageEnvelope envelope) async {
+    // A receipt arrives before the message decoder ever sees it — the
+    // frame ends in a byte that decode would call trailing.
+    final receipt = ReceiptTag.decodeFrame(envelope.payload);
+    if (receipt != null) {
+      await _applyReceipt(receipt);
+      return;
+    }
+
     final DecodedMessage decoded;
     try {
       decoded = MessageCodec.decode(envelope.payload);
@@ -480,6 +491,12 @@ class MessageTransport {
 
   /// Handle an incoming legacy MessageCodec message.
   void _handleLegacyMessage(String deviceId, Uint8List payload) {
+    final receipt = ReceiptTag.decodeFrame(payload);
+    if (receipt != null) {
+      _applyReceipt(receipt);
+      return;
+    }
+
     final decoded = MessageCodec.decode(payload);
 
     AppLogger.info(
@@ -488,6 +505,112 @@ class MessageTransport {
     );
 
     _persistIncoming(peerKey: deviceId, fallbackDeviceId: deviceId, decoded: decoded);
+  }
+
+  /// Raise our own messages to whatever a peer said about them.
+  ///
+  /// A receipt never produces one in return — that is what stops the two
+  /// ends from handing them to each other forever.
+  Future<void> _applyReceipt(
+    ({ReceiptKind kind, List<String> messageIds}) receipt,
+  ) async {
+    var applied = 0;
+    for (final wireId in receipt.messageIds) {
+      final messageId = _localRowIdFor(wireId);
+      if (messageId == null) {
+        AppLogger.warning(
+          'MessageTransport: receipt names $wireId, which is not one '
+          'of ours',
+        );
+        continue;
+      }
+      await _database.ackMessage(messageId, receipt.kind.name);
+      applied++;
+    }
+    AppLogger.info(
+      'MessageTransport: peer marked $applied message(s) ${receipt.kind.name}',
+    );
+  }
+
+  /// The local row a wire id was built from, or null when it is not ours.
+  ///
+  /// We name our messages `m_<row id>` and never store that name here —
+  /// the receiving end keeps it as *its* external id, which is exactly
+  /// what lets it drop a retry that landed after all. The mapping only
+  /// ever runs this way round, so nothing on the way in can collide with
+  /// a name a peer chose for a message of its own.
+  static int? _localRowIdFor(String wireId) {
+    if (!wireId.startsWith('m_')) return null;
+    return int.tryParse(wireId.substring(2));
+  }
+
+  /// Tell the peer that everything in [messageIds] has been read.
+  ///
+  /// Sent when the conversation is opened, once, for what was waiting
+  /// there — so a chat read three times asks once. One frame carries
+  /// [idsPerFrame] ids; a chat with more unread than that sends the rest
+  /// in follow-up frames instead of dropping them for want of room.
+  Future<void> ackRead({
+    required String peerKey,
+    String? fallbackDeviceId,
+    required List<String> messageIds,
+  }) async {
+    const idsPerFrame = 200;
+    for (var start = 0; start < messageIds.length; start += idsPerFrame) {
+      final end = math.min(start + idsPerFrame, messageIds.length);
+      await _sendReceipt(
+        peerKey: peerKey,
+        fallbackDeviceId: fallbackDeviceId,
+        kind: ReceiptKind.read,
+        messageIds: messageIds.sublist(start, end),
+      );
+    }
+  }
+
+  /// Push a receipt out along the same two roads a message takes.
+  ///
+  /// Mesh first, because the sender may be several hops away and only
+  /// ever told us its identity; straight to the device second. A receipt
+  /// has no row of its own, so none of the status bookkeeping that rides
+  /// along with a message applies to it.
+  Future<void> _sendReceipt({
+    required String peerKey,
+    String? fallbackDeviceId,
+    required ReceiptKind kind,
+    required List<String> messageIds,
+  }) async {
+    if (messageIds.isEmpty || _localPeerId.isEmpty) return;
+
+    final Uint8List frame;
+    try {
+      frame = ReceiptTag.encodeFrame(
+        kind: kind,
+        messageIds: messageIds,
+        timestampMs: DateTime.now().toUtc().millisecondsSinceEpoch,
+      );
+    } catch (e) {
+      AppLogger.error('MessageTransport: could not encode receipt', e);
+      return;
+    }
+
+    final peerIdentity = _resolveIdentity(peerKey);
+    if (peerIdentity != null &&
+        await _sendViaMesh(peerIdentity, frame) != null) {
+      return;
+    }
+
+    final deviceId = _resolveDevice(peerKey, peerIdentity) ?? fallbackDeviceId;
+    if (deviceId == null) {
+      AppLogger.info('MessageTransport: no route for a ${kind.name} receipt');
+      return;
+    }
+
+    await sendInPackets(
+      frame,
+      type: PacketType.message,
+      packetId: _nextPacketId(),
+      send: (bytes) => _bleService.sendReliable(deviceId, bytes),
+    );
   }
 
   /// Persist a decoded incoming message against the right conversation.
@@ -546,6 +669,14 @@ class MessageTransport {
     if (msgId != null) {
       AppLogger.info(
         'MessageTransport: persisted message $msgId in conversation $convId',
+      );
+      // A duplicate never gets here, so the sender hears this exactly
+      // once per message it managed to land.
+      _sendReceipt(
+        peerKey: peerKey,
+        fallbackDeviceId: fallbackDeviceId,
+        kind: ReceiptKind.delivered,
+        messageIds: [decoded.externalMessageId],
       );
     } else {
       AppLogger.info(

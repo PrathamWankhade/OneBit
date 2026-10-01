@@ -278,5 +278,98 @@ void main() {
       expect(digests[conversationId]!.preview, 'only mine');
       expect(digests[otherId]!.preview, '');
     });
+
+    test('a receipt raises a message and never lowers it', () async {
+      await db.insertMessage(
+        conversationId: conversationId,
+        content: 'out',
+        status: 'sent',
+      );
+      final row = (await db.getMessages(conversationId)).single;
+
+      await db.ackMessage(row.id, 'delivered');
+      expect((await db.getMessages(conversationId)).single.status, 'delivered');
+
+      await db.ackMessage(row.id, 'read');
+      expect((await db.getMessages(conversationId)).single.status, 'read');
+
+      // A duplicate delivery arriving behind the read leaves it alone.
+      await db.ackMessage(row.id, 'delivered');
+      expect((await db.getMessages(conversationId)).single.status, 'read');
+    });
+
+    test('a send that failed is never dressed up by a receipt', () async {
+      await db.insertMessage(
+        conversationId: conversationId,
+        content: 'out',
+        status: 'failed',
+      );
+      final row = (await db.getMessages(conversationId)).single;
+
+      await db.ackMessage(row.id, 'read');
+      expect((await db.getMessages(conversationId)).single.status, 'failed');
+    });
+
+    test('a receipt reaches something that is still waiting', () async {
+      await db.insertMessage(
+        conversationId: conversationId,
+        content: 'out',
+        status: 'queued',
+      );
+      final row = (await db.getMessages(conversationId)).single;
+
+      await db.ackMessage(row.id, 'delivered');
+      expect((await db.getMessages(conversationId)).single.status, 'delivered');
+    });
+
+    test('a row that never left cannot be acknowledged', () async {
+      await db.insertMessage(conversationId: conversationId, content: 'mine');
+      final row = (await db.getMessages(conversationId)).single;
+
+      // Status is what decides, and `local` is not one a receipt is
+      // allowed to move.
+      await db.ackMessage(row.id, 'read');
+      expect((await db.getMessages(conversationId)).single.status, 'local');
+    });
+
+    test('what a read receipt is owed names the peer, not us', () async {
+      await db.insertReceivedMessage(
+        conversationId: conversationId,
+        content: 'theirs',
+        externalMessageId: 'm_9',
+      );
+      await db.insertMessage(
+        conversationId: conversationId,
+        content: 'mine',
+        status: 'sent',
+      );
+
+      expect(await db.readPendingIds(conversationId), ['m_9']);
+
+      await db.markConversationRead(conversationId);
+      expect(await db.readPendingIds(conversationId), isEmpty);
+    });
+
+    test('every unread message waits its turn, and only once', () async {
+      await db.insertReceivedMessage(
+        conversationId: conversationId,
+        content: 'one',
+        externalMessageId: 'm_1',
+      );
+      await db.insertReceivedMessage(
+        conversationId: conversationId,
+        content: 'two',
+        externalMessageId: 'm_2',
+      );
+
+      expect(await db.readPendingIds(conversationId), ['m_1', 'm_2']);
+
+      await db.markConversationRead(conversationId);
+      expect(await db.readPendingIds(conversationId), isEmpty);
+
+      // A chat with nothing in it owes nothing.
+      final empty = await db.createConversation('Empty');
+      expect(await db.readPendingIds(empty), isEmpty);
+    });
   });
 }

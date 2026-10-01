@@ -345,6 +345,41 @@ class AppDatabase extends _$AppDatabase {
         .write(const MessagesCompanion(isRead: Value(1)));
   }
 
+  /// Raise a message's status to what its peer reported.
+  ///
+  /// [messageId] is the row, not a wire id — the caller runs the wire id
+  /// back to a row first. [status] is `delivered` or `read`. Receipts
+  /// arrive out of order and can be repeated, so a late one must never
+  /// walk a message backwards: `read` only lands on something still
+  /// waiting to be read, `delivered` only on something that had not
+  /// arrived yet, and neither overrides a send that failed outright.
+  Future<void> ackMessage(int messageId, String status) {
+    final allowed = status == 'read'
+        ? const ['queued', 'sent', 'delivered']
+        : const ['queued', 'sent'];
+    return (update(messages)
+          ..where((t) => t.id.equals(messageId) & t.status.isIn(allowed)))
+        .write(MessagesCompanion(status: Value(status)));
+  }
+
+  /// The wire ids a read receipt is still owed for in [conversationId].
+  ///
+  /// These are the ids carried on rows that *arrived from* the peer.
+  /// Acknowledging our own outbound rows would be telling the other end
+  /// something about messages it was the one that sent.
+  ///
+  /// `is_read = 0` is what keeps it honest: [markConversationRead] clears
+  /// it, so opening a chat a second time finds nothing left to say.
+  Future<List<String>> readPendingIds(int conversationId) {
+    final query = select(messages)
+      ..where((t) =>
+          t.conversationId.equals(conversationId) &
+          t.isRead.equals(0) &
+          t.status.equals('received') &
+          t.externalMessageId.isNotNull());
+    return query.map((row) => row.externalMessageId!).get();
+  }
+
   Future<int> deleteMessage(int id) {
     return (delete(messages)..where((t) => t.id.equals(id))).go();
   }

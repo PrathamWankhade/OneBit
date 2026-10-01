@@ -18,6 +18,7 @@ import 'package:onebit/features/protocol/message_codec.dart';
 import 'package:onebit/features/protocol/onebit_packet.dart';
 import 'package:onebit/features/protocol/packet_chunking.dart';
 import 'package:onebit/features/protocol/packet_codec.dart';
+import 'package:onebit/features/protocol/receipt_tag.dart';
 import 'package:onebit/features/protocol/message_transport.dart';
 import 'package:onebit/features/reliable/transfer.dart';
 import 'package:onebit/features/routing/mesh_router.dart';
@@ -694,6 +695,128 @@ void main() {
       final conversation = await db.getConversationByPeerDevice(peerB);
       final messages = await db.getMessages(conversation!.id);
       expect(messages, hasLength(1));
+    });
+
+    test('a receipt from the peer raises the message it names', () async {
+      transport = buildTransport();
+      final convId = await db.createConversationWithPeer('Peer B', deviceB);
+
+      final result = await transport!.sendMessage(
+        peerDeviceId: deviceB,
+        conversationId: convId,
+        content: 'did you get this?',
+      );
+      expect(result, TransferResult.delivered);
+
+      final sent = (await db.getMessages(convId)).single;
+      expect(sent.status, 'sent');
+
+      Future<void> hearAbout(ReceiptKind kind) async {
+        inbound.add(ReliableDataReceived(
+          deviceId: deviceB,
+          payload: PacketCodec.encode(OneBitPacket(
+            type: PacketType.message,
+            packetId: 1,
+            payload: MessageEnvelopeCodec.encode(MessageEnvelope(
+              protocolVersion: messageProtocolVersion,
+              messageId: MessageId(),
+              sourcePeerId: peerB,
+              destinationPeerId: localId,
+              payload: ReceiptTag.encodeFrame(
+                kind: kind,
+                messageIds: ['m_${sent.id}'],
+                timestampMs: 1700000000000,
+              ),
+            )),
+          )),
+          transferId: 1,
+        ));
+        await pumpEventQueue();
+      }
+
+      await hearAbout(ReceiptKind.delivered);
+      expect((await db.getMessages(convId)).single.status, 'delivered');
+
+      await hearAbout(ReceiptKind.read);
+      expect((await db.getMessages(convId)).single.status, 'read');
+
+      // A receipt is not a message: the thread still holds the one
+      // thing that was said, and no second conversation appeared.
+      expect(await db.getMessages(convId), hasLength(1));
+      expect(await db.getConversationByPeerDevice(deviceB), isNull);
+    });
+
+    test('a message that lands earns a receipt on its way home', () async {
+      transport = buildTransport();
+
+      inbound.add(ReliableDataReceived(
+        deviceId: deviceB,
+        payload: PacketCodec.encode(OneBitPacket(
+          type: PacketType.message,
+          packetId: 1,
+          payload: MessageEnvelopeCodec.encode(MessageEnvelope(
+            protocolVersion: messageProtocolVersion,
+            messageId: MessageId(),
+            sourcePeerId: peerB,
+            destinationPeerId: localId,
+            payload: MessageCodec.encode(
+              externalMessageId: 'm_7',
+              content: 'are you there?',
+              timestampMs: 1700000000000,
+            ),
+          )),
+        )),
+        transferId: 1,
+      ));
+      await pumpEventQueue();
+
+      final conversation = await db.getConversationByPeerDevice(peerB);
+      final messages = await db.getMessages(conversation!.id);
+      expect(messages.single.content, 'are you there?');
+      expect(messages.single.isRead, 0);
+
+      // The only thing this exchange put back on the wire is the
+      // receipt — and it travels either wrapped in an envelope (when
+      // the mesh can carry it) or straight down the direct link.
+      final captured =
+          verify(ble.sendReliable(captureAny, captureAny)).captured;
+      expect(captured, hasLength(2));
+
+      final payload = Uint8List.fromList(packetOf(captured.last).payload);
+      final frame = payload.first == messageProtocolVersion
+          ? MessageEnvelopeCodec.decode(payload).payload
+          : payload;
+      final receipt = ReceiptTag.decodeFrame(frame);
+
+      expect(receipt, isNotNull);
+      expect(receipt!.kind, ReceiptKind.delivered);
+      expect(receipt.messageIds, ['m_7']);
+    });
+
+    test('ackRead puts the ids it was given on the wire', () async {
+      transport = buildTransport();
+
+      await transport!.ackRead(
+        peerKey: peerB,
+        fallbackDeviceId: deviceB,
+        messageIds: ['m_1', 'm_2', 'm_3'],
+      );
+      await pumpEventQueue();
+
+      // Small enough to be one packet, so one call.
+      final captured =
+          verify(ble.sendReliable(captureAny, captureAny)).captured;
+      expect(captured, hasLength(2));
+
+      final payload = Uint8List.fromList(packetOf(captured.last).payload);
+      final frame = payload.first == messageProtocolVersion
+          ? MessageEnvelopeCodec.decode(payload).payload
+          : payload;
+      final receipt = ReceiptTag.decodeFrame(frame);
+
+      expect(receipt, isNotNull);
+      expect(receipt!.kind, ReceiptKind.read);
+      expect(receipt.messageIds, ['m_1', 'm_2', 'm_3']);
     });
   });
 
