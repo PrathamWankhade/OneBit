@@ -169,7 +169,7 @@ void main() {
 
   group('Schema', () {
     test('schema version is 12', () {
-      expect(db.schemaVersion, 12);
+      expect(db.schemaVersion, 13);
     });
   });
 

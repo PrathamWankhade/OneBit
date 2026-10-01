@@ -97,8 +97,11 @@ class IdentityService {
     final algorithm = Ed25519();
     _keyPair = await algorithm.newKeyPairFromSeed(privateKeyBytes);
 
-    // Verify consistency: reconstructed public key must match stored public key
-    final reconstructedPublic = await _keyPair!.extract();
+    // Verify consistency: reconstructed public key must match stored public key.
+    //
+    // extractPublicKey — not extract().bytes, which is the private seed —
+    // is the only thing that yields the public half here.
+    final reconstructedPublic = await _keyPair!.extractPublicKey();
     final reconstructedHex = IdentityRepository.bytesToHex(
       Uint8List.fromList(reconstructedPublic.bytes),
     );
@@ -133,9 +136,11 @@ class IdentityService {
     // Generate Ed25519 key pair
     final algorithm = Ed25519();
     final keyPair = await algorithm.newKeyPair();
-    final publicKey = await keyPair.extract();
+    final publicKey = await keyPair.extractPublicKey();
 
-    // Get raw public key bytes
+    // Get raw public key bytes. This must come from extractPublicKey:
+    // SimpleKeyPair.extract().bytes is the *private seed*, and hexing it
+    // here is what used to publish the secret as the identity id.
     final publicKeyBytes = Uint8List.fromList(publicKey.bytes);
 
     // Get raw private key bytes for secure storage

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:onebit/features/crypto/ed25519_keys.dart';
 import 'package:onebit/features/identity/identity_fingerprint.dart';
 import 'package:onebit/features/identity/identity_models.dart';
 import 'package:onebit/features/identity/identity_repository.dart';
@@ -151,9 +152,13 @@ ImportResult importPublicIdentity(
     throw ImportError('publicKey must be a string');
   }
 
-  // Validate format version
+  // Validate format version. Legacy payloads are accepted because the
+  // peer on the other end may not have updated yet — they are turned
+  // into real public keys by resolvePublicIdentity before anyone stores
+  // them.
   final version = json['formatVersion'] as int;
-  if (version != identityFormatVersion) {
+  if (version != identityFormatVersion &&
+      version != legacyIdentityFormatVersion) {
     throw ImportError('Unsupported format version: $version');
   }
 
@@ -205,6 +210,57 @@ ImportResult importPublicIdentity(
   return ImportResult(
     identity: public,
     isLocalIdentity: isLocal,
+  );
+}
+
+/// Bring an imported identity up to the current format.
+///
+/// A legacy payload carries the peer's Ed25519 *private seed* in the
+/// `publicKey` field — the build that wrote it hex-encoded the wrong
+/// half of the key pair. Storing it as it stands would put somebody's
+/// secret on disk, so it is resolved to the public key it corresponds
+/// to, and the fingerprint is recomputed over that key: what a user
+/// compares has to describe what ends up stored.
+///
+/// A current-format payload comes back untouched.
+Future<PublicIdentity> resolvePublicIdentity(PublicIdentity identity) async {
+  if (identity.formatVersion != legacyIdentityFormatVersion) return identity;
+
+  final publicKeyHex = await ed25519PublicKeyHex(identity.publicKeyHex);
+  if (publicKeyHex == null) {
+    throw ImportError('publicKey is not a 32-byte Ed25519 key');
+  }
+
+  return PublicIdentity(
+    formatVersion: identityFormatVersion,
+    identityType: identity.identityType,
+    publicKeyHex: publicKeyHex,
+    displayName: identity.displayName,
+    fingerprint: await computeFingerprint(
+      IdentityRepository.hexToBytes(publicKeyHex),
+    ),
+  );
+}
+
+/// [importPublicIdentity] followed by [resolvePublicIdentity] — the shape
+/// to reach for whenever the result will be stored or shown.
+///
+/// Both halves are needed: parsing alone can hand back a seed, and
+/// resolving alone has nothing to resolve.
+Future<ImportResult> importAndResolvePublicIdentity(
+  String jsonString, {
+  String? localPublicKeyHex,
+}) async {
+  final imported = importPublicIdentity(
+    jsonString,
+    localPublicKeyHex: localPublicKeyHex,
+  );
+  final identity = await resolvePublicIdentity(imported.identity);
+
+  return ImportResult(
+    identity: identity,
+    isLocalIdentity: localPublicKeyHex != null &&
+        identity.publicKeyHex.toLowerCase() == localPublicKeyHex.toLowerCase(),
   );
 }
 

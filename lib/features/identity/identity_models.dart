@@ -1,7 +1,17 @@
 import 'dart:typed_data';
 
 /// Identity format version — bumped when serialization format changes.
-const int identityFormatVersion = 1;
+///
+/// Version 2 is the first one whose `publicKey` field actually holds a
+/// public key. Version 1 hex-encoded the Ed25519 *private seed* there
+/// instead, which is why the two versions are not interchangeable.
+const int identityFormatVersion = 2;
+
+/// The only earlier version that ever shipped, still accepted on import.
+///
+/// Reading one without resolving it to a public key first would hand a
+/// seed to whoever stores it, so that resolution step is not optional.
+const int legacyIdentityFormatVersion = 1;
 
 /// Protocol version — incremented when wire protocol changes.
 const int protocolVersion = 1;

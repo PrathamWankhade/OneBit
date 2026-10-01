@@ -53,7 +53,7 @@ class _IdentityQrScannerViewState
     super.dispose();
   }
 
-  void _onDetect(BarcodeCapture capture) {
+  Future<void> _onDetect(BarcodeCapture capture) async {
     if (_hasDetected) return;
 
     for (final barcode in capture.barcodes) {
@@ -67,11 +67,16 @@ class _IdentityQrScannerViewState
 
       try {
         final localKeyHex = ref.read(identityServiceProvider).identityId;
-        final result = importPublicIdentity(
+        // Resolve, not just parse: a payload from a build that has not
+        // updated yet carries the peer's private seed where the public
+        // key belongs, and neither the fingerprint below nor the peer
+        // record may ever see that value.
+        final result = await importAndResolvePublicIdentity(
           raw,
           localPublicKeyHex: localKeyHex,
         );
 
+        if (!mounted) return;
         setState(() {
           _hasDetected = true;
           _detectedIdentity = result.identity;

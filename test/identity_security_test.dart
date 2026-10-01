@@ -518,7 +518,10 @@ void main() {
           publicKeyBytes: originalKey,
         ),
       );
-      when(mockKeyStore.read()).thenAnswer((_) async => originalKey);
+      // Simulate restart: the keystore holds the seed, not the public key.
+      final seedBytes =
+          Uint8List.fromList((await service.keyPair!.extract()).bytes);
+      when(mockKeyStore.read()).thenAnswer((_) async => seedBytes);
 
       final loaded = await service2.initialize();
       expect(loaded, isTrue);
@@ -533,7 +536,7 @@ void main() {
       // Use a real Ed25519 key pair
       final algorithm = Ed25519();
       final kp = await algorithm.newKeyPair();
-      final pub = await kp.extract();
+      final pub = await kp.extractPublicKey();
       final priv = await kp.extract();
       final pubBytes = Uint8List.fromList(pub.bytes);
       final privBytes = Uint8List.fromList(priv.bytes);
@@ -836,7 +839,7 @@ void main() {
   group('I4.11 — Private key never in export', () {
     test('exportPublicIdentity never includes private key', () async {
       final keyPair = await Ed25519().newKeyPair();
-      final pub = await keyPair.extract();
+      final pub = await keyPair.extractPublicKey();
       final pubBytes = Uint8List.fromList(pub.bytes);
       final pubHex = IdentityRepository.bytesToHex(pubBytes);
 

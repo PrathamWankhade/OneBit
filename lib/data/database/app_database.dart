@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:onebit/core/logging/app_logger.dart';
+import 'package:onebit/data/database/identity_key_migration.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -98,7 +99,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.test(DatabaseConnection super.e);
 
   @override
-  int get schemaVersion => 12;
+  int get schemaVersion => 13;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -215,6 +216,13 @@ class AppDatabase extends _$AppDatabase {
                 'NOT NULL DEFAULT 1',
               );
             }
+          }
+          if (from < 13) {
+            // Identity key shape. Earlier builds hex-encoded the Ed25519
+            // private seed into identity_id/public_key; rewrite those to
+            // the public keys they correspond to so the secret stops
+            // being stored — and broadcast — as the identity.
+            await migrateIdentityIdsToPublicKeys(this);
           }
         },
         beforeOpen: (details) async {

@@ -44,13 +44,17 @@ class KeyMaterial {
   }
 
   /// Get the local X25519 public key bytes (32 bytes).
+  ///
+  /// Derived from the key pair's public half. Reading
+  /// `keyPair.extract().bytes` here would hand back the private seed —
+  /// the same mistake that once made the Ed25519 identity id a secret.
   static Future<Uint8List> getLocalPublicKey({
     required Uint8List ed25519Seed,
   }) async {
     final keyPair = await deriveLocalKeyAgreementKey(
       ed25519Seed: ed25519Seed,
     );
-    final publicKey = await keyPair.extract();
+    final publicKey = await keyPair.extractPublicKey();
     return Uint8List.fromList(publicKey.bytes);
   }
 

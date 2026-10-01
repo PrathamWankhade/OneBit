@@ -78,8 +78,8 @@ void main() {
   });
 
   group('Identity constants', () {
-    test('identityFormatVersion is 1', () {
-      expect(identityFormatVersion, 1);
+    test('identityFormatVersion is 2', () {
+      expect(identityFormatVersion, 2);
     });
 
     test('protocolVersion is 1', () {
@@ -133,7 +133,7 @@ void main() {
       // Generate real key pair to get valid bytes
       final algorithm = Ed25519();
       final keyPair = await algorithm.newKeyPair();
-      final publicKey = await keyPair.extract();
+      final publicKey = await keyPair.extractPublicKey();
       final privateKey = await keyPair.extract();
       final publicKeyBytes = Uint8List.fromList(publicKey.bytes);
       final privateKeyBytes = Uint8List.fromList(privateKey.bytes);
@@ -161,7 +161,7 @@ void main() {
 
     test('throws PrivateKeyStoreException when private key is missing', () async {
       final keyPair = await Ed25519().newKeyPair();
-      final publicKey = await keyPair.extract();
+      final publicKey = await keyPair.extractPublicKey();
       final publicKeyBytes = Uint8List.fromList(publicKey.bytes);
       final identityId = IdentityRepository.bytesToHex(publicKeyBytes);
 
@@ -184,7 +184,7 @@ void main() {
 
     test('throws PrivateKeyStoreException on storage read failure', () async {
       final keyPair = await Ed25519().newKeyPair();
-      final publicKey = await keyPair.extract();
+      final publicKey = await keyPair.extractPublicKey();
       final publicKeyBytes = Uint8List.fromList(publicKey.bytes);
       final identityId = IdentityRepository.bytesToHex(publicKeyBytes);
 
@@ -211,7 +211,7 @@ void main() {
       // Generate a real key pair
       final algorithm = Ed25519();
       final keyPair = await algorithm.newKeyPair();
-      final publicKey = await keyPair.extract();
+      final publicKey = await keyPair.extractPublicKey();
       final privateKey = await keyPair.extract();
 
       final publicKeyBytes = Uint8List.fromList(publicKey.bytes);
@@ -235,7 +235,7 @@ void main() {
       expect(result, isTrue);
       expect(service.keyPair, isNotNull);
       // Verify the loaded key pair produces the same public key
-      final loadedPublicKey = await service.keyPair!.extract();
+      final loadedPublicKey = await service.keyPair!.extractPublicKey();
       expect(loadedPublicKey.bytes, publicKeyBytes);
     });
   });
@@ -320,7 +320,11 @@ void main() {
       final identity1 = await service.createIdentity('Alice');
       final keyBytes1 = Uint8List.fromList(identity1.publicKeyBytes!);
 
-      // Simulate restart - create new service instance
+      // Simulate restart - create new service instance. The keystore
+      // holds the seed, not the public key.
+      final seedBytes =
+          Uint8List.fromList((await service.keyPair!.extract()).bytes);
+      when(mockKeyStore.read()).thenAnswer((_) async => seedBytes);
       final service2 = IdentityService(mockRepo, mockKeyStore);
       when(mockRepo.getLocalIdentity()).thenAnswer(
         (_) async => IdentityInfo(
@@ -331,7 +335,6 @@ void main() {
           publicKeyBytes: keyBytes1,
         ),
       );
-      when(mockKeyStore.read()).thenAnswer((_) async => keyBytes1);
 
       final loaded = await service2.initialize();
 
@@ -522,7 +525,7 @@ void main() {
     test('throws IdentityCorruptionException for wrong-length private key',
         () async {
       final keyPair = await Ed25519().newKeyPair();
-      final publicKey = await keyPair.extract();
+      final publicKey = await keyPair.extractPublicKey();
       final publicKeyBytes = Uint8List.fromList(publicKey.bytes);
       final identityId = IdentityRepository.bytesToHex(publicKeyBytes);
 
@@ -586,7 +589,7 @@ void main() {
       // Simulate: create identity, then restart app
       final algorithm = Ed25519();
       final originalKeyPair = await algorithm.newKeyPair();
-      final originalPublicKey = await originalKeyPair.extract();
+      final originalPublicKey = await originalKeyPair.extractPublicKey();
       final originalPrivateKey = await originalKeyPair.extract();
 
       final publicKeyBytes = Uint8List.fromList(originalPublicKey.bytes);
@@ -610,7 +613,7 @@ void main() {
       expect(service.keyPair, isNotNull);
 
       // Verify the loaded key pair matches the original
-      final loadedKey = await service.keyPair!.extract();
+      final loadedKey = await service.keyPair!.extractPublicKey();
       expect(loadedKey.bytes, publicKeyBytes);
     });
 
@@ -713,7 +716,7 @@ void main() {
 
     test('initialize with identity is idempotent', () async {
       final keyPair = await Ed25519().newKeyPair();
-      final publicKey = await keyPair.extract();
+      final publicKey = await keyPair.extractPublicKey();
       final privateKey = await keyPair.extract();
       final publicKeyBytes = Uint8List.fromList(publicKey.bytes);
       final privateKeyBytes = Uint8List.fromList(privateKey.bytes);
@@ -775,7 +778,7 @@ void main() {
 
     test('identity persists across service instance re-creation', () async {
       final keyPair = await Ed25519().newKeyPair();
-      final publicKey = await keyPair.extract();
+      final publicKey = await keyPair.extractPublicKey();
       final privateKey = await keyPair.extract();
       final publicKeyBytes = Uint8List.fromList(publicKey.bytes);
       final privateKeyBytes = Uint8List.fromList(privateKey.bytes);
@@ -812,7 +815,7 @@ void main() {
         'corrupted secure storage (wrong key length) throws '
         'IdentityCorruptionException', () async {
       final keyPair = await Ed25519().newKeyPair();
-      final publicKey = await keyPair.extract();
+      final publicKey = await keyPair.extractPublicKey();
       final publicKeyBytes = Uint8List.fromList(publicKey.bytes);
       final identityId = IdentityRepository.bytesToHex(publicKeyBytes);
 
@@ -840,7 +843,7 @@ void main() {
         'corrupted secure storage (all zeros) throws '
         'IdentityCorruptionException', () async {
       final keyPair = await Ed25519().newKeyPair();
-      final publicKey = await keyPair.extract();
+      final publicKey = await keyPair.extractPublicKey();
       final publicKeyBytes = Uint8List.fromList(publicKey.bytes);
       final identityId = IdentityRepository.bytesToHex(publicKeyBytes);
 

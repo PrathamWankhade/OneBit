@@ -440,7 +440,7 @@ void main() {
       final db = createTestDb();
       // The current schema carries the trust columns and
       // lastSeenBleAddress alongside the read flag.
-      expect(db.schemaVersion, 12);
+      expect(db.schemaVersion, 13);
 
       // Verify trust columns exist by inserting a peer and checking.
       await db.upsertPeerIdentity(

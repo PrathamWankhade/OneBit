@@ -88,7 +88,7 @@ void main() {
       final qrPayload = await exportPublicIdentity(identityA);
       expect(qrPayload, isNotEmpty);
       final decodedPayload = jsonDecode(qrPayload) as Map<String, dynamic>;
-      expect(decodedPayload['formatVersion'], 1);
+      expect(decodedPayload['formatVersion'], identityFormatVersion);
       expect(decodedPayload['identityType'], 'ed25519');
       expect(decodedPayload['publicKey'], identityA.identityId);
 
