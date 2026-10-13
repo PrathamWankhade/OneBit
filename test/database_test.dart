@@ -260,8 +260,103 @@ void main() {
   });
 
   group('Schema', () {
-    test('schema version is 12', () {
-      expect(db.schemaVersion, 14);
+    test('schema version is 15', () {
+      expect(db.schemaVersion, 15);
+    });
+  });
+
+  group('I9.12.a the seen-set outlives the row it marks', () {
+    test('an id stays seen after its message row is gone', () async {
+      final convId = await db.createConversation('Chat');
+      final first = await db.insertReceivedMessage(
+        conversationId: convId,
+        content: 'hello',
+        externalMessageId: 'm_1',
+      );
+      expect(first, isNotNull);
+
+      // The row disappears the way rows do: time passing (the TTL
+      // sweeper) or the conversation going.
+      await db.deleteMessages(convId);
+
+      // A replay of the same envelope is still a duplicate — it must
+      // not land as new mail all over again.
+      final replay = await db.insertReceivedMessage(
+        conversationId: convId,
+        content: 'hello again',
+        externalMessageId: 'm_1',
+      );
+      expect(replay, isNull);
+      expect(await db.getMessages(convId), isEmpty);
+      expect(await db.messageExists('m_1'), isTrue);
+    });
+
+    test('a fresh id is remembered on arrival, and re-sighting it does not '
+        'grow the set', () async {
+      final convId = await db.createConversation('Chat');
+      await db.insertReceivedMessage(
+        conversationId: convId,
+        content: 'hi',
+        externalMessageId: 'm_2',
+      );
+      expect(await db.seenMessageId('m_2'), isTrue);
+      expect(await db.seenIdCount(), 1);
+
+      await db.insertReceivedMessage(
+        conversationId: convId,
+        content: 'hi again',
+        externalMessageId: 'm_2',
+      );
+      expect(await db.seenIdCount(), 1);
+    });
+
+    test('a message of your own is not a sighting', () async {
+      final convId = await db.createConversation('Chat');
+      await db.insertMessage(conversationId: convId, content: 'mine');
+      expect(await db.seenIdCount(), 0);
+    });
+
+    test('the set sheds its oldest ids once it reaches the cap', () async {
+      final small = AppDatabase.test(
+        DatabaseConnection(NativeDatabase.memory()),
+        seenIdsCap: 3,
+      );
+      addTearDown(small.close);
+
+      final convId = await small.createConversation('Chat');
+      for (final id in ['a', 'b', 'c', 'd']) {
+        await small.insertReceivedMessage(
+          conversationId: convId,
+          content: 'msg $id',
+          externalMessageId: id,
+        );
+      }
+
+      // The cap holds…
+      expect(await small.seenIdCount(), 3);
+
+      // …and the rows age away the way rows do, leaving only the
+      // seen-set between a replay and the thread.
+      await small.deleteMessages(convId);
+
+      // The oldest sighting fell off, so a replay of that id reads as
+      // new again — the documented cost of a bound…
+      final replay = await small.insertReceivedMessage(
+        conversationId: convId,
+        content: 'msg a again',
+        externalMessageId: 'a',
+      );
+      expect(replay, isNotNull);
+
+      // …while a recent id is still deduped.
+      expect(
+        await small.insertReceivedMessage(
+          conversationId: convId,
+          content: 'msg d again',
+          externalMessageId: 'd',
+        ),
+        isNull,
+      );
     });
   });
 

@@ -98,16 +98,57 @@ class LocalIdentity extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+/// Wire ids this device has already accepted, independent of the
+/// messages they arrived in (I9.12.a).
+///
+/// The messages table used to be the only memory of a duplicate, so
+/// a row that TTL-expired took its id's history with it: the same
+/// envelope arriving after that read as new mail all over again.
+/// These rows outlive the messages they mark. [seq] orders them by
+/// arrival, and [seenMessageIds] sheds the oldest first when the set
+/// outgrows its bound — the oldest ids are the least likely to still
+/// be in flight anywhere.
+class SeenMessageIds extends Table {
+  IntColumn get seq => integer().autoIncrement()();
+
+  /// The external message id, as it appeared on the wire.
+  TextColumn get externalMessageId => text().unique()();
+
+  /// When this device first accepted the id.
+  DateTimeColumn get seenAt => dateTime()();
+}
+
 @DriftDatabase(
-  tables: [Settings, Conversations, Messages, PeerIdentities, LocalIdentity],
+  tables: [
+    Settings,
+    Conversations,
+    Messages,
+    PeerIdentities,
+    LocalIdentity,
+    SeenMessageIds,
+  ],
 )
 class AppDatabase extends _$AppDatabase {
-  AppDatabase() : super(_openConnection());
+  AppDatabase() : seenIdsCap = defaultMaxSeenIds, super(_openConnection());
 
-  AppDatabase.test(DatabaseConnection super.e);
+  AppDatabase.test(
+    DatabaseConnection super.e, {
+    this.seenIdsCap = defaultMaxSeenIds,
+  });
+
+  /// How many wire ids the seen-set remembers (I9.12.a).
+  ///
+  /// Bounded because a replay is only plausible while the original is
+  /// plausibly still travelling: a few thousand recent ids is years of
+  /// traffic at this app's pace, and the rows are a couple of dozen
+  /// bytes each.
+  static const int defaultMaxSeenIds = 4096;
+
+  /// The bound this instance enforces on the seen-set; tests shrink it.
+  final int seenIdsCap;
 
   @override
-  int get schemaVersion => 14;
+  int get schemaVersion => 15;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -245,6 +286,14 @@ class AppDatabase extends _$AppDatabase {
                 'NOT NULL DEFAULT 0',
               );
             }
+          }
+          if (from < 15) {
+            // I9.12.a — the seen-set. Rows accepted before this version
+            // have no sightings recorded, so a replay of one of those
+            // ids still finds its message row (if the row survives) and
+            // dedups as it always did; the set only protects what it
+            // has seen arrive from here on.
+            await m.createTable(seenMessageIds);
           }
         },
         beforeOpen: (details) async {
@@ -501,12 +550,15 @@ class AppDatabase extends _$AppDatabase {
     bool isEncrypted = false,
     bool silent = false,
   }) async {
-    // Deduplication: check if this external message ID already exists.
+    // Deduplication: the row it arrived in, or — I9.12.a — the
+    // seen-set, if the row has since expired away and a replay is
+    // knocking with the same id.
     final existing = await (select(messages)
           ..where((t) => t.externalMessageId.equals(externalMessageId))
           ..limit(1))
         .getSingleOrNull();
     if (existing != null) return null;
+    if (await seenMessageId(externalMessageId)) return null;
 
     final id = await into(messages).insert(
       MessagesCompanion.insert(
@@ -519,6 +571,7 @@ class AppDatabase extends _$AppDatabase {
         createdAt: DateTime.now(),
       ),
     );
+    await _rememberSeen(externalMessageId);
     await (update(conversations)..where((t) => t.id.equals(conversationId)))
         .write(ConversationsCompanion(
       updatedAt: Value(DateTime.now()),
@@ -526,13 +579,63 @@ class AppDatabase extends _$AppDatabase {
     return id;
   }
 
-  /// Check whether a message with the given external ID exists.
+  /// Check whether a message with the given external ID exists —
+  /// either as a row or, past that row's lifetime, as a sighting
+  /// in the seen-set (I9.12.a).
   Future<bool> messageExists(String externalMessageId) async {
     final existing = await (select(messages)
           ..where((t) => t.externalMessageId.equals(externalMessageId))
           ..limit(1))
         .getSingleOrNull();
-    return existing != null;
+    if (existing != null) return true;
+    return seenMessageId(externalMessageId);
+  }
+
+  /// Whether [externalMessageId] has been accepted before, however long
+  /// ago — and whether the message row it came in has long since gone.
+  Future<bool> seenMessageId(String externalMessageId) async {
+    final row = await (select(seenMessageIds)
+          ..where((t) => t.externalMessageId.equals(externalMessageId))
+          ..limit(1))
+        .getSingleOrNull();
+    return row != null;
+  }
+
+  /// How many wire ids the seen-set currently remembers.
+  Future<int> seenIdCount() {
+    return seenMessageIds.count().getSingle();
+  }
+
+  /// Record [externalMessageId] as accepted, keeping the set within
+  /// [seenIdsCap].
+  ///
+  /// An id already in the set is re-sighted rather than duplicated:
+  /// the replace writes a fresh row, which both keeps the table
+  /// clean and puts a recently re-seen id at the end of the shed
+  /// order — the least likely to be replayed next.
+  Future<void> _rememberSeen(String externalMessageId) async {
+    await into(seenMessageIds).insert(
+      SeenMessageIdsCompanion.insert(
+        externalMessageId: externalMessageId,
+        seenAt: DateTime.now(),
+      ),
+      mode: InsertMode.insertOrReplace,
+    );
+
+    final count = await seenIdCount();
+    if (count > seenIdsCap) {
+      // Shed the oldest sightings first — they are the least likely
+      // to still be travelling anywhere.
+      final shed = await (select(seenMessageIds)
+            ..orderBy([(t) => OrderingTerm.asc(t.seq)])
+            ..limit(count - seenIdsCap))
+          .get();
+      for (final row in shed) {
+        await (delete(seenMessageIds)
+              ..where((t) => t.seq.equals(row.seq)))
+            .go();
+      }
+    }
   }
 
   /// Every slice of one attachment held in [conversationId].
