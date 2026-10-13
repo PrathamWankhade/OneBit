@@ -535,6 +535,43 @@ void main() {
       expect(service.pendingForwardCount, 1);
       expect(transmission.seen.length, 2); // both arrivals tried once
     });
+
+    // I9.16.d — the timer half of the retry contract. app.dart starts
+    // the timer with the service and stops it with the provider; both
+    // halves have to be real, or either holds leak or traffic keeps
+    // moving after the app let go.
+    test('the retry timer drives held forwards, and stops driving them',
+        () async {
+      final transmission = _RecordingTransmission(localPeerId: localPeerId);
+      final service = MessageRelayService(
+        localPeerId: localPeerId,
+        transmissionService: transmission,
+        retryBaseBackoff: Duration.zero,
+        retryTick: const Duration(milliseconds: 10),
+        maxRetryAttempts: 1000,
+      );
+
+      // No route: the arrival spends its attempt and holds.
+      await service.receiveAndRelay(makeEnvelope(destination: thirdPeerId));
+      expect(service.pendingForwardCount, 1);
+      final afterArrival = transmission.calls;
+
+      // Started, the timer hands the hold its attempts...
+      service.startRetrying();
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      expect(transmission.calls, greaterThan(afterArrival));
+
+      // ...and stopping it really stops: let the last tick's work
+      // settle, then watch. The hold is still due and the budget is
+      // nowhere near spent — the only reason nothing moves is the
+      // stopped timer.
+      service.stopRetrying();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      final atStop = transmission.calls;
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      expect(transmission.calls, atStop);
+      expect(service.pendingForwardCount, 1);
+    });
   });
 }
 
@@ -552,11 +589,15 @@ class _RecordingTransmission extends MessageTransmissionService {
   /// The last envelope the relay asked to transmit, if any.
   MessageEnvelope? seen;
 
+  /// How many times it has asked, all told.
+  int calls = 0;
+
   @override
   Future<TransmissionResult> transmit({
     required OneBitMessage message,
     required MessageEnvelope envelope,
   }) async {
+    calls++;
     seen = envelope;
     return const TransmissionResult.noRoute();
   }

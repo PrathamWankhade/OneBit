@@ -1177,6 +1177,55 @@ void main() {
       expect(messages.single.status, 'sent');
     });
 
+    // I9.16.d — disposal: a dead transport is deaf (subscriptions
+    // gone, retry timer cancelled) and finished (delivery stream
+    // closed), and the world talking to it afterwards lands nowhere.
+    test('a disposed transport is deaf and its delivery stream is done',
+        () async {
+      transport = buildTransport();
+
+      final done = Completer<void>();
+      transport!.deliveryEvents.listen(
+        null,
+        onDone: () {
+          if (!done.isCompleted) done.complete();
+        },
+      );
+
+      transport!.dispose();
+
+      // The world keeps talking anyway: nothing lands.
+      final envelope = MessageEnvelope(
+        protocolVersion: messageProtocolVersion,
+        messageId: MessageId(),
+        sourcePeerId: peerB,
+        destinationPeerId: localId,
+        payload: MessageCodec.encode(
+          externalMessageId: 'm_dead',
+          content: 'after the funeral',
+          timestampMs: 1700000000000,
+        ),
+      );
+      inbound.add(ReliableDataReceived(
+        deviceId: deviceB,
+        payload: PacketCodec.encode(
+          OneBitPacket(
+            type: PacketType.message,
+            packetId: 1,
+            payload: MessageEnvelopeCodec.encode(envelope),
+          ),
+        ),
+        transferId: 1,
+      ));
+      await pumpEventQueue();
+
+      expect(await db.getConversationByPeerDevice(peerB), isNull);
+
+      // The delivery stream closes with the instance — a pulse after
+      // this point would be a lie about a dead transport.
+      await done.future.timeout(const Duration(seconds: 5));
+    });
+
     test('a receipt from the peer raises the message it names', () async {
       transport = buildTransport();
       final convId = await db.createConversationWithPeer('Peer B', deviceB);
