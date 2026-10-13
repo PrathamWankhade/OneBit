@@ -938,12 +938,25 @@ class MessageTransport {
       '${messageBytes.length} bytes',
     );
 
-    final result = await sendInPackets(
-      messageBytes,
-      type: PacketType.message,
-      packetId: _nextPacketId(),
-      send: (bytes) => _bleService.sendReliable(deviceId, bytes),
-    );
+    final TransferResult result;
+    try {
+      result = await sendInPackets(
+        messageBytes,
+        type: PacketType.message,
+        packetId: _nextPacketId(),
+        send: (bytes) => _bleService.sendReliable(deviceId, bytes),
+      );
+    } catch (e) {
+      // A send that throws is a link that went away under us mid
+      // write (I9.16.c) — not a failure to encode or address, so
+      // the row waits rather than dying. Queued with the backoff
+      // recorded, and — the point of catching here — the rest of
+      // the outbox keeps moving past this row instead of the whole
+      // pass aborting on one poison write.
+      AppLogger.error('MessageTransport: direct send threw', e);
+      await _updateMessageStatus(localMsgId, 'queued');
+      return TransferResult.failed;
+    }
 
     // A BLE send that did not land is almost always a link that went
     // away mid-flight — the peer may well be back by the next flush.
@@ -1017,6 +1030,23 @@ class MessageTransport {
 
       // Only consume it if it is actually addressed to us; anything else
       // belongs to the relay.
+      //
+      // What never belongs anywhere is a frame that claims we are
+      // both ends: we never mail ourselves, so an envelope sourced
+      // by us is either a reflection of something we sent or a
+      // forgery of it (I9.16.c). Accepting one would open a
+      // conversation with ourselves and file our own words as mail
+      // that arrived; relaying one would let a neighbour make us
+      // repeat our own traffic. It is dropped at the door.
+      if (_localPeerId.isNotEmpty &&
+          envelope.sourcePeerId == _localPeerId) {
+        AppLogger.warning(
+          'MessageTransport: dropping envelope sourced by us '
+          '(${envelope.messageId.value.substring(0, 8)}...)',
+        );
+        return;
+      }
+
       if (_localPeerId.isNotEmpty &&
           envelope.destinationPeerId == _localPeerId) {
         _deliverEnvelope(envelope);

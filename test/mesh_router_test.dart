@@ -1071,6 +1071,112 @@ void main() {
       expect(messages, hasLength(1));
     });
 
+    // I9.16.c — a frame that claims we are both ends of the
+    // conversation has no honest road in: we never mail ourselves.
+    test('an envelope we supposedly sent to ourselves is not mail',
+        () async {
+      transport = buildTransport();
+
+      final envelope = MessageEnvelope(
+        protocolVersion: messageProtocolVersion,
+        messageId: MessageId(),
+        sourcePeerId: localId,
+        destinationPeerId: localId,
+        payload: MessageCodec.encode(
+          externalMessageId: 'm_self',
+          content: 'a conversation with myself',
+          timestampMs: 1700000000000,
+        ),
+      );
+      inbound.add(ReliableDataReceived(
+        deviceId: deviceB,
+        payload: PacketCodec.encode(
+          OneBitPacket(
+            type: PacketType.message,
+            packetId: 1,
+            payload: MessageEnvelopeCodec.encode(envelope),
+          ),
+        ),
+        transferId: 1,
+      ));
+      await pumpEventQueue();
+
+      // Without the drop at the door this would have created a
+      // thread keyed to our own id and filed the words as received.
+      expect(await db.getConversationByPeerDevice(localId), isNull);
+    });
+
+    test('a reflected copy of our own envelope is not re-relayed',
+        () async {
+      transport = buildTransport();
+
+      final envelope = MessageEnvelope(
+        protocolVersion: messageProtocolVersion,
+        messageId: MessageId(),
+        sourcePeerId: localId,
+        destinationPeerId: peerB,
+        payload: MessageCodec.encode(
+          externalMessageId: 'm_refl',
+          content: 'send this back at me',
+          timestampMs: 1700000000000,
+        ),
+      );
+      inbound.add(ReliableDataReceived(
+        deviceId: deviceB,
+        payload: PacketCodec.encode(
+          OneBitPacket(
+            type: PacketType.message,
+            packetId: 1,
+            payload: MessageEnvelopeCodec.encode(envelope),
+          ),
+        ),
+        transferId: 1,
+      ));
+      await pumpEventQueue();
+
+      // We already know what we sent; letting a neighbour bounce it
+      // back would make us repeat our own traffic for them.
+      verifyNever(ble.sendReliable(any, any));
+    });
+
+    // I9.16.c — transport failure: the radio can die under the write
+    // itself, mid-pass. That is a link problem, not a message
+    // problem, and it must cost only the attempt.
+    test('a BLE send that throws keeps the row and the outbox',
+        () async {
+      transport = buildTransport();
+      final convId = await db.createConversationWithPeer('Peer B', deviceB);
+
+      // Not a refusal the stack reports — a throw from the write.
+      when(ble.sendReliable(any, any)).thenThrow(StateError('radio died'));
+
+      final result = await transport!.sendMessage(
+        peerDeviceId: deviceB,
+        conversationId: convId,
+        content: 'through a dying radio',
+      );
+
+      // The throw never escapes the send, and the message waits
+      // rather than being written off: the link, not the words,
+      // failed.
+      expect(result, TransferResult.failed);
+      final queued = await db.queuedMessages();
+      expect(queued.single.content, 'through a dying radio');
+      expect(queued.single.status, 'queued');
+
+      // A flush pass over a row that throws every time still runs to
+      // the end — one poison write aborts no one's journey.
+      await transport!.flushQueued();
+
+      // Heal the radio and the same row goes out on the next pass.
+      when(ble.sendReliable(any, any))
+          .thenAnswer((_) async => TransferResult.delivered);
+      await transport!.flushQueued();
+
+      final messages = await db.getMessages(convId);
+      expect(messages.single.status, 'sent');
+    });
+
     test('a receipt from the peer raises the message it names', () async {
       transport = buildTransport();
       final convId = await db.createConversationWithPeer('Peer B', deviceB);
