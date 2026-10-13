@@ -162,6 +162,17 @@ class _MessageBubbleState extends State<MessageBubble>
                     ],
                   ),
                 ),
+                // I9.9.a — an expired message says why it stopped, in
+                // words: the icon alone cannot carry "it never got
+                // there" as opposed to any other failure.
+                if (!widget.isReceived && widget.status == 'expired')
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      'Expired — never reached recipient',
+                      style: AppTheme.caption.copyWith(color: AppTheme.red),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -202,6 +213,8 @@ class _StatusIcon extends StatelessWidget {
         return const Icon(Icons.done_all, size: 12, color: AppTheme.accent);
       case 'failed':
         return const Icon(Icons.error_outline, size: 12, color: AppTheme.red);
+      case 'expired':
+        return const Icon(Icons.timer_off, size: 12, color: AppTheme.red);
       case 'queued':
         return const Icon(Icons.schedule, size: 12, color: AppTheme.textTertiary);
       default:

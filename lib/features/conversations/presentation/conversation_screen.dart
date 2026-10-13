@@ -19,6 +19,8 @@ import 'package:onebit/features/ble/ble_state.dart';
 import 'package:onebit/features/conversations/providers/conversation_providers.dart';
 import 'package:onebit/features/identity/identity_models.dart';
 import 'package:onebit/features/identity/identity_providers.dart';
+import 'package:onebit/features/peer_registry/peer_connection_manager.dart';
+import 'package:onebit/features/peer_registry/peer_connection_providers.dart';
 import 'package:onebit/features/protocol/attachment_segment.dart';
 import 'package:onebit/features/reliable/transfer.dart';
 import 'package:onebit/features/routing/routing_validators.dart';
@@ -440,11 +442,17 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
       deviceToPeer: deviceToPeer,
     );
 
+    // I9.9.a — anything still waiting on the outbox is what makes an
+    // offline recipient worth spelling out in the header.
+    final hasQueued = (messagesAsync.valueOrNull ?? const <Message>[])
+        .any((row) => row.status == 'queued');
+
     return Scaffold(
       appBar: _ChatHeader(
         conversationAsync: conversationAsync,
         conversationId: widget.conversationId,
         encrypted: encrypted,
+        hasQueued: hasQueued,
       ),
       body: conversationAsync.when(
         loading: () => const ChatSkeleton(),
@@ -566,6 +574,7 @@ class _ChatHeader extends ConsumerWidget implements PreferredSizeWidget {
     required this.conversationAsync,
     required this.conversationId,
     required this.encrypted,
+    required this.hasQueued,
   });
 
   final AsyncValue<dynamic> conversationAsync;
@@ -573,6 +582,9 @@ class _ChatHeader extends ConsumerWidget implements PreferredSizeWidget {
 
   /// Whether the peer can receive encrypted messages right now.
   final bool encrypted;
+
+  /// Whether the outbox still owes this chat rows (I9.9.a).
+  final bool hasQueued;
 
   @override
   Size get preferredSize => const Size.fromHeight(56);
@@ -582,36 +594,6 @@ class _ChatHeader extends ConsumerWidget implements PreferredSizeWidget {
     final conv = conversationAsync.valueOrNull;
     final title = conv?.title ?? 'Unknown';
     final peerDeviceId = conv?.peerDeviceId;
-
-    String statusText;
-    Color statusColor;
-
-    if (peerDeviceId == null) {
-      statusText = 'No peer connected';
-      statusColor = AppTheme.textTertiary;
-    } else {
-      final bleService = ref.read(bleServiceProvider);
-      final connInfo = bleService.current.connectionFor(peerDeviceId);
-      final bleState = connInfo?.state ?? BleConnectionState.disconnected;
-
-      switch (bleState) {
-        case BleConnectionState.connected:
-          statusText = 'Online';
-          statusColor = AppTheme.trust;
-        case BleConnectionState.connecting:
-          statusText = 'Connecting...';
-          statusColor = AppTheme.warning;
-        case BleConnectionState.disconnecting:
-          statusText = 'Disconnecting...';
-          statusColor = AppTheme.warning;
-        case BleConnectionState.disconnected:
-          statusText = 'Offline';
-          statusColor = AppTheme.textTertiary;
-        case BleConnectionState.error:
-          statusText = 'Connection error';
-          statusColor = AppTheme.danger;
-      }
-    }
 
     return AppBar(
       leading: IconButton(
@@ -666,11 +648,10 @@ class _ChatHeader extends ConsumerWidget implements PreferredSizeWidget {
                           : AppTheme.textTertiary,
                     ),
                     const SizedBox(width: 3),
-                    Text(
-                      '$statusText · ${encrypted ? 'Encrypted' : 'Not encrypted'}',
-                      style: AppTheme.caption.copyWith(
-                        color: statusColor,
-                      ),
+                    _PeerStatusText(
+                      peerDeviceId: peerDeviceId,
+                      encrypted: encrypted,
+                      hasQueued: hasQueued,
                     ),
                   ],
                 ),
@@ -783,6 +764,71 @@ class _ChatHeader extends ConsumerWidget implements PreferredSizeWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// I9.9.a — what the header says about the peer, kept honest over
+/// time. The line is rebuilt on every connection change, so it cannot
+/// keep claiming Online after the peer has gone; and an offline peer
+/// with rows still waiting on it says so plainly, because "Offline"
+/// next to a queue of undelivered messages is only half the story.
+class _PeerStatusText extends ConsumerWidget {
+  const _PeerStatusText({
+    required this.peerDeviceId,
+    required this.encrypted,
+    required this.hasQueued,
+  });
+
+  /// The conversation's peer key — a BLE address or an identity,
+  /// whichever this thread is keyed by.
+  final String? peerDeviceId;
+
+  final bool encrypted;
+
+  /// Whether the outbox still owes this chat rows.
+  final bool hasQueued;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final manager = ref.watch(peerConnectionManagerProvider);
+    return StreamBuilder<List<PeerConnectionRecord>>(
+      stream: manager.connectionStream,
+      builder: (context, _) {
+        var statusText = 'No peer connected';
+        var statusColor = AppTheme.textTertiary;
+
+        // A local, so the null check promotes: fields do not.
+        final device = peerDeviceId;
+        if (device != null) {
+          final connInfo =
+              ref.read(bleServiceProvider).current.connectionFor(device);
+          final bleState = connInfo?.state ?? BleConnectionState.disconnected;
+
+          switch (bleState) {
+            case BleConnectionState.connected:
+              statusText = 'Online';
+              statusColor = AppTheme.trust;
+            case BleConnectionState.connecting:
+              statusText = 'Connecting...';
+              statusColor = AppTheme.warning;
+            case BleConnectionState.disconnecting:
+              statusText = 'Disconnecting...';
+              statusColor = AppTheme.warning;
+            case BleConnectionState.disconnected:
+              statusText = hasQueued ? 'Offline — messages will retry' : 'Offline';
+              statusColor = AppTheme.textTertiary;
+            case BleConnectionState.error:
+              statusText = 'Connection error';
+              statusColor = AppTheme.danger;
+          }
+        }
+
+        return Text(
+          '$statusText · ${encrypted ? 'Encrypted' : 'Not encrypted'}',
+          style: AppTheme.caption.copyWith(color: statusColor),
+        );
+      },
     );
   }
 }

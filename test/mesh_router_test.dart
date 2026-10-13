@@ -684,11 +684,12 @@ void main() {
           unorderedEquals(['message 3', 'message 4', 'message 5']),
         );
 
-        // …and the rows it shed settle as failed: history, not queue.
-        final failed = (await db.getMessages(convId))
-            .where((row) => row.status == 'failed');
+        // …and the rows it shed expire: history that never reached
+        // the recipient, not queue.
+        final expired = (await db.getMessages(convId))
+            .where((row) => row.status == 'expired');
         expect(
-          failed.map((row) => row.content),
+          expired.map((row) => row.content),
           unorderedEquals(['message 1', 'message 2']),
         );
       });
@@ -751,9 +752,9 @@ void main() {
         );
 
         // The oldest plain row paid for the file, and only one.
-        final failed = (await db.getMessages(convId))
-            .where((row) => row.status == 'failed');
-        expect(failed.map((row) => row.content), ['message 1']);
+        final expired = (await db.getMessages(convId))
+            .where((row) => row.status == 'expired');
+        expect(expired.map((row) => row.content), ['message 1']);
       });
 
       test('a flush sweep brings rows written before the cap back under it',
@@ -780,10 +781,10 @@ void main() {
           queued.map((row) => row.content),
           unorderedEquals(['legacy 3', 'legacy 4']),
         );
-        final failed = (await db.getMessages(convId))
-            .where((row) => row.status == 'failed');
+        final expired = (await db.getMessages(convId))
+            .where((row) => row.status == 'expired');
         expect(
-          failed.map((row) => row.content),
+          expired.map((row) => row.content),
           unorderedEquals(['legacy 1', 'legacy 2']),
         );
       });
@@ -817,7 +818,7 @@ void main() {
         );
         expect(
           rows.firstWhere((row) => row.content == 'waiting 1').status,
-          'failed',
+          'expired',
         );
 
         final queued = await db.queuedMessages();

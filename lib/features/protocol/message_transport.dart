@@ -87,9 +87,10 @@ Future<Directory> _defaultAttachmentDirectory() =>
 /// ## Outbox
 ///
 /// Every outbound row starts life in the `queued` state, and is moved
-/// to `sent` or `failed` once an attempt settles. `failed` is reserved
-/// for failures a retry could not fix (it will not encode, it will not
-/// fit, or the outbox cap wrote it off); "the peer was not on the air"
+/// to `sent`, `failed`, or `expired` once an attempt settles. `failed`
+/// is reserved for failures a retry could not fix (it will not encode,
+/// it will not fit); `expired` (I9.9.a) means the outbox shed the row
+/// before the recipient ever saw it. "The peer was not on the air"
 /// stays `queued` and is retried by [flushQueued] whenever
 /// [_routeEvents] or [_connectionEvents] says the reachable set may
 /// have changed. Route and connection events force an immediate pass;
@@ -102,10 +103,11 @@ Future<Directory> _defaultAttachmentDirectory() =>
 ///
 /// The outbox holds at most [_maxQueuedMessages] rows (I9.8.a).
 /// Overflow evicts the oldest rows — age is the clearest signal that
-/// something is never getting through — which settle as `failed` and
-/// stay in the thread as history. An attachment is one unit: its
-/// manifest and slices are written whole or not at all, so the queue
-/// never holds a file that can no longer complete.
+/// something is never getting through — which settle as `expired`
+/// ("never reached recipient", I9.9.a) and stay in the thread as
+/// history. An attachment is one unit: its manifest and slices are
+/// written whole or not at all, so the queue never holds a file that
+/// can no longer complete.
 ///
 /// ## Receipts
 ///
@@ -1615,9 +1617,10 @@ class MessageTransport {
   /// never touched, and when nothing else remains the caller is
   /// refused rather than allowed to strand the file.
   ///
-  /// Evicted rows settle as `failed` through the usual status path,
-  /// so they stay in the thread as history and the retry schedule is
-  /// cleared with them.
+  /// Evicted rows settle as `expired` through the usual status path —
+  /// they waited, and were shed before the recipient ever saw them —
+  /// so they stay in the thread as history ("never reached
+  /// recipient", I9.9.a) and the retry schedule is cleared with them.
   Future<bool> _enforceQueueCap({
     required int needed,
     String? protectSegId,
@@ -1651,7 +1654,7 @@ class MessageTransport {
     if (remaining > target) return false; // only protected rows left
 
     for (final id in evict) {
-      await _updateMessageStatus(id, 'failed');
+      await _updateMessageStatus(id, 'expired');
     }
     AppLogger.info(
       'MessageTransport: outbox at its cap of $_maxQueuedMessages — '
