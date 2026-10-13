@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:onebit/core/theme/app_theme.dart';
+import 'package:onebit/features/ble/ble_providers.dart';
 import 'package:onebit/features/settings/data/settings_providers.dart';
 import 'package:onebit/features/settings/presentation/widgets/settings_section.dart';
 import 'package:onebit/features/settings/presentation/widgets/settings_tile.dart';
@@ -14,6 +15,7 @@ class MeshSettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final nearbyDiscovery = ref.watch(settingsDiscoveryEnabledProvider);
     final relayParticipation = ref.watch(settingsRelayEnabledProvider);
+    final bleState = ref.watch(bleStateProvider);
     return Scaffold(
       backgroundColor: AppTheme.bgBase,
       appBar: AppBar(
@@ -114,20 +116,20 @@ class MeshSettingsScreen extends ConsumerWidget {
           SettingsSection(
             title: 'Diagnostics',
             children: [
-              const SettingsTile(
+              SettingsTile(
                 icon: Icons.device_hub,
                 title: 'Active connections',
-                value: '0',
+                value: '${bleState.connections.length}',
               ),
-              const SettingsTile(
+              SettingsTile(
                 icon: Icons.radar,
                 title: 'Active scan',
-                value: 'No',
+                value: bleState.isScanning ? 'Yes' : 'No',
               ),
-              const SettingsTile(
+              SettingsTile(
                 icon: Icons.broadcast_on_personal,
                 title: 'Advertising',
-                value: 'No',
+                value: bleState.isAdvertising ? 'Yes' : 'No',
               ),
               SettingsTile(
                 icon: Icons.analytics_outlined,

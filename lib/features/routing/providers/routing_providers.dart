@@ -12,6 +12,7 @@ import 'package:onebit/features/routing/routing_security.dart';
 import 'package:onebit/features/routing/routing_table.dart';
 import 'package:onebit/features/routing/topology_exchange_service.dart';
 import 'package:onebit/features/routing/topology_repository.dart';
+import 'package:onebit/features/settings/data/settings_providers.dart';
 import 'package:onebit/features/trust/trust_providers.dart';
 
 /// Provides the runtime neighbor table for the routing layer.
@@ -120,6 +121,16 @@ final meshRouterProvider = Provider<MeshRouter>((ref) {
     bleService: ref.watch(bleServiceProvider),
     getReachableNeighbors: reachability.getReachableNeighbors,
     discoverRoute: discovery.discoverRoute,
+    // Stealth mode stops topology announcements: the radio still hears
+    // neighbours, it just stops telling them who we can reach. Read
+    // lazily and guarded so tests without a settings repo still route.
+    topologyAllowed: () {
+      try {
+        return !ref.read(settingsStealthEnabledProvider);
+      } catch (_) {
+        return true;
+      }
+    },
   );
   router.start();
   ref.onDispose(router.dispose);

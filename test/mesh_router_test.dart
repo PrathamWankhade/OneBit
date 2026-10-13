@@ -263,6 +263,31 @@ void main() {
       verifyNever(ble.sendReliable(any, any));
     });
 
+    test('a stealth router still routes but never advertises', () async {
+      final stealth = MeshRouter(
+        localPeerId: localId,
+        neighborTable: neighborTable,
+        topologyExchange: exchange,
+        topologyRepository: repository,
+        routingTable: routingTable,
+        bleService: ble,
+        getReachableNeighbors: reachableNow,
+        discoverRoute: discovery.discoverRoute,
+        advertisementInterval: const Duration(hours: 1),
+        topologyAllowed: () => false,
+      );
+      addTearDown(stealth.dispose);
+
+      stealth.start();
+      await connectPeerB();
+
+      // The neighbour is a real one-hop peer, so the local route lands…
+      expect(routingTable.bestRoute(peerB), isNotNull);
+      // …but nothing was pushed: stealth withholds the announcement that
+      // would tell the mesh who we can reach.
+      verifyNever(ble.sendReliable(any, any));
+    });
+
     test('announces route recomputation so an outbox can retry', () async {
       router.start();
       var recomputations = 0;
@@ -356,6 +381,7 @@ void main() {
       bool? withRoute,
       Stream<void>? routeEvents,
       AttachmentDirectory? attachmentDirectory,
+      ReceiptsAllowed? receiptsAllowed,
     }) {
       // The group body runs once, so every test re-establishes the
       // fixture here; the outbox cases then bring peerC up by hand.
@@ -384,6 +410,7 @@ void main() {
         transmissionService: transmission,
         routeEvents: routeEvents,
         attachmentDirectory: attachmentDirectory,
+        receiptsAllowed: receiptsAllowed,
       );
       built.startListening();
       return built;
@@ -825,6 +852,36 @@ void main() {
       expect(receipt, isNotNull);
       expect(receipt!.kind, ReceiptKind.read);
       expect(receipt.messageIds, ['m_1', 'm_2', 'm_3']);
+    });
+
+    test('a closed receipts gate keeps the receipt off the wire', () async {
+      transport = buildTransport(receiptsAllowed: () => false);
+
+      await transport!.ackRead(
+        peerKey: peerB,
+        fallbackDeviceId: deviceB,
+        messageIds: ['m_1', 'm_2'],
+      );
+      await pumpEventQueue();
+
+      // Stealth mode and the receipts switch both land here: the frame
+      // is never built, so nothing is handed to the radio at all.
+      verifyNever(ble.sendReliable(captureAny, captureAny));
+    });
+
+    test('an open receipts gate still sends', () async {
+      transport = buildTransport(receiptsAllowed: () => true);
+
+      await transport!.ackRead(
+        peerKey: peerB,
+        fallbackDeviceId: deviceB,
+        messageIds: ['m_1'],
+      );
+      await pumpEventQueue();
+
+      final captured =
+          verify(ble.sendReliable(captureAny, captureAny)).captured;
+      expect(captured, hasLength(2));
     });
 
     group('attachments travel as manifest plus slices', () {

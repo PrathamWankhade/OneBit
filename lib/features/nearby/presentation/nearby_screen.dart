@@ -9,6 +9,7 @@ import 'package:onebit/features/ble/ble_state.dart';
 import 'package:onebit/features/identity/identity_association_resolver.dart';
 import 'package:onebit/features/identity/identity_providers.dart';
 import 'package:onebit/features/nearby/presentation/peer_card.dart';
+import 'package:onebit/features/settings/data/settings_providers.dart';
 import 'package:onebit/features/ui/components/one_bit_components.dart';
 
 /// F5 — Peer Discovery / BLE Mesh Experience.
@@ -149,6 +150,14 @@ class _NearbyScreenState extends ConsumerState<NearbyScreen>
   }
 
   Future<void> _startAdvertising() async {
+    // Stealth mode: the radio listens but never puts the device on the
+    // air, so there is nothing to start.
+    try {
+      if (ref.read(settingsStealthEnabledProvider)) return;
+    } catch (_) {
+      // No settings repo — behave as before.
+    }
+
     final notifier = ref.read(bleStateProvider.notifier);
     final identityAsync = ref.read(localIdentityProvider);
     final identity = identityAsync.valueOrNull;

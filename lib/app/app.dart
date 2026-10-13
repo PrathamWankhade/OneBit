@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -112,6 +114,16 @@ final messageTransportProvider = Provider<MessageTransport>((ref) {
     connectionEvents: connectionManager.connectionStream,
     localKeyAgreement: identityService.keyAgreementKeyPair,
     localSign: identityService.signBytes,
+    // Receipts leak activity, so stealth mode and the receipts switch
+    // both silence them. Read lazily and guarded for settings-less tests.
+    receiptsAllowed: () {
+      try {
+        return !ref.read(settingsStealthEnabledProvider) &&
+            ref.read(settingsReadReceiptsEnabledProvider);
+      } catch (_) {
+        return true;
+      }
+    },
   );
   transport.startListening();
   ref.onDispose(() => transport.dispose());
@@ -186,6 +198,9 @@ class _OneBitAppBodyState extends ConsumerState<_OneBitAppBody> {
   final GlobalKey<ScaffoldMessengerState> _scaffoldMessengerKey =
       GlobalKey<ScaffoldMessengerState>();
 
+  /// Periodically expires messages past the disappearing-messages lifetime.
+  Timer? _expiryTimer;
+
   @override
   void initState() {
     super.initState();
@@ -194,6 +209,34 @@ class _OneBitAppBodyState extends ConsumerState<_OneBitAppBody> {
     // pubspec fallback meanwhile, and the automatic check below awaits it
     // properly before comparing anything.
     AppVersion.load();
+
+    _sweepExpired();
+    _expiryTimer = Timer.periodic(
+      const Duration(minutes: 10),
+      (_) => _sweepExpired(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _expiryTimer?.cancel();
+    super.dispose();
+  }
+
+  /// Delete messages older than the disappearing-messages lifetime.
+  ///
+  /// Fire-and-forget: a missing settings repo or a cold database must
+  /// never surface as a thrown error during a timer tick.
+  Future<void> _sweepExpired() async {
+    try {
+      final hours = ref.read(settingsRepositoryProvider).disappearingHours;
+      if (hours <= 0) return;
+      await ref
+          .read(databaseProvider)
+          .expireMessagesOlderThan(Duration(hours: hours));
+    } catch (_) {
+      // Settings or database not ready yet — nothing to expire this tick.
+    }
   }
 
   @override

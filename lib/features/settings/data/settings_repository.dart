@@ -43,6 +43,29 @@ class SettingsRepository {
   bool get discoveryEnabled => _prefs.getBool(_kDiscoveryEnabled) ?? true;
   bool get relayEnabled => _prefs.getBool(_kRelayEnabled) ?? true;
 
+  /// Advertise even when the Nearby screen is closed, so the mesh can
+  /// find this device without it being stared at.
+  bool get alwaysAdvertise => _prefs.getBool(_kAlwaysAdvertise) ?? true;
+
+  // ── Privacy ──
+
+  /// Default lifetime of new messages, in hours. Zero means keep.
+  ///
+  /// Applied at insert on both ends — each device expires what it
+  /// holds under its own setting, so no protocol change carries it.
+  int get disappearingHours => _prefs.getInt(_kDisappearingHours) ?? 0;
+
+  /// Stealth mode: no advertising, no topology announcements, no
+  /// delivery or read receipts. The radio still listens, so messages
+  /// arrive — nothing about this device goes back out.
+  bool get stealthEnabled => _prefs.getBool(_kStealthEnabled) ?? false;
+
+  /// Whether opening a conversation tells the peer what was read.
+  /// Covers delivered receipts too: both leak activity, so one switch
+  /// answers for both.
+  bool get readReceiptsEnabled =>
+      _prefs.getBool(_kReadReceiptsEnabled) ?? true;
+
   // ── App update ──
 
   /// Whether OneBit looks for new builds on its own and tells the user
@@ -88,6 +111,14 @@ class SettingsRepository {
       _prefs.setBool(_kDiscoveryEnabled, value);
   Future<bool> setRelayEnabled(bool value) =>
       _prefs.setBool(_kRelayEnabled, value);
+  Future<bool> setAlwaysAdvertise(bool value) =>
+      _prefs.setBool(_kAlwaysAdvertise, value);
+  Future<bool> setDisappearingHours(int value) =>
+      _prefs.setInt(_kDisappearingHours, value);
+  Future<bool> setStealthEnabled(bool value) =>
+      _prefs.setBool(_kStealthEnabled, value);
+  Future<bool> setReadReceiptsEnabled(bool value) =>
+      _prefs.setBool(_kReadReceiptsEnabled, value);
   Future<bool> setAutoUpdateEnabled(bool value) =>
       _prefs.setBool(_kAutoUpdateEnabled, value);
 
@@ -142,6 +173,10 @@ const _kNotificationSound = 'settings_notification_sound';
 const _kNotificationVibration = 'settings_notification_vibration';
 const _kDiscoveryEnabled = 'settings_discovery_enabled';
 const _kRelayEnabled = 'settings_relay_enabled';
+const _kAlwaysAdvertise = 'settings_always_advertise';
+const _kDisappearingHours = 'settings_disappearing_hours';
+const _kStealthEnabled = 'settings_stealth_enabled';
+const _kReadReceiptsEnabled = 'settings_read_receipts_enabled';
 const _kAutoUpdateEnabled = 'settings_auto_update_enabled';
 const _kPendingUpdateVersion = 'settings_pending_update_version';
 const _kPendingUpdateUrl = 'settings_pending_update_url';

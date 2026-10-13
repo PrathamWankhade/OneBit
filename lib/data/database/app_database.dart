@@ -330,6 +330,24 @@ class AppDatabase extends _$AppDatabase {
         .go();
   }
 
+  /// Delete every message created before [cutoff], across all chats.
+  ///
+  /// The engine of disappearing messages: each device expires what it
+  /// holds under its own lifetime setting, so no protocol change carries
+  /// a TTL and the two ends need not agree. Returns how many rows went.
+  Future<int> deleteMessagesCreatedBefore(DateTime cutoff) {
+    return (delete(messages)
+          ..where((t) => t.createdAt.isSmallerThanValue(cutoff)))
+        .go();
+  }
+
+  /// Expire messages older than [olderThan]. No-op for a zero or negative
+  /// duration (lifetime turned off).
+  Future<int> expireMessagesOlderThan(Duration olderThan) async {
+    if (olderThan <= Duration.zero) return 0;
+    return deleteMessagesCreatedBefore(DateTime.now().subtract(olderThan));
+  }
+
   /// What the conversation list needs per row: the newest message's
   /// text and how many inbound messages nobody has opened yet.
   ///

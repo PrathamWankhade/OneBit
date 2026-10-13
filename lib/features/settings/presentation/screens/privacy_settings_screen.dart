@@ -9,7 +9,6 @@ import 'package:onebit/features/settings/presentation/widgets/settings_toggle.da
 
 class PrivacySettingsScreen extends ConsumerWidget {
   const PrivacySettingsScreen({super.key});
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
@@ -64,6 +63,66 @@ class PrivacySettingsScreen extends ConsumerWidget {
             ],
           ),
           SettingsSection(
+            title: 'DISAPPEARING MESSAGES',
+            children: [
+              SettingsTile(
+                icon: Icons.timer_outlined,
+                title: 'Default lifetime',
+                description: _ttlLabel(ref.watch(
+                  settingsDisappearingHoursProvider,
+                )),
+                onTap: () {
+                  const options = [0, 1, 24, 168];
+                  final notifier = ref.read(
+                    settingsDisappearingHoursProvider.notifier,
+                  );
+                  final next = options[
+                      (options.indexOf(notifier.state) + 1) % options.length];
+                  notifier.state = next;
+                  ref
+                      .read(settingsRepositoryProvider)
+                      .setDisappearingHours(next);
+                },
+              ),
+            ],
+          ),
+          SettingsSection(
+            title: 'RECEIPTS',
+            children: [
+              SettingsToggle(
+                icon: Icons.done_all,
+                title: 'Send receipts',
+                description:
+                    'Tell senders when a message arrives and is read',
+                value: ref.watch(settingsReadReceiptsEnabledProvider),
+                onChanged: (v) {
+                  ref
+                      .read(settingsReadReceiptsEnabledProvider.notifier)
+                      .state = v;
+                  ref
+                      .read(settingsRepositoryProvider)
+                      .setReadReceiptsEnabled(v);
+                },
+              ),
+            ],
+          ),
+          SettingsSection(
+            title: 'STEALTH',
+            children: [
+              SettingsToggle(
+                icon: Icons.visibility_off,
+                title: 'Stealth mode',
+                description:
+                    'No advertising, no topology, no receipts — still listening',
+                value: ref.watch(settingsStealthEnabledProvider),
+                onChanged: (v) {
+                  ref.read(settingsStealthEnabledProvider.notifier).state = v;
+                  ref.read(settingsRepositoryProvider).setStealthEnabled(v);
+                },
+              ),
+            ],
+          ),
+          SettingsSection(
             title: 'BLOCKED PEERS',
             children: [
               SettingsTile(
@@ -109,3 +168,12 @@ class PrivacySettingsScreen extends ConsumerWidget {
     );
   }
 }
+
+/// Human label for a disappearing-messages lifetime in hours.
+String _ttlLabel(int hours) => switch (hours) {
+      0 => 'Off — messages are kept',
+      1 => '1 hour',
+      24 => '24 hours',
+      168 => '7 days',
+      _ => '$hours hours',
+    };

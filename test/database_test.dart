@@ -464,4 +464,68 @@ void main() {
       expect(await db.readPendingIds(empty), isEmpty);
     });
   });
+
+  group('Disappearing messages', () {
+    test('a lifetime expires only what is older than it', () async {
+      final convId = await db.createConversation('Chat');
+      final oldId = await db.insertMessage(
+        conversationId: convId,
+        content: 'old',
+        status: 'sent',
+      );
+      await db.insertMessage(
+        conversationId: convId,
+        content: 'new',
+        status: 'sent',
+      );
+
+      // Backdate the first message a day into the past.
+      final dayAgo = DateTime.now().subtract(const Duration(hours: 25));
+      await (db.update(db.messages)
+            ..where((t) => t.id.equals(oldId)))
+          .write(MessagesCompanion(createdAt: Value(dayAgo)));
+
+      // A 24-hour lifetime keeps the fresh row and drops the stale one.
+      final removed =
+          await db.expireMessagesOlderThan(const Duration(hours: 24));
+      expect(removed, 1);
+      final remaining = await db.getMessages(convId);
+      expect(remaining.map((m) => m.content), ['new']);
+    });
+
+    test('a zero lifetime removes nothing', () async {
+      final convId = await db.createConversation('Chat');
+      await db.insertMessage(
+        conversationId: convId,
+        content: 'kept',
+        status: 'sent',
+      );
+
+      expect(await db.expireMessagesOlderThan(Duration.zero), 0);
+      expect((await db.getMessages(convId)).length, 1);
+    });
+
+    test('the cutoff is exclusive: exactly-at-expiry survives', () async {
+      final convId = await db.createConversation('Chat');
+      final id = await db.insertMessage(
+        conversationId: convId,
+        content: 'edge',
+        status: 'sent',
+      );
+      final cutoff = DateTime.now();
+      await (db.update(db.messages)..where((t) => t.id.equals(id)))
+          .write(MessagesCompanion(createdAt: Value(cutoff)));
+
+      // Older-than is strict: a row born exactly at the cutoff stays…
+      expect(await db.deleteMessagesCreatedBefore(cutoff), 0);
+      expect((await db.getMessages(convId)).length, 1);
+      // …and one clearly past it is gone.
+      expect(
+        await db.deleteMessagesCreatedBefore(
+          cutoff.add(const Duration(hours: 1)),
+        ),
+        1,
+      );
+    });
+  });
 }

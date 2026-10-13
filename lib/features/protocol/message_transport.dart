@@ -45,6 +45,13 @@ typedef LocalKeyAgreement = Future<SimpleKeyPair> Function();
 /// Signs bytes with the local Ed25519 identity key.
 typedef LocalSigner = Future<Uint8List> Function(Uint8List message);
 
+/// Whether a receipt may go out at all right now.
+///
+/// Answers for both delivered and read receipts — either leaks activity,
+/// so a single switch (the receipts setting, or stealth mode) covers them.
+/// Null means "always send", which is what tests and pre-settings builds do.
+typedef ReceiptsAllowed = bool Function();
+
 /// Where received attachment files land. Overridable in tests, where
 /// the platform plugin has nothing to answer with.
 typedef AttachmentDirectory = Future<Directory> Function();
@@ -99,6 +106,7 @@ class MessageTransport {
     this._localKeyAgreement,
     this._localSign,
     this._attachmentDirectory,
+    this._receiptsAllowed,
   });
 
   final BleService _bleService;
@@ -125,6 +133,9 @@ class MessageTransport {
   /// never completes one, where the platform plugin has nothing to
   /// answer with.
   final AttachmentDirectory? _attachmentDirectory;
+
+  /// Whether receipts may leave the device. Null sends them always.
+  final ReceiptsAllowed? _receiptsAllowed;
 
   /// Our X25519 pair once loaded. Stable per identity, so one load
   /// serves the life of the transport.
@@ -998,6 +1009,10 @@ class MessageTransport {
     required List<String> messageIds,
   }) async {
     if (messageIds.isEmpty || _localPeerId.isEmpty) return;
+
+    // Stealth mode or receipts turned off: the frame never leaves.
+    final allowed = _receiptsAllowed;
+    if (allowed != null && !allowed()) return;
 
     final Uint8List frame;
     try {

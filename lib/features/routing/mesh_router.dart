@@ -66,6 +66,7 @@ class MeshRouter {
     required this.getReachableNeighbors,
     required this.discoverRoute,
     this.advertisementInterval = const Duration(seconds: 30),
+    this.topologyAllowed,
   });
 
   /// Our own cryptographic identity. Every route must be for a
@@ -91,6 +92,11 @@ class MeshRouter {
 
   /// How often to refresh neighbours while we have any.
   final Duration advertisementInterval;
+
+  /// Whether a topology advertisement may go out at all. Null always
+  /// allows — stealth mode supplies one that returns false, so a hidden
+  /// device stops telling neighbours who it can reach.
+  final bool Function()? topologyAllowed;
 
   StreamSubscription<List<NeighborEntry>>? _neighborSub;
   StreamSubscription<ReliableDataReceived>? _dataSub;
@@ -300,6 +306,8 @@ class MeshRouter {
   /// than being turned away.
   Future<void> advertiseNow() async {
     if (!_usable || !_started) return;
+    final allowed = topologyAllowed;
+    if (allowed != null && !allowed()) return;
 
     final advertisement = topologyExchange.buildAdvertisementWithIncrement(
       localPeerId: localPeerId,

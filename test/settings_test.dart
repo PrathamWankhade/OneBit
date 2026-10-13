@@ -125,6 +125,41 @@ void main() {
       expect(prefs.getBool('settings_relay_enabled'), false);
     });
 
+    test('privacy settings default to the open, non-quiet posture', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final repo = SettingsRepository(prefs);
+      // Advertise, keep nothing, send receipts, no stealth — a fresh
+      // install behaves exactly as it did before these switches existed.
+      expect(repo.alwaysAdvertise, true);
+      expect(repo.disappearingHours, 0);
+      expect(repo.stealthEnabled, false);
+      expect(repo.readReceiptsEnabled, true);
+    });
+
+    test('privacy settings persist and read back', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final repo = SettingsRepository(prefs);
+
+      await repo.setAlwaysAdvertise(false);
+      await repo.setDisappearingHours(24);
+      await repo.setStealthEnabled(true);
+      await repo.setReadReceiptsEnabled(false);
+
+      expect(prefs.getBool('settings_always_advertise'), false);
+      expect(prefs.getInt('settings_disappearing_hours'), 24);
+      expect(prefs.getBool('settings_stealth_enabled'), true);
+      expect(prefs.getBool('settings_read_receipts_enabled'), false);
+
+      // A repo built over the same store sees the same posture.
+      final reloaded = SettingsRepository(prefs);
+      expect(reloaded.alwaysAdvertise, false);
+      expect(reloaded.disappearingHours, 24);
+      expect(reloaded.stealthEnabled, true);
+      expect(reloaded.readReceiptsEnabled, false);
+    });
+
     test('read persisted values after restart', () async {
       SharedPreferences.setMockInitialValues({
         'settings_theme_mode': 2,

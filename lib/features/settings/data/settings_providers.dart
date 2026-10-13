@@ -101,6 +101,41 @@ final settingsRelayEnabledProvider = StateProvider<bool>(
   dependencies: [settingsRepositoryProvider],
 );
 
+final settingsAlwaysAdvertiseProvider = StateProvider<bool>(
+  (ref) {
+    final repo = ref.watch(settingsRepositoryProvider);
+    return repo.alwaysAdvertise;
+  },
+  dependencies: [settingsRepositoryProvider],
+);
+
+// ── Privacy ──
+
+/// Default message lifetime in hours (0 = keep).
+final settingsDisappearingHoursProvider = StateProvider<int>(
+  (ref) {
+    final repo = ref.watch(settingsRepositoryProvider);
+    return repo.disappearingHours;
+  },
+  dependencies: [settingsRepositoryProvider],
+);
+
+final settingsStealthEnabledProvider = StateProvider<bool>(
+  (ref) {
+    final repo = ref.watch(settingsRepositoryProvider);
+    return repo.stealthEnabled;
+  },
+  dependencies: [settingsRepositoryProvider],
+);
+
+final settingsReadReceiptsEnabledProvider = StateProvider<bool>(
+  (ref) {
+    final repo = ref.watch(settingsRepositoryProvider);
+    return repo.readReceiptsEnabled;
+  },
+  dependencies: [settingsRepositoryProvider],
+);
+
 // ── App update ──
 
 final settingsAutoUpdateProvider = StateProvider<bool>(
