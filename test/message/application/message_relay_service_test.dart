@@ -163,6 +163,51 @@ void main() {
       expect(transmission.seen, isNull);
     });
 
+    // I9.16.b — the loop contract: hop limits are what make cycles in
+    // the mesh safe, so pin what they actually guarantee.
+    test('a looping envelope dies within the hop budget, not in copies',
+        () async {
+      final transmission = _RecordingTransmission(localPeerId: localPeerId);
+      final service = MessageRelayService(
+        localPeerId: localPeerId,
+        transmissionService: transmission,
+      );
+
+      // Two nodes with stale routes can hand the same message back
+      // and forth all night. Every pass through a relay spends one
+      // hop on the copy that continues, so the wandering ends at
+      // [maxEnvelopeHops] no matter how the routes lie.
+      var envelope = makeEnvelope(destination: thirdPeerId);
+      var refusedAtBudget = false;
+      var passes = 0;
+      while (true) {
+        final result = await service.receiveAndRelay(envelope);
+        passes++;
+        if (result is RelayFailed &&
+            result.reason.contains('Hop limit reached')) {
+          refusedAtBudget = true;
+          break;
+        }
+        // Bounded even if the wall above were missing: each pass
+        // spends a hop, so the passes themselves are the budget.
+        expect(
+          passes,
+          lessThanOrEqualTo(maxEnvelopeHops + 1),
+          reason: 'every pass spends a hop, so passes are bounded',
+        );
+        envelope = envelope.withAdditionalHop();
+      }
+
+      expect(refusedAtBudget, isTrue);
+      // The last copy anyone tried to put on the wire carried the
+      // full budget…
+      expect(transmission.seen!.hopCount, maxEnvelopeHops);
+      // …and all those passes cost exactly one held forward, because
+      // the hold is keyed by message id. A loop costs hops, never
+      // copies: nothing here multiplies.
+      expect(service.pendingForwardCount, 1);
+    });
+
     test('source PeerId is preserved during relay', () async {
       const originalSource = remotePeerId;
       final route = makeRoute(dest: thirdPeerId, nextHop: thirdPeerId);
