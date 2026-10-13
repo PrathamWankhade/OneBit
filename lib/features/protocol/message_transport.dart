@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:cryptography/cryptography.dart';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
+import 'package:flutter/foundation.dart';
 import 'package:onebit/core/logging/app_logger.dart';
 import 'package:onebit/data/database/app_database.dart';
 import 'package:onebit/features/ble/ble_service.dart';
@@ -90,8 +91,20 @@ Future<Directory> _defaultAttachmentDirectory() =>
 /// for failures a retry could not fix (it will not encode, it will not
 /// fit); "the peer was not on the air" stays `queued` and is retried by
 /// [flushQueued] whenever [_routeEvents] or [_connectionEvents] says the
-/// reachable set may have changed.
+/// reachable set may have changed. Route and connection events force an
+/// immediate pass; a timer (I9.11) is the safety net for failures no
+/// event ever follows — it retries each message on its own exponential
+/// backoff, so a link that dropped mid-send still recovers on its own
+/// without the outbox spinning against a peer that is away.
 class MessageTransport {
+  /// I9.11 retry cadence: the wait after a failed attempt, the ceiling
+  /// that wait doubles towards, and how often the timer looks for
+  /// messages whose wait has elapsed. Overridable per transport so
+  /// tests do not have to sleep out real minutes.
+  static const defaultRetryBaseBackoff = Duration(seconds: 10);
+  static const defaultRetryMaxBackoff = Duration(minutes: 15);
+  static const defaultRetryTick = Duration(seconds: 10);
+
   MessageTransport({
     required this._bleService,
     required this._database,
@@ -107,6 +120,9 @@ class MessageTransport {
     this._localSign,
     this._attachmentDirectory,
     this._receiptsAllowed,
+    this._retryBaseBackoff = defaultRetryBaseBackoff,
+    this._retryMaxBackoff = defaultRetryMaxBackoff,
+    this._retryTick = defaultRetryTick,
   });
 
   final BleService _bleService;
@@ -172,6 +188,24 @@ class MessageTransport {
   int _packetIdCounter = 0;
   bool _flushing = false;
 
+  /// I9.11 — how long a message waits after its first failed attempt,
+  /// doubling per attempt up to [_retryMaxBackoff].
+  final Duration _retryBaseBackoff;
+
+  /// I9.11 — ceiling for the doubling wait, so a peer that is away for
+  /// hours is still tried at a steady (if slow) cadence.
+  final Duration _retryMaxBackoff;
+
+  /// I9.11 — how often the outbox timer looks for due retries. Route
+  /// and connection events still force an immediate pass; this covers
+  /// the failures no event ever follows.
+  final Duration _retryTick;
+
+  /// I9.11 — failed attempts per queued row, and when each is next due.
+  final _retryAttempts = <int, int>{};
+  final _retryAt = <int, DateTime>{};
+  Timer? _retryTimer;
+
   /// Start listening for incoming messages from peers.
   void startListening() {
     _receiveSub?.cancel();
@@ -195,6 +229,16 @@ class MessageTransport {
           AppLogger.error('MessageTransport connection sub', e),
     );
 
+    // I9.11 — some failures no event will ever announce: a link that
+    // dropped mid-send, a peer that was reachable but refused. The
+    // timer walks the outbox on each message's backoff so the retry
+    // happens anyway; honouring the backoff keeps it from spinning
+    // between attempts.
+    _retryTimer?.cancel();
+    _retryTimer = Timer.periodic(_retryTick, (_) {
+      unawaited(flushQueued(honorBackoff: true));
+    });
+
     AppLogger.info('MessageTransport: listening for incoming messages');
   }
 
@@ -206,6 +250,8 @@ class MessageTransport {
     _routeSub = null;
     _connectionSub?.cancel();
     _connectionSub = null;
+    _retryTimer?.cancel();
+    _retryTimer = null;
   }
 
   // ── Sending ───────────────────────────────────────────────
@@ -245,12 +291,32 @@ class MessageTransport {
   /// attempt resolves the destination afresh, so a conversation keyed by
   /// a BLE address retries under whatever identity the peer has since
   /// proven.
-  Future<void> flushQueued() async {
+  ///
+  /// I9.11 — with [honorBackoff] (the timer's mode) a message whose
+  /// wait has not elapsed is left alone, so a persistently unreachable
+  /// peer backs off instead of being hammered on every tick. An event
+  /// forces a pass and ignores the backoff: the world changed, so it
+  /// is worth looking immediately.
+  Future<void> flushQueued({bool honorBackoff = false}) async {
     if (_flushing) return;
     _flushing = true;
     try {
       final queued = await _database.queuedMessages();
+
+      // Anything that left the outbox behind our back — a receipt
+      // delivered it while we were not looking — has no schedule to
+      // keep; sweep it rather than let the maps grow for the life of
+      // the process.
+      final live = queued.map((row) => row.id).toSet();
+      _retryAttempts.removeWhere((id, _) => !live.contains(id));
+      _retryAt.removeWhere((id, _) => !live.contains(id));
+
+      final now = DateTime.now();
       for (final row in queued) {
+        if (honorBackoff) {
+          final retryAt = _retryAt[row.id];
+          if (retryAt != null && retryAt.isAfter(now)) continue;
+        }
         final conversation =
             await _database.getConversation(row.conversationId);
         final peerDeviceId = conversation?.peerDeviceId;
@@ -1270,13 +1336,53 @@ class MessageTransport {
   }
 
   /// Update a message's status.
+  ///
+  /// Also I9.11's single bookkeeping point: whatever an attempt settled
+  /// as decides whether the retry schedule is cleared or pushed out.
   Future<void> _updateMessageStatus(int messageId, String status) async {
     await (_database.update(_database.messages)
           ..where((t) => t.id.equals(messageId)))
         .write(MessagesCompanion(
       status: Value(status),
     ));
+    _noteRetryOutcome(messageId, status);
   }
+
+  /// I9.11 — record how an attempt ended for the retry timer.
+  ///
+  /// `sent` and `failed` are settled: there is nothing left to time.
+  /// `queued` means the peer may simply not have been there, so the
+  /// wait before the next try doubles — first [_retryBaseBackoff],
+  /// capped at [_retryMaxBackoff] — instead of the outbox spinning on
+  /// a peer that is away for the afternoon. (A `queued` row is never
+  /// written off: only TTL/disappearance removes it, which is what the
+  /// status contract already promises.)
+  void _noteRetryOutcome(int messageId, String status) {
+    if (status == 'queued') {
+      final attempts = (_retryAttempts[messageId] ?? 0) + 1;
+      _retryAttempts[messageId] = attempts;
+      _retryAt[messageId] = DateTime.now().add(_retryBackoffFor(attempts));
+    } else {
+      _retryAttempts.remove(messageId);
+      _retryAt.remove(messageId);
+    }
+  }
+
+  /// The wait after [attempts] failed attempts: the base delay doubled
+  /// per attempt, clamped to the ceiling.
+  Duration _retryBackoffFor(int attempts) {
+    var delayMs = _retryBaseBackoff.inMilliseconds;
+    final maxMs = _retryMaxBackoff.inMilliseconds;
+    for (var i = 1; i < attempts && delayMs < maxMs; i++) {
+      delayMs *= 2;
+    }
+    return Duration(milliseconds: math.min(delayMs, maxMs));
+  }
+
+  /// When a queued message is next due under its backoff — null when it
+  /// has no schedule (delivered, written off, or not yet attempted).
+  @visibleForTesting
+  DateTime? nextRetryAt(int messageId) => _retryAt[messageId];
 
   /// Generate the next packet ID (wraps at 256).
   int _nextPacketId() {

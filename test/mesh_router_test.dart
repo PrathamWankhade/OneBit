@@ -382,6 +382,8 @@ void main() {
       Stream<void>? routeEvents,
       AttachmentDirectory? attachmentDirectory,
       ReceiptsAllowed? receiptsAllowed,
+      Duration? retryBase,
+      Duration? retryTick,
     }) {
       // The group body runs once, so every test re-establishes the
       // fixture here; the outbox cases then bring peerC up by hand.
@@ -411,6 +413,8 @@ void main() {
         routeEvents: routeEvents,
         attachmentDirectory: attachmentDirectory,
         receiptsAllowed: receiptsAllowed,
+        retryBaseBackoff: retryBase ?? MessageTransport.defaultRetryBaseBackoff,
+        retryTick: retryTick ?? MessageTransport.defaultRetryTick,
       );
       built.startListening();
       return built;
@@ -568,6 +572,93 @@ void main() {
 
       expect((await db.getMessages(convId)).single.status, 'sent');
       expect(await db.queuedMessages(), isEmpty);
+    });
+
+    group('I9.11 outbox retry backs off exponentially', () {
+      test('each failed attempt pushes the next try further out', () async {
+        transport = buildTransport(
+          withRoute: false,
+          retryBase: const Duration(seconds: 2),
+        );
+        final convId = await db.createConversationWithPeer('Peer C', peerC);
+
+        await transport!.sendMessage(
+          peerDeviceId: peerC,
+          conversationId: convId,
+          content: 'first try',
+        );
+        final row = (await db.queuedMessages()).single;
+
+        // One failure in, the next try is about one base out.
+        final first = transport!.nextRetryAt(row.id);
+        expect(first, isNotNull);
+        final firstWait = first!.difference(DateTime.now());
+        expect(
+          firstWait,
+          greaterThanOrEqualTo(const Duration(milliseconds: 1500)),
+        );
+        expect(firstWait, lessThan(const Duration(seconds: 4)));
+
+        // A forced pass (what a route or connection event does) ignores
+        // the backoff, tries again, fails again — and the wait doubles.
+        await transport!.flushQueued();
+        final second = transport!.nextRetryAt(row.id)!;
+        final secondWait = second.difference(DateTime.now());
+        expect(secondWait, greaterThanOrEqualTo(const Duration(seconds: 3)));
+        expect(secondWait, lessThan(const Duration(seconds: 6)));
+      });
+
+      test('the timer waits out the backoff instead of spinning', () async {
+        var sends = 0;
+        when(ble.sendReliable('ZZ:ZZ', any)).thenAnswer((_) async {
+          sends++;
+          return TransferResult.failed;
+        });
+
+        transport = buildTransport(
+          withRoute: false,
+          retryBase: const Duration(milliseconds: 300),
+          retryTick: const Duration(milliseconds: 50),
+        );
+        final convId = await db.createConversationWithPeer('Ghost', 'ZZ:ZZ');
+        await transport!.sendMessage(
+          peerDeviceId: 'ZZ:ZZ',
+          conversationId: convId,
+          content: 'into the void',
+        );
+        final firstPass = sends;
+        expect(firstPass, greaterThan(0));
+
+        // Well inside the 300 ms wait the timer must leave it alone…
+        await Future<void>.delayed(const Duration(milliseconds: 120));
+        expect(sends, firstPass);
+
+        // …and pick it up once the wait elapses, with no route or
+        // connection event anywhere in sight.
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+        expect(sends, greaterThan(firstPass));
+        expect((await db.getMessages(convId)).single.status, 'queued');
+      });
+
+      test('a delivered message is done with the backoff', () async {
+        transport = buildTransport(withRoute: false);
+        final convId = await db.createConversationWithPeer('Peer C', peerC);
+
+        await transport!.sendMessage(
+          peerDeviceId: peerC,
+          conversationId: convId,
+          content: 'saved for later',
+        );
+        final row = (await db.queuedMessages()).single;
+        expect(transport!.nextRetryAt(row.id), isNotNull);
+
+        peerCUp = true;
+        await transport!.flushQueued();
+
+        expect((await db.getMessages(convId)).single.status, 'sent');
+        expect(await db.queuedMessages(), isEmpty);
+        expect(transport!.nextRetryAt(row.id), isNull);
+      });
     });
 
     test('a message too long for one packet goes out in pieces', () async {
