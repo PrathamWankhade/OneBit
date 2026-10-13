@@ -311,6 +311,36 @@ void main() {
       manager.dispose();
       receiver.dispose();
     });
+
+    test('the duplicate cache forgets its oldest ids at the cap', () async {
+      final delivered = <int>[];
+
+      final receiver = FakeReliableChannel();
+      final manager = ReliableTransferManager(
+        channel: receiver,
+        config: const ReliableTransferConfig(duplicateCacheSize: 2),
+        onDataReceived: (_, id) => delivered.add(id),
+      );
+
+      // Three transfers fill the cache and push the first id out —
+      // the documented cost of bounding memory (I9.16.a): a bound
+      // this old is a dedup this weak, and that trade is deliberate.
+      manager.handleIncoming([TransferEnvelope.dataType, 1, 10]);
+      manager.handleIncoming([TransferEnvelope.dataType, 2, 20]);
+      manager.handleIncoming([TransferEnvelope.dataType, 3, 30]);
+      expect(delivered, [1, 2, 3]);
+
+      // A replay of the forgotten id reads as new again…
+      manager.handleIncoming([TransferEnvelope.dataType, 1, 10]);
+      expect(delivered, [1, 2, 3, 1]);
+
+      // …while a recent id is still deduplicated.
+      manager.handleIncoming([TransferEnvelope.dataType, 3, 30]);
+      expect(delivered, [1, 2, 3, 1]);
+
+      manager.dispose();
+      receiver.dispose();
+    });
   });
 
   group('ReliableTransferManager — duplicate ACK', () {
