@@ -975,6 +975,192 @@ void main() {
       expect(captured, hasLength(2));
     });
 
+    group('I9.11.c held receipts find a road later', () {
+      /// Land a plaintext message from [deviceId]/[peerId] and let the
+      /// delivered receipt it owes find whatever roads exist.
+      Future<void> landMessage({
+        required String deviceId,
+        required String peerId,
+        required String wireId,
+        int packetId = 1,
+      }) async {
+        inbound.add(ReliableDataReceived(
+          deviceId: deviceId,
+          payload: PacketCodec.encode(OneBitPacket(
+            type: PacketType.message,
+            packetId: packetId,
+            payload: MessageEnvelopeCodec.encode(MessageEnvelope(
+              protocolVersion: messageProtocolVersion,
+              messageId: MessageId(),
+              sourcePeerId: peerId,
+              destinationPeerId: localId,
+              payload: MessageCodec.encode(
+                externalMessageId: wireId,
+                content: 'msg $wireId',
+                timestampMs: 1700000000000,
+              ),
+            )),
+          )),
+          transferId: packetId,
+        ));
+        await pumpEventQueue();
+      }
+
+      test('a receipt with no road at all is held, not dropped', () async {
+        transport = buildTransport(
+          retryBase: const Duration(milliseconds: 300),
+        );
+
+        await landMessage(deviceId: deviceC, peerId: peerC, wireId: 'm_7');
+
+        // The message landed regardless of what happens to its receipt.
+        final conversation = await db.getConversationByPeerDevice(peerC);
+        expect(conversation, isNotNull);
+        expect(
+          (await db.getMessages(conversation!.id)).single.content,
+          'msg m_7',
+        );
+
+        // Neither road can take the receipt — peerC is out of reach and
+        // has no device to fall back to, so not even the radio was
+        // touched — yet the peer is still owed the indicator, so it
+        // waits on a backoff instead of vanishing.
+        expect(transport!.heldReceiptCount, 1);
+        expect(
+          transport!.nextHeldReceiptAt(peerC, ReceiptKind.delivered),
+          isNotNull,
+        );
+      });
+
+      test('the wait is honoured, then the receipt finds a road', () async {
+        transport = buildTransport(
+          withRoute: false,
+          retryBase: const Duration(milliseconds: 300),
+        );
+        var attempts = 0;
+        when(ble.sendReliable(deviceB, any)).thenAnswer((_) async {
+          attempts += 1;
+          return attempts == 1
+              ? TransferResult.failed
+              : TransferResult.delivered;
+        });
+
+        await landMessage(deviceId: deviceB, peerId: peerB, wireId: 'm_7');
+        expect(transport!.heldReceiptCount, 1);
+        expect(attempts, 1);
+
+        // Inside the wait, the timer's own mode changes nothing.
+        await transport!.flushReceipts(honorBackoff: true);
+        expect(attempts, 1);
+        expect(transport!.heldReceiptCount, 1);
+
+        // Past it, the retry goes out and, landing, ends the hold.
+        await Future<void>.delayed(const Duration(milliseconds: 350));
+        await transport!.flushReceipts(honorBackoff: true);
+        expect(attempts, 2);
+        expect(transport!.heldReceiptCount, 0);
+
+        final captured =
+            verify(ble.sendReliable(deviceB, captureAny)).captured;
+        final payload = Uint8List.fromList(packetOf(captured.last).payload);
+        final receipt = ReceiptTag.decodeFrame(payload);
+        expect(receipt, isNotNull);
+        expect(receipt!.kind, ReceiptKind.delivered);
+        expect(receipt.messageIds, ['m_7']);
+      });
+
+      test('a receipt that never finds a road is written off at the budget',
+          () async {
+        transport = buildTransport(
+          withRoute: false,
+          retryBase: const Duration(milliseconds: 10),
+        );
+        var attempts = 0;
+        when(ble.sendReliable(deviceB, any)).thenAnswer((_) async {
+          attempts += 1;
+          return TransferResult.failed;
+        });
+
+        await landMessage(deviceId: deviceB, peerId: peerB, wireId: 'm_7');
+        expect(attempts, 1);
+
+        // Four attempts in all (the first try counts), then the hold
+        // is given up: advisory traffic does not queue forever.
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await transport!.flushReceipts(honorBackoff: true); // attempt 2
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+        await transport!.flushReceipts(honorBackoff: true); // attempt 3
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+        await transport!.flushReceipts(honorBackoff: true); // attempt 4
+
+        expect(attempts, MessageTransport.defaultMaxReceiptAttempts);
+        expect(transport!.heldReceiptCount, 0);
+      });
+
+      test('closing the receipts gate drops what was owed', () async {
+        var receiptsOn = true;
+        var attempts = 0;
+        transport = buildTransport(
+          withRoute: false,
+          receiptsAllowed: () => receiptsOn,
+          retryBase: const Duration(milliseconds: 10),
+        );
+        when(ble.sendReliable(deviceB, any)).thenAnswer((_) async {
+          attempts += 1;
+          return TransferResult.failed;
+        });
+
+        await landMessage(deviceId: deviceB, peerId: peerB, wireId: 'm_7');
+        expect(transport!.heldReceiptCount, 1);
+
+        receiptsOn = false;
+        await transport!.flushReceipts();
+
+        // A setting wins over a queue: the hold is gone and the drain
+        // put nothing new on the radio.
+        expect(transport!.heldReceiptCount, 0);
+        expect(attempts, 1);
+      });
+
+      test('a second receipt for the same road merges into one hold',
+          () async {
+        transport = buildTransport(
+          withRoute: false,
+          retryBase: const Duration(milliseconds: 300),
+        );
+        when(ble.sendReliable(deviceB, any))
+            .thenAnswer((_) async => TransferResult.failed);
+
+        await landMessage(
+          deviceId: deviceB,
+          peerId: peerB,
+          wireId: 'm_7',
+          packetId: 1,
+        );
+        await landMessage(
+          deviceId: deviceB,
+          peerId: peerB,
+          wireId: 'm_8',
+          packetId: 2,
+        );
+        expect(transport!.heldReceiptCount, 1);
+
+        // When the road finally opens, one frame carries both ids.
+        when(ble.sendReliable(deviceB, any))
+            .thenAnswer((_) async => TransferResult.delivered);
+        await Future<void>.delayed(const Duration(milliseconds: 350));
+        await transport!.flushReceipts(honorBackoff: true);
+        expect(transport!.heldReceiptCount, 0);
+
+        final captured =
+            verify(ble.sendReliable(deviceB, captureAny)).captured;
+        final payload = Uint8List.fromList(packetOf(captured.last).payload);
+        final receipt = ReceiptTag.decodeFrame(payload);
+        expect(receipt, isNotNull);
+        expect(receipt!.messageIds, ['m_7', 'm_8']);
+      });
+    });
+
     group('attachments travel as manifest plus slices', () {
       late Directory tempDir;
 

@@ -96,6 +96,17 @@ Future<Directory> _defaultAttachmentDirectory() =>
 /// event ever follows — it retries each message on its own exponential
 /// backoff, so a link that dropped mid-send still recovers on its own
 /// without the outbox spinning against a peer that is away.
+///
+/// ## Receipts
+///
+/// A receipt has no row of that outbox to sit in, but it still gets a
+/// second chance (I9.11.c): one whose two roads are both closed — no
+/// mesh route, no reachable device — is held in memory, keyed by peer
+/// and kind so several ids travel one frame, and drained by the same
+/// timer and the same route/connection events that flush the outbox.
+/// The hold is advisory: bounded in count and attempts, re-encoded
+/// fresh on each try, and dropped outright whenever the receipts switch
+/// says nothing may leave — a setting always wins over a queue.
 class MessageTransport {
   /// I9.11 retry cadence: the wait after a failed attempt, the ceiling
   /// that wait doubles towards, and how often the timer looks for
@@ -104,6 +115,12 @@ class MessageTransport {
   static const defaultRetryBaseBackoff = Duration(seconds: 10);
   static const defaultRetryMaxBackoff = Duration(minutes: 15);
   static const defaultRetryTick = Duration(seconds: 10);
+
+  /// I9.11.c — attempts (the first try included) before an advisory
+  /// receipt is written off, and how many peers may be owed one at
+  /// once. A nicety earns a nudge, not an unbounded queue.
+  static const defaultMaxReceiptAttempts = 4;
+  static const defaultMaxHeldReceipts = 32;
 
   MessageTransport({
     required this._bleService,
@@ -123,6 +140,8 @@ class MessageTransport {
     this._retryBaseBackoff = defaultRetryBaseBackoff,
     this._retryMaxBackoff = defaultRetryMaxBackoff,
     this._retryTick = defaultRetryTick,
+    this._maxReceiptAttempts = defaultMaxReceiptAttempts,
+    this._maxHeldReceipts = defaultMaxHeldReceipts,
   });
 
   final BleService _bleService;
@@ -206,6 +225,17 @@ class MessageTransport {
   final _retryAt = <int, DateTime>{};
   Timer? _retryTimer;
 
+  /// I9.11.c — receipts that found no road, keyed by peer + kind so a
+  /// chat owed several ids holds one entry. Insertion-ordered: at the
+  /// cap the oldest hold is evicted first.
+  final _heldReceipts = <String, _HeldReceipt>{};
+  bool _flushingReceipts = false;
+
+  /// I9.11.c — see [defaultMaxReceiptAttempts] and
+  /// [defaultMaxHeldReceipts].
+  final int _maxReceiptAttempts;
+  final int _maxHeldReceipts;
+
   /// Start listening for incoming messages from peers.
   void startListening() {
     _receiveSub?.cancel();
@@ -216,15 +246,23 @@ class MessageTransport {
 
     // Both events mean the same thing to the outbox: a message that had
     // nowhere to go may have somewhere now. Re-entrancy is guarded, so
-    // a burst of them costs one pass, not one per event.
+    // a burst of them costs one pass, not one per event. Held receipts
+    // (I9.11.c) ride the same events — a road that opened is exactly
+    // what they were waiting for.
     _routeSub?.cancel();
     _routeSub = _routeEvents?.listen(
-      (_) => unawaited(flushQueued()),
+      (_) {
+        unawaited(flushQueued());
+        unawaited(flushReceipts());
+      },
       onError: (Object e) => AppLogger.error('MessageTransport route sub', e),
     );
     _connectionSub?.cancel();
     _connectionSub = _connectionEvents?.listen(
-      (_) => unawaited(flushQueued()),
+      (_) {
+        unawaited(flushQueued());
+        unawaited(flushReceipts());
+      },
       onError: (Object e) =>
           AppLogger.error('MessageTransport connection sub', e),
     );
@@ -233,10 +271,12 @@ class MessageTransport {
     // dropped mid-send, a peer that was reachable but refused. The
     // timer walks the outbox on each message's backoff so the retry
     // happens anyway; honouring the backoff keeps it from spinning
-    // between attempts.
+    // between attempts. Held receipts drain on the same heartbeat
+    // (I9.11.c), on their own wait.
     _retryTimer?.cancel();
     _retryTimer = Timer.periodic(_retryTick, (_) {
       unawaited(flushQueued(honorBackoff: true));
+      unawaited(flushReceipts(honorBackoff: true));
     });
 
     AppLogger.info('MessageTransport: listening for incoming messages');
@@ -333,6 +373,92 @@ class MessageTransport {
       AppLogger.error('MessageTransport: outbox flush failed', e);
     } finally {
       _flushing = false;
+    }
+  }
+
+  /// Give every held receipt whose wait has elapsed another attempt.
+  ///
+  /// I9.11.c — the mirror of [flushQueued] for the traffic that has no
+  /// row to bookkeep. [honorBackoff] (the timer's mode) leaves entries
+  /// still inside their wait alone; an event forces a pass and ignores
+  /// the wait, exactly as the outbox treats it. Receipts turned off
+  /// clears the hold outright — a setting wins over anything owed.
+  Future<void> flushReceipts({bool honorBackoff = false}) async {
+    if (_flushingReceipts) return;
+    _flushingReceipts = true;
+    try {
+      final allowed = _receiptsAllowed;
+      if (allowed != null && !allowed()) {
+        if (_heldReceipts.isNotEmpty) {
+          AppLogger.info(
+            'MessageTransport: dropping ${_heldReceipts.length} held '
+            'receipt(s) — receipts are off',
+          );
+          _heldReceipts.clear();
+        }
+        return;
+      }
+
+      final now = DateTime.now();
+      final due = honorBackoff
+          ? _heldReceipts.entries
+              .where((entry) => !entry.value.nextAttemptAt.isAfter(now))
+              .map((entry) => entry.key)
+              .toList(growable: false)
+          : _heldReceipts.keys.toList(growable: false);
+
+      for (final key in due) {
+        final held = _heldReceipts[key];
+        if (held == null) continue;
+
+        // Re-encoded on each attempt: a fresh timestamp, and a hold
+        // that merged later ids carries all of them in one frame.
+        final Uint8List frame;
+        try {
+          frame = ReceiptTag.encodeFrame(
+            kind: held.kind,
+            messageIds: held.messageIds.toList(growable: false),
+            timestampMs: DateTime.now().toUtc().millisecondsSinceEpoch,
+          );
+        } catch (e) {
+          // Deterministic: it will never encode, so do not keep it.
+          AppLogger.error('MessageTransport: held receipt will not encode', e);
+          _heldReceipts.remove(key);
+          continue;
+        }
+
+        if (await _trySendReceiptFrame(
+          frame,
+          peerKey: held.peerKey,
+          fallbackDeviceId: held.fallbackDeviceId,
+        )) {
+          _heldReceipts.remove(key);
+          AppLogger.info(
+            'MessageTransport: delivered a held ${held.kind.name} receipt',
+          );
+          continue;
+        }
+
+        // Still no road. Spend the attempt and push the wait out — or,
+        // budget spent, write it off: the message itself is already
+        // safe on the far side; only the indicator is lost, and a
+        // nicety does not earn an unbounded queue.
+        held.attempts += 1;
+        if (held.attempts >= _maxReceiptAttempts) {
+          _heldReceipts.remove(key);
+          AppLogger.info(
+            'MessageTransport: giving up on a held ${held.kind.name} '
+            'receipt after ${held.attempts} attempts',
+          );
+        } else {
+          held.nextAttemptAt =
+              DateTime.now().add(_retryBackoffFor(held.attempts));
+        }
+      }
+    } catch (e) {
+      AppLogger.error('MessageTransport: receipt flush failed', e);
+    } finally {
+      _flushingReceipts = false;
     }
   }
 
@@ -1067,7 +1193,10 @@ class MessageTransport {
   /// Mesh first, because the sender may be several hops away and only
   /// ever told us its identity; straight to the device second. A receipt
   /// has no row of its own, so none of the status bookkeeping that rides
-  /// along with a message applies to it.
+  /// along with a message applies to it — but a receipt with nowhere to
+  /// go is not simply lost either (I9.11.c): both roads closed means it
+  /// is held for [flushReceipts], which keeps trying while the setting
+  /// still allows receipts to leave.
   Future<void> _sendReceipt({
     required String peerKey,
     String? fallbackDeviceId,
@@ -1092,23 +1221,92 @@ class MessageTransport {
       return;
     }
 
+    if (await _trySendReceiptFrame(
+      frame,
+      peerKey: peerKey,
+      fallbackDeviceId: fallbackDeviceId,
+    )) {
+      return;
+    }
+
+    // Neither road took it — no route yet, or the direct send came
+    // back failed. The mesh may look different in a moment, so hold
+    // rather than drop: the sender is owed this indicator.
+    _holdReceipt(
+      peerKey: peerKey,
+      fallbackDeviceId: fallbackDeviceId,
+      kind: kind,
+      messageIds: messageIds,
+    );
+  }
+
+  /// Try both roads for an already-encoded receipt frame — mesh first,
+  /// then straight to the device — and report whether one took it.
+  Future<bool> _trySendReceiptFrame(
+    Uint8List frame, {
+    required String peerKey,
+    String? fallbackDeviceId,
+  }) async {
     final peerIdentity = _resolveIdentity(peerKey);
     if (peerIdentity != null &&
         await _sendViaMesh(peerIdentity, frame) != null) {
-      return;
+      return true;
     }
 
     final deviceId = _resolveDevice(peerKey, peerIdentity) ?? fallbackDeviceId;
     if (deviceId == null) {
-      AppLogger.info('MessageTransport: no route for a ${kind.name} receipt');
-      return;
+      AppLogger.info('MessageTransport: no road for a receipt yet');
+      return false;
     }
 
-    await sendInPackets(
+    final result = await sendInPackets(
       frame,
       type: PacketType.message,
       packetId: _nextPacketId(),
       send: (bytes) => _bleService.sendReliable(deviceId, bytes),
+    );
+    return result == TransferResult.delivered;
+  }
+
+  /// Hold a receipt that found no road (I9.11.c).
+  ///
+  /// Keyed by peer + kind: a second receipt for the same road while the
+  /// first still waits merges its ids into the one hold — one frame
+  /// will carry them all — instead of growing the queue. The wait from
+  /// the first failure stands; merging is information, not a new
+  /// failure. A hold is never created when receipts are off (the entry
+  /// point already returned) and never survives the next drain that
+  /// finds them off.
+  void _holdReceipt({
+    required String peerKey,
+    String? fallbackDeviceId,
+    required ReceiptKind kind,
+    required List<String> messageIds,
+  }) {
+    final key = '$peerKey|${kind.name}';
+    final existing = _heldReceipts[key];
+    if (existing != null) {
+      existing.messageIds.addAll(messageIds);
+      if (fallbackDeviceId != null) {
+        existing.fallbackDeviceId = fallbackDeviceId;
+      }
+      return;
+    }
+
+    if (_heldReceipts.length >= _maxHeldReceipts) {
+      _heldReceipts.remove(_heldReceipts.keys.first);
+    }
+
+    _heldReceipts[key] = _HeldReceipt(
+      peerKey: peerKey,
+      fallbackDeviceId: fallbackDeviceId,
+      kind: kind,
+      messageIds: {...messageIds},
+      attempts: 1,
+      nextAttemptAt: DateTime.now().add(_retryBackoffFor(1)),
+    );
+    AppLogger.info(
+      'MessageTransport: holding a ${kind.name} receipt — no road yet',
     );
   }
 
@@ -1384,6 +1582,15 @@ class MessageTransport {
   @visibleForTesting
   DateTime? nextRetryAt(int messageId) => _retryAt[messageId];
 
+  /// Receipts currently held for a later attempt (I9.11.c).
+  @visibleForTesting
+  int get heldReceiptCount => _heldReceipts.length;
+
+  /// When a held receipt is next due — null when that road is not owed.
+  @visibleForTesting
+  DateTime? nextHeldReceiptAt(String peerKey, ReceiptKind kind) =>
+      _heldReceipts['$peerKey|${kind.name}']?.nextAttemptAt;
+
   /// Generate the next packet ID (wraps at 256).
   int _nextPacketId() {
     _packetIdCounter = (_packetIdCounter + 1) & 0xFF;
@@ -1394,4 +1601,35 @@ class MessageTransport {
   void dispose() {
     stopListening();
   }
+}
+
+/// A receipt owed to a peer that found no road (I9.11.c), waiting on
+/// the outbox's backoff.
+class _HeldReceipt {
+  _HeldReceipt({
+    required this.peerKey,
+    required this.fallbackDeviceId,
+    required this.kind,
+    required this.messageIds,
+    required this.attempts,
+    required this.nextAttemptAt,
+  });
+
+  /// Identity when we have it, BLE address otherwise — re-resolved on
+  /// every attempt, exactly as a fresh send would.
+  final String peerKey;
+
+  /// The device the original attempt fell back to: only ever the second
+  /// road, and refreshed whenever a newer receipt knows better.
+  String? fallbackDeviceId;
+
+  final ReceiptKind kind;
+
+  /// Every id owed on this road; one frame carries them all.
+  final Set<String> messageIds;
+
+  /// Attempts spent so far (the first try counts).
+  int attempts;
+
+  DateTime nextAttemptAt;
 }
