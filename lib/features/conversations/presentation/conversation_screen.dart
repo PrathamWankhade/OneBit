@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -216,8 +215,6 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
             await _sendImageMessage(image);
           }
         }
-      case AttachmentType.document:
-        await _showDocumentPicker();
       case AttachmentType.location:
         await _showLocationPicker();
       case AttachmentType.contact:
@@ -262,77 +259,6 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
       }
     });
-  }
-
-  /// Send a picked document's bytes in slices. Refuses past the cap:
-  /// a document cannot be shrunk, so an oversize one is declined
-  /// instead of dribbled out over an hour of radio time.
-  Future<void> _sendDocMessage(PlatformFile picked) async {
-    const maxDocBytes = 200 * 1024;
-
-    final bytes = picked.bytes ??
-        (picked.path != null ? await File(picked.path!).readAsBytes() : null);
-    if (bytes == null || bytes.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not read that file')),
-        );
-      }
-      return;
-    }
-    if (bytes.length > maxDocBytes) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('File too large to send — 200 KB max'),
-          ),
-        );
-      }
-      return;
-    }
-
-    final db = ref.read(databaseProvider);
-    final transport = ref.read(messageTransportProvider);
-    final conversation = await db.getConversation(widget.conversationId);
-    final peerDeviceId = conversation?.peerDeviceId;
-
-    final name = AttachmentManifest.sanitize(picked.name);
-    final appDir = await getApplicationDocumentsDirectory();
-    await File('${appDir.path}/$name')
-        .writeAsBytes(Uint8List.fromList(bytes), flush: true);
-
-    if (peerDeviceId != null) {
-      final result = await transport.sendAttachment(
-        peerDeviceId: peerDeviceId,
-        conversationId: widget.conversationId,
-        kind: 'file',
-        fileName: name,
-        bytes: Uint8List.fromList(bytes),
-      );
-      if (!mounted) return;
-      if (result != TransferResult.delivered) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('File queued — sends on reconnect')),
-        );
-      }
-    } else {
-      await db.insertMessage(
-        conversationId: widget.conversationId,
-        content: '[file:$name]',
-      );
-    }
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-      }
-    });
-  }
-
-  Future<void> _showDocumentPicker() async {
-    final result = await FilePicker.pickFiles(withData: true);
-    if (result == null || result.files.isEmpty || !mounted) return;
-    await _sendDocMessage(result.files.single);
   }
 
   Future<void> _showLocationPicker() async {
