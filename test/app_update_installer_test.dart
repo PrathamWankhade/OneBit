@@ -305,8 +305,13 @@ void main() {
       await tester.pump();
       // The download writes to the real file system, and its completions
       // are scheduled in the fake-async zone, so nothing advances until
-      // the test hands control back to genuine asynchronous code.
-      for (var i = 0; i < 10 && paths.isEmpty; i++) {
+      // the test hands control back to genuine asynchronous code. The
+      // full suite runs test files in parallel, all hammering
+      // %TEMP%, and a Windows indexer/antivirus pass can stall a file
+      // operation well past a couple of windows — so the budget is
+      // generous. The loop exits the moment the install lands, which
+      // is the normal case after a handful of rounds.
+      for (var i = 0; i < 30 && paths.isEmpty; i++) {
         await tester.runAsync(
           () => Future<void>.delayed(const Duration(milliseconds: 50)),
         );
