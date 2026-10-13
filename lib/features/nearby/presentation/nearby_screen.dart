@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:onebit/core/logging/app_logger.dart';
 import 'package:onebit/core/theme/app_theme.dart';
+import 'package:onebit/features/ble/advertising_supervisor.dart';
 import 'package:onebit/features/ble/ble_providers.dart';
 import 'package:onebit/features/ble/ble_state.dart';
 import 'package:onebit/features/identity/identity_association_resolver.dart';
@@ -32,6 +33,10 @@ class _NearbyScreenState extends ConsumerState<NearbyScreen>
   /// tell a genuinely new resolver from the closed one it just left.
   IdentityAssociationResolver? _listenedResolver;
   BleStateNotifier? _notifier;
+
+  /// Held directly so `dispose` can clear the advertising intent without
+  /// touching `ref` after the element is deactivated.
+  late final StateController<bool> _advertisingIntent;
   late AnimationController _pulseController;
 
   /// Whether discovery (advertising *and* scanning) has been started
@@ -50,6 +55,7 @@ class _NearbyScreenState extends ConsumerState<NearbyScreen>
   void initState() {
     super.initState();
     _notifier = ref.read(bleStateProvider.notifier);
+    _advertisingIntent = ref.read(nearbyAdvertisingIntentProvider.notifier);
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
@@ -61,7 +67,10 @@ class _NearbyScreenState extends ConsumerState<NearbyScreen>
   void dispose() {
     _resolvedSub?.cancel();
     _notifier?.stopScan();
-    _notifier?.stopAdvertising();
+    // Release the *request* to advertise. The app-wide supervisor still
+    // owns the radio and may keep it on under "Advertise continuously" —
+    // closing Nearby must not kill an advertisement the app wants up.
+    _advertisingIntent.state = false;
     _pulseController.dispose();
     super.dispose();
   }
@@ -109,16 +118,12 @@ class _NearbyScreenState extends ConsumerState<NearbyScreen>
     if (!ref.read(bleStateProvider).isOperational) return;
     _autoStarted = true;
 
-    // Advertising carries the local public key, so wait for the identity to
-    // load — without it, peers only ever see an anonymous "OneBit device".
-    try {
-      await ref.read(localIdentityProvider.future);
-    } catch (e) {
-      AppLogger.warning('Nearby: identity unavailable before advertising: $e');
-    }
-    if (!mounted) return;
-    await _startAdvertising();
-    if (!mounted) return;
+    // Opening Nearby is a request to be discoverable. The supervisor owns
+    // the radio: it waits for the identity (so the advertisement carries
+    // the public key) and honours stealth before putting the device on
+    // the air.
+    _advertisingIntent.state = true;
+
     // Discovery now starts with the screen. A user opening Nearby to see
     // who is around should not also have to press "Scan again" before a
     // single row can appear; the button remains as a manual refresh.
@@ -149,30 +154,28 @@ class _NearbyScreenState extends ConsumerState<NearbyScreen>
     _resolvedSub = null;
   }
 
+  /// Publishes a request to be discoverable.
+  ///
+  /// The supervisor is the only thing that starts the radio, so this is a
+  /// statement of intent rather than a direct call — it waits for the
+  /// identity and honours "Advertise continuously". Stealth still wins:
+  /// the device must never go on the air while hidden, so there is
+  /// nothing to request.
   Future<void> _startAdvertising() async {
-    // Stealth mode: the radio listens but never puts the device on the
-    // air, so there is nothing to start.
     try {
       if (ref.read(settingsStealthEnabledProvider)) return;
     } catch (_) {
       // No settings repo — behave as before.
     }
-
-    final notifier = ref.read(bleStateProvider.notifier);
-    final identityAsync = ref.read(localIdentityProvider);
-    final identity = identityAsync.valueOrNull;
-    try {
-      await notifier.startAdvertising(
-        identityPublicKeyBytes: identity?.publicKeyBytes,
-      );
-    } on BleAdvertisingException {
-      // Error state is reflected via bleStateProvider.
-    }
+    _advertisingIntent.state = true;
   }
 
+  /// Publishes a request to stop being discoverable.
+  ///
+  /// The supervisor may still keep the radio up if "Advertise
+  /// continuously" is on — this screen does not own that decision.
   Future<void> _stopAdvertising() async {
-    final notifier = ref.read(bleStateProvider.notifier);
-    await notifier.stopAdvertising();
+    _advertisingIntent.state = false;
   }
 
   Future<void> _connectDevice(String deviceId) async {

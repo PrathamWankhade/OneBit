@@ -2888,6 +2888,97 @@ void main() {
       await service.dispose();
     });
 
+    test('connectionStateChanged with mtu populates BleConnectionInfo.mtu',
+        () async {
+      const mockChannel = MethodChannel('dev.onebit.onebit/ble');
+      const mockEventChannel = EventChannel('dev.onebit.onebit/ble_events');
+      final service = BleService(
+        methodChannel: mockChannel,
+        eventChannel: mockEventChannel,
+      );
+
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(mockChannel, (call) async {
+        if (call.method == 'getState') {
+          return <String, dynamic>{
+            'state': 'ready',
+            'permission': 'granted',
+            'batterySaver': false,
+            'recoveryRequired': false,
+          };
+        }
+        return null;
+      });
+
+      await service.initialize();
+
+      // Kotlin carries the negotiated ATT MTU on the READY event.
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .handlePlatformMessage(
+        mockEventChannel.name,
+        const StandardMethodCodec().encodeSuccessEnvelope(<String, dynamic>{
+          'event': 'connectionStateChanged',
+          'deviceId': 'AA:BB',
+          'state': 'ready',
+          'mtu': 247,
+        }),
+        (ByteData? data) {},
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(service.current.connections['AA:BB']?.mtu, 247);
+
+      await service.dispose();
+    });
+
+    test('mtuNegotiated refreshes an existing link without touching state',
+        () async {
+      const mockChannel = MethodChannel('dev.onebit.onebit/ble');
+      const mockEventChannel = EventChannel('dev.onebit.onebit/ble_events');
+      final service = BleService(
+        methodChannel: mockChannel,
+        eventChannel: mockEventChannel,
+      );
+
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(mockChannel, (call) async {
+        if (call.method == 'getState') {
+          return <String, dynamic>{
+            'state': 'ready',
+            'permission': 'granted',
+            'batterySaver': false,
+            'recoveryRequired': false,
+          };
+        }
+        return null;
+      });
+
+      await service.initialize();
+
+      // Bring the link up first so it exists with services discovered.
+      service.pushConnectionState('AA:BB', BleConnectionState.connected);
+
+      // Now renegotiate the MTU; only the mtu should change.
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .handlePlatformMessage(
+        mockEventChannel.name,
+        const StandardMethodCodec().encodeSuccessEnvelope(<String, dynamic>{
+          'event': 'mtuNegotiated',
+          'deviceId': 'AA:BB',
+          'requestedMtu': 517,
+          'actualMtu': 512,
+        }),
+        (ByteData? data) {},
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      final info = service.current.connections['AA:BB'];
+      expect(info?.mtu, 512);
+      expect(info?.state, BleConnectionState.connected);
+
+      await service.dispose();
+    });
+
     test('characteristicChanged with empty value', () async {
       const mockChannel = MethodChannel('dev.onebit.onebit/ble');
       final service = BleService(methodChannel: mockChannel);

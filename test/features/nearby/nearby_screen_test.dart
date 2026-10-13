@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:onebit/features/ble/advertising_supervisor.dart';
 import 'package:onebit/features/ble/ble_providers.dart';
 import 'package:onebit/features/ble/discovered_device.dart';
 import 'package:onebit/features/identity/identity_providers.dart';
 import 'package:onebit/features/nearby/presentation/nearby_screen.dart';
+import 'package:onebit/features/settings/data/settings_providers.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -57,10 +59,17 @@ void main() {
         // these tests are about discovery UI, not identity — stubbing it
         // keeps them from opening the real database.
         localIdentityProvider.overrideWith((ref) async => null),
+        // The radio is owned by the app-wide AdvertisingSupervisor, which
+        // consults these settings. Always-advertise is off so that opening
+        // Nearby (its intent) is what puts the device on the air — the
+        // path these tests exist to exercise.
+        settingsAlwaysAdvertiseProvider.overrideWith((ref) => false),
+        settingsStealthEnabledProvider.overrideWith((ref) => false),
+        settingsDiscoveryEnabledProvider.overrideWith((ref) => true),
         ...overrides,
       ],
       child: const MaterialApp(
-        home: NearbyScreen(),
+        home: _SupervisorHost(child: NearbyScreen()),
       ),
     );
   }
@@ -417,4 +426,21 @@ void main() {
       expect(find.text('Scanning for peers'), findsOneWidget);
     });
   });
+}
+
+/// Keeps the app-wide [AdvertisingSupervisor] alive for the test.
+///
+/// Nearby no longer owns the radio — it only publishes intent — so the
+/// supervisor has to be in the tree for that intent to reach the BLE
+/// service. Watching it here mirrors what `OneBitApp` does in production.
+class _SupervisorHost extends ConsumerWidget {
+  const _SupervisorHost({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(advertisingSupervisorProvider);
+    return child;
+  }
 }

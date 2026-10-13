@@ -146,6 +146,7 @@ class BleConnectionInfo {
     this.state = BleConnectionState.disconnected,
     this.servicesDiscovered = false,
     this.hasOneBitService = false,
+    this.mtu,
     this.errorMessage,
   });
 
@@ -153,6 +154,14 @@ class BleConnectionInfo {
   final BleConnectionState state;
   final bool servicesDiscovered;
   final bool hasOneBitService;
+
+  /// Negotiated ATT MTU in bytes, once the link reaches READY.
+  ///
+  /// Carried on the `connectionStateChanged` payload the Kotlin
+  /// [ConnectionManager] emits at READY, and refreshed by the
+  /// `mtuNegotiated` event. Null until a link has actually negotiated one,
+  /// so callers fall back to the 23-byte ATT default.
+  final int? mtu;
   final String? errorMessage;
 
   bool get isConnected =>
@@ -168,6 +177,7 @@ class BleConnectionInfo {
     BleConnectionState? state,
     bool? servicesDiscovered,
     bool? hasOneBitService,
+    int? mtu,
     String? errorMessage,
     bool clearError = false,
   }) {
@@ -176,6 +186,7 @@ class BleConnectionInfo {
       state: state ?? this.state,
       servicesDiscovered: servicesDiscovered ?? this.servicesDiscovered,
       hasOneBitService: hasOneBitService ?? this.hasOneBitService,
+      mtu: mtu ?? this.mtu,
       errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
     );
   }
@@ -189,6 +200,7 @@ class BleConnectionInfo {
           state == other.state &&
           servicesDiscovered == other.servicesDiscovered &&
           hasOneBitService == other.hasOneBitService &&
+          mtu == other.mtu &&
           errorMessage == other.errorMessage;
 
   @override
@@ -197,6 +209,7 @@ class BleConnectionInfo {
         state,
         servicesDiscovered,
         hasOneBitService,
+        mtu,
         errorMessage,
       );
 
@@ -205,6 +218,7 @@ class BleConnectionInfo {
       'BleConnectionInfo(deviceId: $deviceId, state: $state, '
       'servicesDiscovered: $servicesDiscovered, '
       'hasOneBitService: $hasOneBitService, '
+      'mtu: $mtu, '
       'errorMessage: $errorMessage)';
 }
 

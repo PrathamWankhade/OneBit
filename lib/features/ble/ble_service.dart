@@ -812,6 +812,7 @@ class BleService {
     BleConnectionState state, {
     bool? servicesDiscovered,
     bool? hasOneBitService,
+    int? mtu,
     String? error,
   }) {
     final existing = _current.connections[deviceId];
@@ -819,6 +820,7 @@ class BleService {
           state: state,
           servicesDiscovered: servicesDiscovered,
           hasOneBitService: hasOneBitService,
+          mtu: mtu,
           errorMessage: error,
           clearError: error == null,
         ) ??
@@ -827,6 +829,7 @@ class BleService {
           state: state,
           servicesDiscovered: servicesDiscovered ?? false,
           hasOneBitService: hasOneBitService ?? false,
+          mtu: mtu,
           errorMessage: error,
         );
 
@@ -872,6 +875,8 @@ class BleService {
           _applyConnectionStateEvent(Map<String, dynamic>.from(event));
         } else if (type == 'servicesDiscovered') {
           _applyServicesDiscoveredEvent(Map<String, dynamic>.from(event));
+        } else if (type == 'mtuNegotiated') {
+          _applyMtuNegotiatedEvent(Map<String, dynamic>.from(event));
         } else if (type == 'characteristicChanged') {
           _applyCharacteristicChangedEvent(Map<String, dynamic>.from(event));
         }
@@ -1013,7 +1018,10 @@ class BleService {
     if (deviceId == null || stateStr == null) return;
 
     final state = _parseConnectionState(stateStr);
-    _updateConnection(deviceId, state);
+    // The Kotlin ConnectionManager carries the negotiated ATT MTU on the
+    // READY connection event; until then it is absent and stays null.
+    final mtu = (data['mtu'] as num?)?.toInt();
+    _updateConnection(deviceId, state, mtu: mtu);
 
     // Handle Bluetooth being turned off during connection.
     if (state == BleConnectionState.disconnected &&
@@ -1025,6 +1033,17 @@ class BleService {
     if (state == BleConnectionState.disconnected) {
       _cleanupPerDeviceResources(deviceId);
     }
+  }
+
+  void _applyMtuNegotiatedEvent(Map<String, dynamic> data) {
+    final deviceId = data['deviceId'] as String?;
+    final actualMtu = (data['actualMtu'] as num?)?.toInt();
+    if (deviceId == null || actualMtu == null) return;
+    final existing = _current.connections[deviceId];
+    // Only refresh a link that is still up; a late event after teardown
+    // must not resurrect a phantom connection.
+    if (existing == null) return;
+    _updateConnection(deviceId, existing.state, mtu: actualMtu);
   }
 
   void _applyServicesDiscoveredEvent(Map<String, dynamic> data) {

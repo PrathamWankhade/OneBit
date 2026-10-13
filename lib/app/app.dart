@@ -10,6 +10,7 @@ import 'package:onebit/core/theme/app_theme.dart';
 import 'package:onebit/core/version/app_version.dart';
 import 'package:onebit/data/database/app_database.dart';
 import 'package:onebit/data/preferences/onboarding_repository.dart';
+import 'package:onebit/features/ble/advertising_supervisor.dart';
 import 'package:onebit/features/ble/ble_lifecycle_observer.dart';
 import 'package:onebit/features/ble/ble_providers.dart';
 import 'package:onebit/features/identity/identity_providers.dart';
@@ -242,6 +243,10 @@ class _OneBitAppBodyState extends ConsumerState<_OneBitAppBody> {
   @override
   Widget build(BuildContext context) {
     ref.watch(bleLifecycleObserverProvider);
+    // Keeps the radio on the air under "Advertise continuously", gated on
+    // stealth, discovery, the radio and the identity — without the Nearby
+    // screen open.
+    ref.watch(advertisingSupervisorProvider);
     // Lazy providers are never built until something watches them.
     // The mesh only routes if this is held alive for the app's life.
     ref.watch(meshRouterProvider);
