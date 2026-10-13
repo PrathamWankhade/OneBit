@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -22,6 +23,7 @@ import 'package:onebit/features/identity/identity_providers.dart';
 import 'package:onebit/features/peer_registry/peer_connection_manager.dart';
 import 'package:onebit/features/peer_registry/peer_connection_providers.dart';
 import 'package:onebit/features/protocol/attachment_segment.dart';
+import 'package:onebit/features/protocol/delivery_state.dart';
 import 'package:onebit/features/reliable/transfer.dart';
 import 'package:onebit/features/routing/routing_validators.dart';
 import 'package:onebit/features/ui/components/components.dart';
@@ -55,6 +57,11 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   final _scrollController = ScrollController();
   bool _isRecording = false;
 
+  /// I9.14.a — attempts on the wire and retry schedules live in
+  /// memory, never in the database; without this the thread would sit
+  /// on "Queued" while the radio is actually working.
+  StreamSubscription<void>? _deliverySub;
+
   /// The message the composer is currently answering, if any.
   ///
   /// Held here rather than as a DB column: the quote already travels
@@ -72,6 +79,14 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
       messagesProvider(widget.conversationId),
       (previous, next) => _markConversationRead(),
     );
+    // I9.14.a — the rows in this thread only change when the database
+    // changes, but the states painted on them also depend on facts
+    // (in flight, scheduled retry) that never touch a row. One cheap
+    // rebuild per pulse keeps both honest.
+    _deliverySub =
+        ref.read(messageTransportProvider).deliveryEvents.listen((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   /// Put the badge out, and tell the peer what was behind it.
@@ -103,6 +118,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
   @override
   void dispose() {
+    _deliverySub?.cancel();
     _controller.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -503,6 +519,8 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                       messages: messages,
                       scrollController: _scrollController,
                       onMessageAction: _showMessageActions,
+                      deliveryStateFor:
+                          ref.read(messageTransportProvider).deliveryStateFor,
                     );
                   },
                 ),
@@ -840,9 +858,10 @@ class _MessageList extends StatelessWidget {
     required this.messages,
     required this.scrollController,
     required this.onMessageAction,
+    required this.deliveryStateFor,
   });
 
-  final List<dynamic> messages;
+  final List<Message> messages;
   final ScrollController scrollController;
 
   /// Handles a long-press; lives on the screen because deleting needs
@@ -850,12 +869,17 @@ class _MessageList extends StatelessWidget {
   final Future<void> Function(BuildContext context, Message msg)
       onMessageAction;
 
+  /// I9.14.a — the one contract that turns a row into what the thread
+  /// shows: the screen hands over the transport's answer, so every
+  /// renderer here (text, file, voice…) wears the same truth.
+  final DeliveryState Function(Message msg) deliveryStateFor;
+
   @override
   Widget build(BuildContext context) {
     // Attachment slices are machinery: they persist for reassembly but
     // never render. The manifest row is what the thread shows.
     final visible = messages
-        .where((msg) => !(msg.content as String).startsWith(SegTag.prefix))
+        .where((msg) => !msg.content.startsWith(SegTag.prefix))
         .toList();
     return ListView.builder(
       controller: scrollController,
@@ -867,15 +891,15 @@ class _MessageList extends StatelessWidget {
 
         final showDateDivider = index == 0 ||
             !_sameDay(
-              visible[index - 1].createdAt as DateTime,
-              msg.createdAt as DateTime,
+              visible[index - 1].createdAt,
+              msg.createdAt,
             );
 
         return RepaintBoundary(
           child: Column(
             children: [
               if (showDateDivider)
-                DateDivider(date: msg.createdAt as DateTime),
+                DateDivider(date: msg.createdAt),
               GestureDetector(
                 onLongPress: () => onMessageAction(context, msg),
                 child: _buildMessageWidget(msg, isReceived),
@@ -891,11 +915,15 @@ class _MessageList extends StatelessWidget {
     return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 
-  Widget _buildMessageWidget(dynamic msg, bool isReceived) {
-    final raw = msg.content as String;
-    final timestamp = msg.createdAt as DateTime;
-    final status = isReceived ? '' : (msg.status as String? ?? 'sent');
-    final encrypted = (msg.isEncrypted as int?) == 1;
+  Widget _buildMessageWidget(Message msg, bool isReceived) {
+    final raw = msg.content;
+    final timestamp = msg.createdAt;
+    final encrypted = msg.isEncrypted == 1;
+
+    // I9.14.a — one contract answers what to show for this row,
+    // drawing on the database's durable status and whatever the
+    // transport knows about attempts in flight and scheduled retries.
+    final deliveryState = deliveryStateFor(msg);
 
     // A reply is one message, not two: strip the quote off for the body
     // and hand it to the bubble beside it.
@@ -912,7 +940,7 @@ class _MessageList extends StatelessWidget {
         fileName: fileName,
         timestamp: timestamp,
         isReceived: isReceived,
-        status: status,
+        deliveryState: deliveryState,
       );
     }
 
@@ -923,7 +951,7 @@ class _MessageList extends StatelessWidget {
         fileName: fileName,
         timestamp: timestamp,
         isReceived: isReceived,
-        status: status,
+        deliveryState: deliveryState,
       );
     }
 
@@ -937,7 +965,7 @@ class _MessageList extends StatelessWidget {
           fileName: manifest.name,
           timestamp: timestamp,
           isReceived: isReceived,
-          status: status,
+          deliveryState: deliveryState,
           durationMs: durationMs,
         );
       }
@@ -949,7 +977,7 @@ class _MessageList extends StatelessWidget {
         locationData: locationData,
         timestamp: timestamp,
         isReceived: isReceived,
-        status: status,
+        deliveryState: deliveryState,
       );
     }
 
@@ -959,7 +987,7 @@ class _MessageList extends StatelessWidget {
         contactName: contactName,
         timestamp: timestamp,
         isReceived: isReceived,
-        status: status,
+        deliveryState: deliveryState,
       );
     }
 
@@ -969,7 +997,7 @@ class _MessageList extends StatelessWidget {
         pollData: pollData,
         timestamp: timestamp,
         isReceived: isReceived,
-        status: status,
+        deliveryState: deliveryState,
       );
     }
 
@@ -978,7 +1006,7 @@ class _MessageList extends StatelessWidget {
       replyQuote: reply?.quote,
       timestamp: timestamp,
       isReceived: isReceived,
-      status: status,
+      deliveryState: deliveryState,
       encrypted: encrypted,
     );
   }
@@ -1292,13 +1320,13 @@ class _ImageMessage extends StatefulWidget {
     required this.fileName,
     required this.timestamp,
     required this.isReceived,
-    required this.status,
+    required this.deliveryState,
   });
 
   final String fileName;
   final DateTime timestamp;
   final bool isReceived;
-  final String status;
+  final DeliveryState deliveryState;
 
   @override
   State<_ImageMessage> createState() => _ImageMessageState();
@@ -1375,11 +1403,7 @@ class _ImageMessageState extends State<_ImageMessage> {
                   ),
                   if (!widget.isReceived) ...[
                     const SizedBox(width: 4),
-                    Icon(
-                      widget.status == 'read' ? Icons.done_all : Icons.done,
-                      size: 12,
-                      color: widget.status == 'read' ? AppTheme.accent : AppTheme.textTertiary,
-                    ),
+                    DeliveryStatusIcon(widget.deliveryState),
                   ],
                 ],
               ),
@@ -1407,13 +1431,13 @@ class _FileMessage extends StatelessWidget {
     required this.fileName,
     required this.timestamp,
     required this.isReceived,
-    required this.status,
+    required this.deliveryState,
   });
 
   final String fileName;
   final DateTime timestamp;
   final bool isReceived;
-  final String status;
+  final DeliveryState deliveryState;
 
   @override
   Widget build(BuildContext context) {
@@ -1487,11 +1511,7 @@ class _FileMessage extends StatelessWidget {
                   ),
                   if (!isReceived) ...[
                     const SizedBox(width: 4),
-                    Icon(
-                      status == 'read' ? Icons.done_all : Icons.done,
-                      size: 12,
-                      color: status == 'read' ? AppTheme.accent : AppTheme.textTertiary,
-                    ),
+                    DeliveryStatusIcon(deliveryState),
                   ],
                 ],
               ),
@@ -1508,13 +1528,13 @@ class _LocationMessage extends StatelessWidget {
     required this.locationData,
     required this.timestamp,
     required this.isReceived,
-    required this.status,
+    required this.deliveryState,
   });
 
   final String locationData;
   final DateTime timestamp;
   final bool isReceived;
-  final String status;
+  final DeliveryState deliveryState;
 
   @override
   Widget build(BuildContext context) {
@@ -1588,11 +1608,7 @@ class _LocationMessage extends StatelessWidget {
                   ),
                   if (!isReceived) ...[
                     const SizedBox(width: 4),
-                    Icon(
-                      status == 'read' ? Icons.done_all : Icons.done,
-                      size: 12,
-                      color: status == 'read' ? AppTheme.accent : AppTheme.textTertiary,
-                    ),
+                    DeliveryStatusIcon(deliveryState),
                   ],
                 ],
               ),
@@ -1609,13 +1625,13 @@ class _ContactMessage extends StatelessWidget {
     required this.contactName,
     required this.timestamp,
     required this.isReceived,
-    required this.status,
+    required this.deliveryState,
   });
 
   final String contactName;
   final DateTime timestamp;
   final bool isReceived;
-  final String status;
+  final DeliveryState deliveryState;
 
   @override
   Widget build(BuildContext context) {
@@ -1689,11 +1705,7 @@ class _ContactMessage extends StatelessWidget {
                   ),
                   if (!isReceived) ...[
                     const SizedBox(width: 4),
-                    Icon(
-                      status == 'read' ? Icons.done_all : Icons.done,
-                      size: 12,
-                      color: status == 'read' ? AppTheme.accent : AppTheme.textTertiary,
-                    ),
+                    DeliveryStatusIcon(deliveryState),
                   ],
                 ],
               ),
@@ -1710,13 +1722,13 @@ class _PollMessage extends StatelessWidget {
     required this.pollData,
     required this.timestamp,
     required this.isReceived,
-    required this.status,
+    required this.deliveryState,
   });
 
   final String pollData;
   final DateTime timestamp;
   final bool isReceived;
-  final String status;
+  final DeliveryState deliveryState;
 
   @override
   Widget build(BuildContext context) {
@@ -1795,11 +1807,7 @@ class _PollMessage extends StatelessWidget {
                   ),
                   if (!isReceived) ...[
                     const SizedBox(width: 4),
-                    Icon(
-                      status == 'read' ? Icons.done_all : Icons.done,
-                      size: 12,
-                      color: status == 'read' ? AppTheme.accent : AppTheme.textTertiary,
-                    ),
+                    DeliveryStatusIcon(deliveryState),
                   ],
                 ],
               ),

@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:onebit/core/theme/app_theme.dart';
+import 'package:onebit/features/conversations/presentation/message_bubble.dart';
+import 'package:onebit/features/protocol/delivery_state.dart';
 import 'package:path_provider/path_provider.dart';
 
 /// A voice note in the thread: tap to hear what arrived.
@@ -16,7 +18,7 @@ class VoiceMessage extends StatefulWidget {
     required this.fileName,
     required this.timestamp,
     required this.isReceived,
-    required this.status,
+    required this.deliveryState,
     this.durationMs = 0,
     this.directoryProvider,
     super.key,
@@ -25,7 +27,11 @@ class VoiceMessage extends StatefulWidget {
   final String fileName;
   final DateTime timestamp;
   final bool isReceived;
-  final String status;
+
+  /// What the message's facts add up to (I9.14.a) — the same
+  /// vocabulary the text bubble wears, so a voice note never lies
+  /// about its delivery with a bare check mark.
+  final DeliveryState deliveryState;
 
   /// Recorded length from the manifest. The player reports the truer
   /// number once it loads; this covers the moment before it does.
@@ -254,13 +260,7 @@ class _VoiceMessageState extends State<VoiceMessage> {
                   ),
                   if (!widget.isReceived) ...[
                     const SizedBox(width: 4),
-                    Icon(
-                      widget.status == 'read' ? Icons.done_all : Icons.done,
-                      size: 12,
-                      color: widget.status == 'read'
-                          ? AppTheme.accent
-                          : AppTheme.textTertiary,
-                    ),
+                    DeliveryStatusIcon(widget.deliveryState),
                   ],
                 ],
               ),

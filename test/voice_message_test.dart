@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:onebit/features/conversations/presentation/voice_message.dart';
+import 'package:onebit/features/protocol/delivery_state.dart';
 
 /// A voice note whose bytes never arrived renders as an honest
 /// placeholder — the player is only created once a file resolves, so
@@ -20,7 +21,7 @@ void main() {
             fileName: 'voice_no_such_file_ever.m4a',
             timestamp: DateTime(2025),
             isReceived: true,
-            status: '',
+            deliveryState: DeliveryState.queued,
             durationMs: 4000,
             directoryProvider: () async => Directory.systemTemp,
           ),

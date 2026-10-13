@@ -13,6 +13,7 @@ import 'package:onebit/features/ble/ble_state.dart';
 import 'package:onebit/features/crypto/e2ee_frame.dart';
 import 'package:onebit/features/identity/identity_repository.dart';
 import 'package:onebit/features/protocol/attachment_segment.dart';
+import 'package:onebit/features/protocol/delivery_state.dart';
 import 'package:onebit/features/protocol/key_announcement.dart';
 import 'package:onebit/features/message/application/message_relay_service.dart';
 import 'package:onebit/features/message/application/message_transmission_service.dart';
@@ -827,6 +828,84 @@ void main() {
           queued.map((row) => row.content),
           unorderedEquals(['waiting 2', 'waiting 3']),
         );
+      });
+    });
+
+    group('I9.14.a the thread sees what the transport knows', () {
+      test('a failed attempt leaves the row retrying', () async {
+        transport = buildTransport(withRoute: false);
+        final convId = await db.createConversationWithPeer('Peer C', peerC);
+
+        await transport!.sendMessage(
+          peerDeviceId: peerC,
+          conversationId: convId,
+          content: 'anyone there',
+        );
+        final row = (await db.queuedMessages()).single;
+
+        // The row still reads `queued` — nothing happened that a
+        // database could record — but the transport's own bookkeeping
+        // tells the thread the truth: an attempt failed, another is
+        // owed.
+        expect(row.status, 'queued');
+        expect(transport!.retryAttemptsOf(row.id), 1);
+        expect(transport!.isTransmitting(row.id), isFalse);
+        expect(transport!.deliveryStateFor(row), DeliveryState.retrying);
+      });
+
+      test('a message that left this device reads as relayed', () async {
+        transport = buildTransport();
+        final convId = await db.createConversationWithPeer('Peer B', deviceB);
+
+        await transport!.sendMessage(
+          peerDeviceId: deviceB,
+          conversationId: convId,
+          content: 'hello mesh',
+        );
+
+        final row = (await db.getMessages(convId)).single;
+        expect(row.status, 'sent');
+        expect(transport!.deliveryStateFor(row), DeliveryState.relayed);
+      });
+
+      test('settling a row retires its retry face', () async {
+        transport = buildTransport(withRoute: false);
+        final convId = await db.createConversationWithPeer('Peer C', peerC);
+        await transport!.sendMessage(
+          peerDeviceId: peerC,
+          conversationId: convId,
+          content: 'saved for later',
+        );
+        final row = (await db.queuedMessages()).single;
+        expect(transport!.deliveryStateFor(row), DeliveryState.retrying);
+
+        peerCUp = true;
+        await transport!.flushQueued();
+
+        final sent = (await db.getMessages(convId)).single;
+        expect(transport!.retryAttemptsOf(row.id), 0);
+        expect(transport!.deliveryStateFor(sent), DeliveryState.relayed);
+      });
+
+      test('the thread hears the wire go quiet', () async {
+        transport = buildTransport(withRoute: false);
+        final convId = await db.createConversationWithPeer('Peer C', peerC);
+
+        var pulses = 0;
+        final heard = transport!.deliveryEvents.listen((_) => pulses++);
+        addTearDown(heard.cancel);
+
+        await transport!.sendMessage(
+          peerDeviceId: peerC,
+          conversationId: convId,
+          content: 'into the void',
+        );
+
+        // The attempt went on the wire, came off it, and left a
+        // schedule behind — the database shows none of that, so the
+        // stream is the only way the thread could ever learn it.
+        await Future<void>.delayed(Duration.zero);
+        expect(pulses, greaterThanOrEqualTo(3));
       });
     });
 

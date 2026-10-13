@@ -19,6 +19,7 @@ import 'package:onebit/features/message/models/message_id.dart';
 import 'package:onebit/features/message/models/message_state.dart';
 import 'package:onebit/features/message/models/onebit_message.dart';
 import 'package:onebit/features/protocol/attachment_segment.dart';
+import 'package:onebit/features/protocol/delivery_state.dart';
 import 'package:onebit/features/protocol/key_announcement.dart';
 import 'package:onebit/features/protocol/message_codec.dart';
 import 'package:onebit/features/protocol/onebit_packet.dart';
@@ -247,6 +248,17 @@ class MessageTransport {
   final _retryAttempts = <int, int>{};
   final _retryAt = <int, DateTime>{};
   Timer? _retryTimer;
+
+  /// I9.14.a — rows with an attempt on the wire right now. The row
+  /// still reads `queued` for these few milliseconds — the database
+  /// is never asked to lie about an outcome that has not happened —
+  /// so the set is what "transmitting" is made of.
+  final _transmittingRows = <int>{};
+
+  /// I9.14.a — pulses whenever the in-memory delivery facts (the set
+  /// above, the retry schedule below) change. The database cannot
+  /// stream what it never held, so the thread listens here instead.
+  final _deliveryEvents = StreamController<void>.broadcast();
 
   /// I9.11.c — receipts that found no road, keyed by peer + kind so a
   /// chat owed several ids holds one entry. Insertion-ordered: at the
@@ -620,7 +632,35 @@ class MessageTransport {
   /// * `failed` — deterministic; encoding this again will fail again.
   /// * `queued` — transient; the peer was not reachable this time and a
   ///   later flush should try again.
+  ///
+  /// I9.14.a — every attempt to move one row goes through [_deliver]
+  /// first, so "transmitting" means exactly one thing in this app.
   Future<TransferResult> _deliver({
+    required String peerDeviceId,
+    required int conversationId,
+    required int localMsgId,
+    required String content,
+  }) async {
+    // I9.14.a — while the attempt is on the wire the row is
+    // transmitting. It still reads `queued` in the database — the
+    // outcome has not happened yet, and the database is never asked
+    // to record one that has not.
+    _transmittingRows.add(localMsgId);
+    _pulseDelivery();
+    try {
+      return await _deliverAttempt(
+        peerDeviceId: peerDeviceId,
+        conversationId: conversationId,
+        localMsgId: localMsgId,
+        content: content,
+      );
+    } finally {
+      _transmittingRows.remove(localMsgId);
+      _pulseDelivery();
+    }
+  }
+
+  Future<TransferResult> _deliverAttempt({
     required String peerDeviceId,
     required int conversationId,
     required int localMsgId,
@@ -1706,6 +1746,17 @@ class MessageTransport {
       _retryAttempts.remove(messageId);
       _retryAt.remove(messageId);
     }
+    // I9.14.a — a schedule the database never holds just moved.
+    _pulseDelivery();
+  }
+
+  /// I9.14.a — tell the thread an in-memory delivery fact moved.
+  ///
+  /// Guarded because the outbox can outlive its own dispose by a
+  /// tick, and a closed stream should read as silence, not as a
+  /// crash in the send path.
+  void _pulseDelivery() {
+    if (!_deliveryEvents.isClosed) _deliveryEvents.add(null);
   }
 
   /// The wait after [attempts] failed attempts: the base delay doubled
@@ -1723,6 +1774,29 @@ class MessageTransport {
   /// has no schedule (delivered, written off, or not yet attempted).
   @visibleForTesting
   DateTime? nextRetryAt(int messageId) => _retryAt[messageId];
+
+  /// I9.14.a — pulses whenever the in-memory delivery facts change:
+  /// an attempt goes on the wire or comes off it, the retry schedule
+  /// moves. The database never sees any of this, so a thread that
+  /// wants the truth listens here rather than pretending a row
+  /// status can cover a few milliseconds of radio.
+  Stream<void> get deliveryEvents => _deliveryEvents.stream;
+
+  /// Whether [messageId] has an attempt on the wire right now.
+  bool isTransmitting(int messageId) => _transmittingRows.contains(messageId);
+
+  /// How many failed attempts [messageId] has behind it — 0 for a row
+  /// never tried or one that has since settled.
+  int retryAttemptsOf(int messageId) => _retryAttempts[messageId] ?? 0;
+
+  /// I9.14.a — the thread's single answer for what to show on [row]:
+  /// the row's durable status plus whatever this instance knows
+  /// about attempts the database never records.
+  DeliveryState deliveryStateFor(Message row) => deliveryStateOf(
+        status: row.status,
+        transmitting: isTransmitting(row.id),
+        retryAttempts: retryAttemptsOf(row.id),
+      );
 
   /// Receipts currently held for a later attempt (I9.11.c).
   @visibleForTesting
@@ -1742,6 +1816,9 @@ class MessageTransport {
   /// Dispose resources.
   void dispose() {
     stopListening();
+    // I9.14.a — a pulse after this point would be a lie anyway: the
+    /// facts this stream carried belong to a dead instance.
+    _deliveryEvents.close();
   }
 }
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:onebit/core/theme/app_theme.dart';
+import 'package:onebit/features/protocol/delivery_state.dart';
 
 /// F4 Message Bubble — incoming and outgoing variants with smooth animation.
 ///
@@ -13,6 +14,7 @@ class MessageBubble extends StatefulWidget {
     required this.timestamp,
     required this.isReceived,
     this.status = 'sent',
+    this.deliveryState,
     this.replyQuote,
     this.animate = false,
     this.encrypted = false,
@@ -22,7 +24,16 @@ class MessageBubble extends StatefulWidget {
   final String content;
   final DateTime timestamp;
   final bool isReceived;
+
+  /// The raw row status. Only consulted when [deliveryState] is not
+  /// handed in — the screen computes the contract's answer once per
+  /// row and passes it down.
   final String status;
+
+  /// What this message's facts add up to (I9.14.a) — the thread's
+  /// single delivery vocabulary, derived from the row plus the
+  /// transport's in-memory attempt bookkeeping.
+  final DeliveryState? deliveryState;
 
   /// Whether the bytes traveled encrypted. Read from the row, never
   /// promised: a bubble without the lock makes no claim.
@@ -80,6 +91,17 @@ class _MessageBubbleState extends State<MessageBubble>
 
   @override
   Widget build(BuildContext context) {
+    // I9.14.a — one answer per row: whatever the screen could not
+    // know (attempts in flight, the retry schedule) falls back to the
+    // durable status alone.
+    final state = widget.deliveryState ??
+        deliveryStateOf(
+          status: widget.status,
+          transmitting: false,
+          retryAttempts: 0,
+        );
+    final label = widget.isReceived ? null : deliveryLabelOf(state);
+
     return FadeTransition(
       opacity: _fadeAnimation,
       child: SlideTransition(
@@ -157,20 +179,26 @@ class _MessageBubbleState extends State<MessageBubble>
                       ),
                       if (!widget.isReceived) ...[
                         const SizedBox(width: 4),
-                        _StatusIcon(status: widget.status),
+                        DeliveryStatusIcon(state),
                       ],
                     ],
                   ),
                 ),
-                // I9.9.a — an expired message says why it stopped, in
-                // words: the icon alone cannot carry "it never got
-                // there" as opposed to any other failure.
-                if (!widget.isReceived && widget.status == 'expired')
+                // I9.14.a — states the icon cannot carry alone say so
+                // in words, from the same contract that chose the
+                // icon. Failures and expiry wear the red the problem
+                // deserves; the rest stay quiet.
+                if (label != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 2),
                     child: Text(
-                      'Expired — never reached recipient',
-                      style: AppTheme.caption.copyWith(color: AppTheme.red),
+                      label,
+                      style: AppTheme.caption.copyWith(
+                        color: state == DeliveryState.expired ||
+                                state == DeliveryState.failed
+                            ? AppTheme.red
+                            : AppTheme.textTertiary,
+                      ),
                     ),
                   ),
               ],
@@ -188,15 +216,20 @@ class _MessageBubbleState extends State<MessageBubble>
   }
 }
 
-class _StatusIcon extends StatelessWidget {
-  const _StatusIcon({required this.status});
+/// The icon the delivery contract picks for [state] (I9.14.a) — the
+/// same mark every outgoing row wears, whether its body is text, a
+/// file, or a voice note. A renderer never chooses an icon from a raw
+/// status string again; the string became words once, in
+/// [deliveryStateOf], and this is the picture of the answer.
+class DeliveryStatusIcon extends StatelessWidget {
+  const DeliveryStatusIcon(this.state, {super.key});
 
-  final String status;
+  final DeliveryState state;
 
   @override
   Widget build(BuildContext context) {
-    switch (status) {
-      case 'sending':
+    switch (state) {
+      case DeliveryState.transmitting:
         return const SizedBox(
           width: 12,
           height: 12,
@@ -205,20 +238,20 @@ class _StatusIcon extends StatelessWidget {
             color: AppTheme.textTertiary,
           ),
         );
-      case 'sent':
-        return const Icon(Icons.done, size: 12, color: AppTheme.textTertiary);
-      case 'delivered':
-        return const Icon(Icons.done_all, size: 12, color: AppTheme.textTertiary);
-      case 'read':
-        return const Icon(Icons.done_all, size: 12, color: AppTheme.accent);
-      case 'failed':
-        return const Icon(Icons.error_outline, size: 12, color: AppTheme.red);
-      case 'expired':
-        return const Icon(Icons.timer_off, size: 12, color: AppTheme.red);
-      case 'queued':
+      case DeliveryState.queued:
         return const Icon(Icons.schedule, size: 12, color: AppTheme.textTertiary);
-      default:
-        return const SizedBox.shrink();
+      case DeliveryState.retrying:
+        return const Icon(Icons.sync_problem, size: 12, color: AppTheme.textTertiary);
+      case DeliveryState.relayed:
+        return const Icon(Icons.done, size: 12, color: AppTheme.textTertiary);
+      case DeliveryState.delivered:
+        return const Icon(Icons.done_all, size: 12, color: AppTheme.textTertiary);
+      case DeliveryState.read:
+        return const Icon(Icons.done_all, size: 12, color: AppTheme.accent);
+      case DeliveryState.expired:
+        return const Icon(Icons.timer_off, size: 12, color: AppTheme.red);
+      case DeliveryState.failed:
+        return const Icon(Icons.error_outline, size: 12, color: AppTheme.red);
     }
   }
 }
