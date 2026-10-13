@@ -26,6 +26,9 @@
 /// - I8 remains the authority for route selection
 library;
 
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:onebit/core/logging/app_logger.dart';
 import 'package:onebit/features/message/application/message_transmission_service.dart';
 import 'package:onebit/features/message/models/message_envelope.dart';
@@ -129,15 +132,43 @@ const int _maxRelayEvents = 100;
 /// This service does NOT:
 /// - Own BLE connections (I7)
 /// - Own routing algorithms (I8)
-/// - Implement retry (I9.11)
 /// - Implement persistence (I9.8)
 /// - Implement deduplication (I9.12)
 /// - Implement TTL/hop-limit (I9.6)
+///
+/// ## Retry (I9.11)
+///
+/// A forward that fails for a *transient* reason — no route yet, next
+/// hop not connected, the link dropped mid-send — is held in memory
+/// and retried on an exponential backoff: the carrying hop's own
+/// outbox, for traffic it does not own. Each attempt re-resolves the
+/// route afresh, so a mesh that reorganised meanwhile picks up the new
+/// path for free. Deterministic failures (encoding, validation, the
+/// relay switch flipped off) are dropped at once. The queue is bounded
+/// in count and every entry is bounded in attempts, so a destination
+/// that never appears cannot grow the heap — and because the receiver
+/// dedups on the message id, a retry that lands after a "failed" first
+/// try is still exactly one message. A held envelope lives only as
+/// long as this process does (persistence is I9.8, not here).
 class MessageRelayService {
+  /// I9.11.b retry cadence for held forwards: base wait, ceiling, timer
+  /// tick, and the two bounds that keep a held queue honest.
+  /// Overridable per service so tests never sleep out real seconds.
+  static const defaultRetryBaseBackoff = Duration(seconds: 2);
+  static const defaultRetryMaxBackoff = Duration(seconds: 30);
+  static const defaultRetryTick = Duration(seconds: 2);
+  static const defaultMaxRetryAttempts = 5;
+  static const defaultMaxPendingForwards = 64;
+
   MessageRelayService({
     required this.localPeerId,
     required this._transmissionService,
     this.forwardingAllowed,
+    this._retryBaseBackoff = defaultRetryBaseBackoff,
+    this._retryMaxBackoff = defaultRetryMaxBackoff,
+    this._retryTick = defaultRetryTick,
+    this._maxRetryAttempts = defaultMaxRetryAttempts,
+    this._maxPendingForwards = defaultMaxPendingForwards,
   });
 
   final String localPeerId;
@@ -149,6 +180,31 @@ class MessageRelayService {
   ///
   /// Null means "always forward" (the default, and what tests use).
   final bool Function()? forwardingAllowed;
+
+  /// I9.11.b — how long a held forward waits after a failed attempt,
+  /// doubling per attempt up to [_retryMaxBackoff].
+  final Duration _retryBaseBackoff;
+
+  /// I9.11.b — ceiling for the doubling wait: transit traffic should
+  /// not linger much past a minute even for a faraway destination.
+  final Duration _retryMaxBackoff;
+
+  /// I9.11.b — how often the timer looks for holds whose wait elapsed.
+  final Duration _retryTick;
+
+  /// I9.11.b — total attempts (first try included) before a held
+  /// envelope is written off.
+  final int _maxRetryAttempts;
+
+  /// I9.11.b — hard cap on held envelopes; the oldest is evicted.
+  final int _maxPendingForwards;
+
+  /// Envelopes owed to the mesh, keyed by wire message id
+  /// (insertion-ordered, so eviction drops the oldest hold first).
+  final _pending = <String, _PendingForward>{};
+
+  Timer? _retryTimer;
+  bool _retrying = false;
 
   /// In-memory diagnostic event log (bounded at [_maxRelayEvents]).
   final List<RelayEvent> _events = [];
@@ -216,14 +272,7 @@ class MessageRelayService {
     //
     // The relay node does NOT become the source. The original
     // sourcePeerId and destinationPeerId are preserved exactly.
-    final message = OneBitMessage(
-      id: envelope.messageId,
-      sourcePeerId: envelope.sourcePeerId,
-      destinationPeerId: envelope.destinationPeerId,
-      state: MessageState.created,
-      createdAt: DateTime.now().toUtc(),
-      payloadSizeBytes: envelope.payload.length,
-    );
+    final message = _messageFor(envelope);
 
     // 6. Forward via existing I9.4 transmission service.
     //
@@ -244,28 +293,16 @@ class MessageRelayService {
     );
 
     // 6. Map transmission result to relay result.
-    final result = switch (transmissionResult) {
-      TransmissionSent(:final nextHopPeerId, :final routeMetric) =>
-        Forwarded(
-          nextHopPeerId: nextHopPeerId,
-          routeMetric: routeMetric,
-        ),
-      TransmissionNoRoute() => const RelayFailed(reason: 'No route'),
-      TransmissionNextHopUnavailable(:final nextHopPeerId) => RelayFailed(
-        reason: 'Next hop $nextHopPeerId unavailable',
-      ),
-      TransmissionTransportFailed(:final reason) => RelayFailed(
-        reason: 'Transport failed: $reason',
-      ),
-      TransmissionEncodingFailed(:final reason) => RelayFailed(
-        reason: 'Encoding failed: $reason',
-      ),
-      TransmissionRejected(:final reason) => RelayFailed(
-        reason: 'Rejected: $reason',
-      ),
-    };
+    final result = _relayResultFor(transmissionResult);
 
     _recordEvent(envelope, result);
+
+    if (result is RelayFailed && _isTransient(transmissionResult)) {
+      // Transient — the mesh may look different in a moment. Hold the
+      // envelope exactly as received (a hop is spent per attempt, not
+      // per queueing) and let the retry timer have another go.
+      _holdForRetry(envelope, result.reason);
+    }
 
     if (result is Forwarded) {
       AppLogger.info(
@@ -281,6 +318,207 @@ class MessageRelayService {
 
     return result;
   }
+
+  // ── Retry (I9.11.b) ────────────────────────────────────────────
+
+  /// Start the timer that drains due retries.
+  ///
+  /// App-scoped: started with the service, stopped with it. Tests that
+  /// drive [retryDueForwards] by hand never need it.
+  void startRetrying() {
+    _retryTimer?.cancel();
+    _retryTimer = Timer.periodic(_retryTick, (_) {
+      unawaited(retryDueForwards());
+    });
+  }
+
+  /// Stop the retry timer. Held envelopes go with the service.
+  void stopRetrying() {
+    _retryTimer?.cancel();
+    _retryTimer = null;
+  }
+
+  /// How many envelopes are currently held for a later attempt.
+  int get pendingForwardCount => _pending.length;
+
+  /// When a held envelope is next retried — null when it is not held.
+  DateTime? nextForwardRetryAt(MessageId messageId) =>
+      _pending[messageId.value]?.nextAttemptAt;
+
+  /// Give every held envelope whose wait has elapsed another attempt.
+  ///
+  /// Called by the timer; safe to call by hand. Route and device are
+  /// re-resolved inside [MessageTransmissionService] on each attempt,
+  /// so a mesh that reorganised meanwhile is picked up for free.
+  Future<void> retryDueForwards() async {
+    if (_retrying) return;
+    _retrying = true;
+    try {
+      final now = DateTime.now();
+      final due = _pending.entries
+          .where((entry) => !entry.value.nextAttemptAt.isAfter(now))
+          .map((entry) => entry.key)
+          .toList(growable: false);
+
+      for (final key in due) {
+        final held = _pending[key];
+        if (held == null) continue;
+
+        // The participation switch may have flipped while the envelope
+        // waited; a node that opted out stops mid-queue too.
+        if (forwardingAllowed != null && !forwardingAllowed!()) {
+          _pending.remove(key);
+          _recordEvent(
+            held.envelope,
+            const RelayFailed(reason: 'Relaying disabled'),
+          );
+          continue;
+        }
+
+        AppLogger.info(
+          'Relay: retrying ${_shortId(held.envelope.messageId)} '
+          '(attempt ${held.attempts + 1}/$_maxRetryAttempts)',
+        );
+
+        TransmissionResult transmissionResult;
+        try {
+          transmissionResult = await _transmissionService.transmit(
+            message: _messageFor(held.envelope),
+            envelope: held.envelope.withAdditionalHop(),
+          );
+        } catch (e) {
+          // A thrown send is a transient one as far as the mesh cares.
+          AppLogger.error(
+            'Relay: retry send failed for ${_shortId(held.envelope.messageId)}',
+            e,
+          );
+          transmissionResult = const TransmissionResult.transportFailed(
+            reason: 'retry threw',
+          );
+        }
+
+        if (_isTransient(transmissionResult)) {
+          // Still not there. Spend the attempt and push the wait out —
+          // or, budget spent, write the envelope off for good.
+          held.attempts += 1;
+          if (held.attempts >= _maxRetryAttempts) {
+            _pending.remove(key);
+            final gaveUp = RelayFailed(
+              reason: 'Gave up after ${held.attempts} attempts',
+            );
+            _recordEvent(held.envelope, gaveUp);
+            AppLogger.info(
+              'Relay: dropping ${_shortId(held.envelope.messageId)} '
+              '— ${gaveUp.reason}',
+            );
+          } else {
+            held.nextAttemptAt =
+                DateTime.now().add(_backoffFor(held.attempts));
+          }
+          continue;
+        }
+
+        // Terminal: it went, or it failed for good. Either way the hold
+        // is over — only the outcome of the *last* attempt is recorded,
+        // so a queue under churn cannot flood the event log.
+        _pending.remove(key);
+        final result = _relayResultFor(transmissionResult);
+        _recordEvent(held.envelope, result);
+        if (result is Forwarded) {
+          AppLogger.info(
+            'Relay: forwarded ${_shortId(held.envelope.messageId)} '
+            'to ${_shortId(result.nextHopPeerId)} '
+            '(metric=${result.routeMetric})',
+          );
+        } else if (result is RelayFailed) {
+          AppLogger.info(
+            'Relay: failed for ${_shortId(held.envelope.messageId)}: '
+            '${result.reason}',
+          );
+        }
+      }
+    } finally {
+      _retrying = false;
+    }
+  }
+
+  /// Hold a freshly failed forward for a later attempt — the first try
+  /// is already spent, so the entry opens at one attempt. A duplicate
+  /// arrival of an id already held is ignored: upstream retrying at us
+  /// must not double the queue.
+  void _holdForRetry(MessageEnvelope envelope, String reason) {
+    final key = envelope.messageId.value;
+    if (_pending.containsKey(key)) return;
+
+    if (_pending.length >= _maxPendingForwards) {
+      _pending.remove(_pending.keys.first);
+    }
+
+    _pending[key] = _PendingForward(
+      envelope: envelope,
+      attempts: 1,
+      nextAttemptAt: DateTime.now().add(_backoffFor(1)),
+    );
+    AppLogger.info(
+      'Relay: holding ${_shortId(envelope.messageId)} for retry — $reason',
+    );
+  }
+
+  /// Whether a failure may fix itself if we simply try again later:
+  /// the mesh was not ready. Encoding and validation failures never
+  /// will be.
+  bool _isTransient(TransmissionResult result) => switch (result) {
+        TransmissionNoRoute() ||
+        TransmissionNextHopUnavailable() ||
+        TransmissionTransportFailed() =>
+          true,
+        _ => false,
+      };
+
+  /// The wait after [attempts] failed attempts: the base delay doubled
+  /// per attempt, clamped to the ceiling.
+  Duration _backoffFor(int attempts) {
+    var delayMs = _retryBaseBackoff.inMilliseconds;
+    final maxMs = _retryMaxBackoff.inMilliseconds;
+    for (var i = 1; i < attempts && delayMs < maxMs; i++) {
+      delayMs *= 2;
+    }
+    return Duration(milliseconds: math.min(delayMs, maxMs));
+  }
+
+  /// The transit record for an envelope: identity preserved exactly —
+  /// the relay never becomes the source.
+  OneBitMessage _messageFor(MessageEnvelope envelope) => OneBitMessage(
+        id: envelope.messageId,
+        sourcePeerId: envelope.sourcePeerId,
+        destinationPeerId: envelope.destinationPeerId,
+        state: MessageState.created,
+        createdAt: DateTime.now().toUtc(),
+        payloadSizeBytes: envelope.payload.length,
+      );
+
+  /// Map a transmission result to the relay's vocabulary.
+  RelayResult _relayResultFor(TransmissionResult transmissionResult) =>
+      switch (transmissionResult) {
+        TransmissionSent(:final nextHopPeerId, :final routeMetric) =>
+          Forwarded(
+            nextHopPeerId: nextHopPeerId,
+            routeMetric: routeMetric,
+          ),
+        TransmissionNoRoute() => const RelayFailed(reason: 'No route'),
+        TransmissionNextHopUnavailable(:final nextHopPeerId) => RelayFailed(
+          reason: 'Next hop $nextHopPeerId unavailable',
+        ),
+        TransmissionTransportFailed(:final reason) => RelayFailed(
+          reason: 'Transport failed: $reason',
+        ),
+        TransmissionEncodingFailed(:final reason) => RelayFailed(
+          reason: 'Encoding failed: $reason',
+        ),
+        TransmissionRejected(:final reason) => RelayFailed(
+          reason: 'Rejected: $reason',
+        ),
+      };
 
   /// Record a diagnostic event (bounded at [_maxRelayEvents]).
   void _recordEvent(MessageEnvelope envelope, RelayResult result) {
@@ -307,4 +545,23 @@ class MessageRelayService {
     if (s.length >= 8) return '${s.substring(0, 8)}...';
     return s;
   }
+}
+
+/// A forward owed to the mesh, waiting on its backoff (I9.11.b).
+class _PendingForward {
+  _PendingForward({
+    required this.envelope,
+    required this.attempts,
+    required this.nextAttemptAt,
+  });
+
+  /// The envelope exactly as received — a hop is spent per attempt,
+  /// not per queueing, so the retried send carries exactly one more
+  /// hop than the original arrival did.
+  final MessageEnvelope envelope;
+
+  /// Attempts spent so far (the first try counts).
+  int attempts;
+
+  DateTime nextAttemptAt;
 }

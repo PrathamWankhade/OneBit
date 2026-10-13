@@ -67,7 +67,7 @@ final messageRelayServiceProvider = Provider<MessageRelayService?>((ref) {
   final transmissionService = ref.watch(messageTransmissionServiceProvider);
   if (transmissionService == null) return null;
   final localPeerId = ref.watch(localPeerIdForMessageProvider);
-  return MessageRelayService(
+  final relay = MessageRelayService(
     localPeerId: localPeerId,
     transmissionService: transmissionService,
     forwardingAllowed: () {
@@ -78,6 +78,11 @@ final messageRelayServiceProvider = Provider<MessageRelayService?>((ref) {
       }
     },
   );
+  // I9.11.b — a transient forward failure is held and retried on a
+  // backoff; the heartbeat lives exactly as long as the provider.
+  relay.startRetrying();
+  ref.onDispose(relay.stopRetrying);
+  return relay;
 });
 
 /// App-scoped message transport bridging DB ↔ BLE.

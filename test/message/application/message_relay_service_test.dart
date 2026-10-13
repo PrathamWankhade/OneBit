@@ -337,6 +337,160 @@ void main() {
       expect(failed.reason, equals('No route'));
     });
   });
+
+  group('I9.11.b forward retry backs off and bounds itself', () {
+    test('a transient forward failure holds the envelope for retry', () async {
+      final transmission = _ScriptedTransmission(localPeerId: localPeerId);
+      final service = MessageRelayService(
+        localPeerId: localPeerId,
+        transmissionService: transmission,
+      );
+      final envelope = makeEnvelope(destination: thirdPeerId);
+
+      final result = await service.receiveAndRelay(envelope);
+
+      expect(result, isA<RelayFailed>());
+      expect(service.pendingForwardCount, 1);
+      expect(
+        service.nextForwardRetryAt(envelope.messageId),
+        isNotNull,
+      );
+    });
+
+    test('a deterministic failure is not held', () async {
+      final transmission = _ScriptedTransmission(localPeerId: localPeerId)
+        ..results.add(const TransmissionResult.rejected(reason: 'nope'));
+      final service = MessageRelayService(
+        localPeerId: localPeerId,
+        transmissionService: transmission,
+      );
+      final envelope = makeEnvelope(destination: thirdPeerId);
+
+      final result = await service.receiveAndRelay(envelope);
+
+      expect(result, isA<RelayFailed>());
+      expect(service.pendingForwardCount, 0);
+      expect(service.nextForwardRetryAt(envelope.messageId), isNull);
+    });
+
+    test('the wait is honoured, then the retry goes out and clears', () async {
+      final transmission = _ScriptedTransmission(localPeerId: localPeerId);
+      final service = MessageRelayService(
+        localPeerId: localPeerId,
+        transmissionService: transmission,
+        retryBaseBackoff: const Duration(milliseconds: 300),
+      );
+      final envelope = makeEnvelope(destination: thirdPeerId);
+
+      await service.receiveAndRelay(envelope); // attempt 1 → held
+      final afterFirst = transmission.seen.length;
+      expect(service.pendingForwardCount, 1);
+
+      // Inside the wait: draining changes nothing.
+      await service.retryDueForwards();
+      expect(transmission.seen.length, afterFirst);
+
+      // Past it: the retry goes out (the mesh looks better now) and,
+      // landing, ends the hold.
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      transmission.results.add(
+        const TransmissionResult.sentToNextHop(
+          nextHopPeerId: thirdPeerId,
+          routeMetric: 1,
+        ),
+      );
+      await service.retryDueForwards();
+
+      expect(service.pendingForwardCount, 0);
+      expect(transmission.seen.length, afterFirst + 1);
+      // One hop per attempt, not one per queueing: the retried send
+      // carries exactly one more hop than the arrival did.
+      expect(transmission.seen.last.hopCount, envelope.hopCount + 1);
+    });
+
+    test('a forward that never lands is written off at the budget', () async {
+      final transmission = _ScriptedTransmission(localPeerId: localPeerId);
+      final service = MessageRelayService(
+        localPeerId: localPeerId,
+        transmissionService: transmission,
+        retryBaseBackoff: const Duration(milliseconds: 10),
+        maxRetryAttempts: 3,
+      );
+      final envelope = makeEnvelope(destination: thirdPeerId);
+
+      await service.receiveAndRelay(envelope); // attempt 1, held
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await service.retryDueForwards(); // attempt 2, still transient
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      await service.retryDueForwards(); // attempt 3, budget spent
+
+      expect(transmission.seen.length, 3);
+      expect(service.pendingForwardCount, 0);
+      final last = service.events.last.result as RelayFailed;
+      expect(last.reason, contains('Gave up'));
+    });
+
+    test('the participation switch stops a queue mid-hold', () async {
+      var relayOn = true;
+      final transmission = _ScriptedTransmission(localPeerId: localPeerId);
+      final service = MessageRelayService(
+        localPeerId: localPeerId,
+        transmissionService: transmission,
+        forwardingAllowed: () => relayOn,
+        retryBaseBackoff: const Duration(milliseconds: 10),
+      );
+      final envelope = makeEnvelope(destination: thirdPeerId);
+
+      await service.receiveAndRelay(envelope); // attempt 1 → held
+      expect(service.pendingForwardCount, 1);
+
+      relayOn = false;
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await service.retryDueForwards();
+
+      expect(service.pendingForwardCount, 0);
+      expect(transmission.seen.length, 1); // no second transmit
+      final last = service.events.last.result as RelayFailed;
+      expect(last.reason, contains('disabled'));
+    });
+
+    test('the hold queue is bounded to its cap', () async {
+      final transmission = _ScriptedTransmission(localPeerId: localPeerId);
+      final service = MessageRelayService(
+        localPeerId: localPeerId,
+        transmissionService: transmission,
+        maxPendingForwards: 2,
+      );
+      final first = makeEnvelope(destination: thirdPeerId);
+      final second = makeEnvelope(destination: thirdPeerId);
+      final third = makeEnvelope(destination: thirdPeerId);
+
+      await service.receiveAndRelay(first);
+      await service.receiveAndRelay(second);
+      await service.receiveAndRelay(third);
+
+      expect(service.pendingForwardCount, 2);
+      // Insertion order: the oldest hold is evicted first.
+      expect(service.nextForwardRetryAt(first.messageId), isNull);
+      expect(service.nextForwardRetryAt(second.messageId), isNotNull);
+      expect(service.nextForwardRetryAt(third.messageId), isNotNull);
+    });
+
+    test('a duplicate arrival of a held envelope does not double it', () async {
+      final transmission = _ScriptedTransmission(localPeerId: localPeerId);
+      final service = MessageRelayService(
+        localPeerId: localPeerId,
+        transmissionService: transmission,
+      );
+      final envelope = makeEnvelope(destination: thirdPeerId);
+
+      await service.receiveAndRelay(envelope);
+      await service.receiveAndRelay(envelope);
+
+      expect(service.pendingForwardCount, 1);
+      expect(transmission.seen.length, 2); // both arrivals tried once
+    });
+  });
 }
 
 /// A transmission service that never touches BLE, so a test can see
@@ -360,5 +514,34 @@ class _RecordingTransmission extends MessageTransmissionService {
   }) async {
     seen = envelope;
     return const TransmissionResult.noRoute();
+  }
+}
+
+/// A transmission fake whose answers a test scripts in order; with an
+/// empty script every attempt fails transiently (no route), which is
+/// exactly the case retry has to cope with.
+class _ScriptedTransmission extends MessageTransmissionService {
+  _ScriptedTransmission({required super.localPeerId})
+      : super(
+          bleService: BleService(),
+          routeLookup: (_) => null,
+          deviceResolver: (_) => null,
+          isPeerConnected: (_) => false,
+        );
+
+  /// One answer per attempt, consumed in order.
+  final results = <TransmissionResult>[];
+
+  /// Every envelope the relay asked to transmit, in order.
+  final seen = <MessageEnvelope>[];
+
+  @override
+  Future<TransmissionResult> transmit({
+    required OneBitMessage message,
+    required MessageEnvelope envelope,
+  }) async {
+    seen.add(envelope);
+    if (results.isEmpty) return const TransmissionResult.noRoute();
+    return results.removeAt(0);
   }
 }
