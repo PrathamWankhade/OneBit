@@ -89,13 +89,23 @@ Future<Directory> _defaultAttachmentDirectory() =>
 /// Every outbound row starts life in the `queued` state, and is moved
 /// to `sent` or `failed` once an attempt settles. `failed` is reserved
 /// for failures a retry could not fix (it will not encode, it will not
-/// fit); "the peer was not on the air" stays `queued` and is retried by
-/// [flushQueued] whenever [_routeEvents] or [_connectionEvents] says the
-/// reachable set may have changed. Route and connection events force an
-/// immediate pass; a timer (I9.11) is the safety net for failures no
-/// event ever follows — it retries each message on its own exponential
-/// backoff, so a link that dropped mid-send still recovers on its own
-/// without the outbox spinning against a peer that is away.
+/// fit, or the outbox cap wrote it off); "the peer was not on the air"
+/// stays `queued` and is retried by [flushQueued] whenever
+/// [_routeEvents] or [_connectionEvents] says the reachable set may
+/// have changed. Route and connection events force an immediate pass;
+/// a timer (I9.11) is the safety net for failures no event ever
+/// follows — it retries each message on its own exponential backoff,
+/// so a link that dropped mid-send still recovers on its own without
+/// the outbox spinning against a peer that is away.
+///
+/// ## Bounds
+///
+/// The outbox holds at most [_maxQueuedMessages] rows (I9.8.a).
+/// Overflow evicts the oldest rows — age is the clearest signal that
+/// something is never getting through — which settle as `failed` and
+/// stay in the thread as history. An attachment is one unit: its
+/// manifest and slices are written whole or not at all, so the queue
+/// never holds a file that can no longer complete.
 ///
 /// ## Receipts
 ///
@@ -122,6 +132,16 @@ class MessageTransport {
   static const defaultMaxReceiptAttempts = 4;
   static const defaultMaxHeldReceipts = 32;
 
+  /// I9.8.a — how many rows the outbox may owe at once.
+  ///
+  /// Sized so a maximum attachment ([SegTag.maxSlices] slices plus its
+  /// manifest) always fits when the queue is otherwise empty: a file
+  /// is refused only when older traffic already fills the queue, not
+  /// by the cap itself. The floor under that ceiling — roughly four
+  /// megabytes of the worst case — is what a week offline may cost
+  /// before the oldest rows start being written off.
+  static const defaultMaxQueuedMessages = 1024;
+
   MessageTransport({
     required this._bleService,
     required this._database,
@@ -142,6 +162,7 @@ class MessageTransport {
     this._retryTick = defaultRetryTick,
     this._maxReceiptAttempts = defaultMaxReceiptAttempts,
     this._maxHeldReceipts = defaultMaxHeldReceipts,
+    this._maxQueuedMessages = defaultMaxQueuedMessages,
   });
 
   final BleService _bleService;
@@ -236,6 +257,13 @@ class MessageTransport {
   final int _maxReceiptAttempts;
   final int _maxHeldReceipts;
 
+  /// I9.8.a — the cap itself, and the attachment being written right
+  /// now: its rows are exempt from eviction until its insert loop
+  /// finishes, so an interleaved send can never strand a half-file
+  /// in the queue.
+  final int _maxQueuedMessages;
+  String? _inFlightSegId;
+
   /// Start listening for incoming messages from peers.
   void startListening() {
     _receiveSub?.cancel();
@@ -311,6 +339,21 @@ class MessageTransport {
     required int conversationId,
     required String content,
   }) async {
+    // I9.8.a — make room before writing the row. Evicting the oldest
+    // rows almost always succeeds; the refusal below is the rare case
+    // where an attachment mid-write holds the last slots.
+    if (!await _enforceQueueCap(needed: 1, protectSegId: _inFlightSegId)) {
+      final localMsgId = await _database.insertMessage(
+        conversationId: conversationId,
+        content: content,
+        status: 'failed',
+      );
+      AppLogger.error(
+        'MessageTransport: outbox full — message $localMsgId not queued',
+      );
+      return TransferResult.failed;
+    }
+
     final localMsgId = await _database.insertMessage(
       conversationId: conversationId,
       content: content,
@@ -341,6 +384,11 @@ class MessageTransport {
     if (_flushing) return;
     _flushing = true;
     try {
+      // I9.8.a — rows written before the cap existed (or by a racing
+      // burst) come back under it before this pass spends any radio
+      // time on them.
+      await _enforceQueueCap(needed: 0, protectSegId: _inFlightSegId);
+
       final queued = await _database.queuedMessages();
 
       // Anything that left the outbox behind our back — a receipt
@@ -501,6 +549,18 @@ class MessageTransport {
       return TransferResult.failed;
     }
 
+    // I9.8.a — the file joins the queue whole or not at all. Asking for
+    // the manifest and every slice up front means a refusal below
+    // leaves nothing behind: no manifest waiting on slices that were
+    // never written, no half-transfer the far side can never finish.
+    if (!await _enforceQueueCap(needed: 1 + slices.length)) {
+      AppLogger.error(
+        'MessageTransport: attachment needs ${1 + slices.length} outbox '
+        'rows and will not fit the cap of $_maxQueuedMessages',
+      );
+      return TransferResult.failed;
+    }
+
     Future<TransferResult> sendRow(String content) async {
       final localMsgId = await _database.insertMessage(
         conversationId: conversationId,
@@ -515,20 +575,28 @@ class MessageTransport {
       );
     }
 
-    var result = await sendRow(
-      AttachmentManifest.encode(
-        kind: kind,
-        fileName: name,
-        segId: segId,
-        count: slices.length,
-        extra: extra,
-      ),
-    );
-    for (final slice in slices) {
-      final leg = await sendRow(slice);
-      if (leg != TransferResult.delivered) result = leg;
+    // The rows below are exempt from eviction until the last slice is
+    // written: a plain message arriving mid-file may evict anything
+    // else, but never this transfer's own manifest or slices.
+    _inFlightSegId = segId;
+    try {
+      var result = await sendRow(
+        AttachmentManifest.encode(
+          kind: kind,
+          fileName: name,
+          segId: segId,
+          count: slices.length,
+          extra: extra,
+        ),
+      );
+      for (final slice in slices) {
+        final leg = await sendRow(slice);
+        if (leg != TransferResult.delivered) result = leg;
+      }
+      return result;
+    } finally {
+      _inFlightSegId = null;
     }
-    return result;
   }
 
   /// Sixteen hex chars of channel randomness naming one attachment.
@@ -1533,6 +1601,76 @@ class MessageTransport {
     return 'OneBit ($short)';
   }
 
+  /// I9.8.a — keep the outbox within [_maxQueuedMessages] rows,
+  /// evicting the oldest first: age is the clearest signal that a row
+  /// is never getting through, so it goes before anything younger.
+  ///
+  /// [needed] rows are about to be written — 1 for a message, the
+  /// manifest plus every slice for an attachment — and the result
+  /// says whether that room exists. Eviction works in units: a plain
+  /// message is its own unit, while an attachment's manifest and
+  /// slices share a [segId] and go together, because evicting part of
+  /// a transfer would leave a file that can never complete. Rows of
+  /// [protectSegId] — an attachment being written right now — are
+  /// never touched, and when nothing else remains the caller is
+  /// refused rather than allowed to strand the file.
+  ///
+  /// Evicted rows settle as `failed` through the usual status path,
+  /// so they stay in the thread as history and the retry schedule is
+  /// cleared with them.
+  Future<bool> _enforceQueueCap({
+    required int needed,
+    String? protectSegId,
+  }) async {
+    if (needed > _maxQueuedMessages) return false;
+
+    final rows = await _database.allQueuedMessages();
+    if (rows.length + needed <= _maxQueuedMessages) return true;
+
+    // Group into units, keeping their age order: a plain row is its
+    // own unit keyed by id; an attachment's rows travel together.
+    final unitOrder = <String>[];
+    final unitRows = <String, List<int>>{};
+    for (final row in rows) {
+      final key = _segIdOf(row.content) ?? '#${row.id}';
+      final ids = unitRows.putIfAbsent(key, () => <int>[]);
+      if (ids.isEmpty) unitOrder.add(key);
+      ids.add(row.id);
+    }
+
+    final target = _maxQueuedMessages - needed;
+    final evict = <int>[];
+    var remaining = rows.length;
+    for (final key in unitOrder) {
+      if (remaining <= target) break;
+      if (protectSegId != null && key == protectSegId) continue;
+      final ids = unitRows[key]!;
+      evict.addAll(ids);
+      remaining -= ids.length;
+    }
+    if (remaining > target) return false; // only protected rows left
+
+    for (final id in evict) {
+      await _updateMessageStatus(id, 'failed');
+    }
+    AppLogger.info(
+      'MessageTransport: outbox at its cap of $_maxQueuedMessages — '
+      'wrote off ${evict.length} oldest row(s)',
+    );
+    return true;
+  }
+
+  /// The attachment a row belongs to, or null for an ordinary message.
+  ///
+  /// I9.8.a — slices and manifests both carry the transfer id, which
+  /// is what lets eviction treat a file as one unit. A legacy
+  /// manifest has no id and stands on its own.
+  String? _segIdOf(String content) {
+    final slice = SegTag.parse(content);
+    if (slice != null) return slice.id;
+    return AttachmentManifest.parse(content)?.segId;
+  }
+
   /// Update a message's status.
   ///
   /// Also I9.11's single bookkeeping point: whatever an attempt settled
@@ -1552,9 +1690,10 @@ class MessageTransport {
   /// `queued` means the peer may simply not have been there, so the
   /// wait before the next try doubles — first [_retryBaseBackoff],
   /// capped at [_retryMaxBackoff] — instead of the outbox spinning on
-  /// a peer that is away for the afternoon. (A `queued` row is never
-  /// written off: only TTL/disappearance removes it, which is what the
-  /// status contract already promises.)
+  /// a peer that is away for the afternoon. (Retry itself never
+  /// writes a `queued` row off: only the outbox cap (I9.8.a), TTL,
+  /// or disappearance retires it — which is what the status contract
+  /// promises.)
   void _noteRetryOutcome(int messageId, String status) {
     if (status == 'queued') {
       final attempts = (_retryAttempts[messageId] ?? 0) + 1;

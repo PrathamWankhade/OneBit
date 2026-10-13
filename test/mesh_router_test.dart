@@ -384,6 +384,7 @@ void main() {
       ReceiptsAllowed? receiptsAllowed,
       Duration? retryBase,
       Duration? retryTick,
+      int? maxQueued,
     }) {
       // The group body runs once, so every test re-establishes the
       // fixture here; the outbox cases then bring peerC up by hand.
@@ -415,6 +416,7 @@ void main() {
         receiptsAllowed: receiptsAllowed,
         retryBaseBackoff: retryBase ?? MessageTransport.defaultRetryBaseBackoff,
         retryTick: retryTick ?? MessageTransport.defaultRetryTick,
+        maxQueuedMessages: maxQueued ?? MessageTransport.defaultMaxQueuedMessages,
       );
       built.startListening();
       return built;
@@ -658,6 +660,172 @@ void main() {
         expect((await db.getMessages(convId)).single.status, 'sent');
         expect(await db.queuedMessages(), isEmpty);
         expect(transport!.nextRetryAt(row.id), isNull);
+      });
+    });
+
+    group('I9.8.a the outbox holds a bounded number of rows', () {
+      test('sending past the cap evicts the oldest rows first', () async {
+        transport = buildTransport(withRoute: false, maxQueued: 3);
+        final convId = await db.createConversationWithPeer('Peer C', peerC);
+
+        for (var i = 1; i <= 5; i++) {
+          await transport!.sendMessage(
+            peerDeviceId: peerC,
+            conversationId: convId,
+            content: 'message $i',
+          );
+        }
+
+        // The queue never grows past the cap…
+        final queued = await db.queuedMessages();
+        expect(queued, hasLength(3));
+        expect(
+          queued.map((row) => row.content),
+          unorderedEquals(['message 3', 'message 4', 'message 5']),
+        );
+
+        // …and the rows it shed settle as failed: history, not queue.
+        final failed = (await db.getMessages(convId))
+            .where((row) => row.status == 'failed');
+        expect(
+          failed.map((row) => row.content),
+          unorderedEquals(['message 1', 'message 2']),
+        );
+      });
+
+      test('an attachment that cannot fit is refused whole', () async {
+        transport = buildTransport(withRoute: false, maxQueued: 4);
+        final convId = await db.createConversationWithPeer('Peer C', peerC);
+
+        final result = await transport!.sendAttachment(
+          peerDeviceId: peerC,
+          conversationId: convId,
+          kind: 'file',
+          fileName: 'big.bin',
+          bytes: Uint8List.fromList(List<int>.filled(2900 * 6, 7)),
+        );
+
+        // Six slices plus a manifest need seven rows the cap of four
+        // will not give — so nothing at all is written: no manifest
+        // waiting on slices that were never queued.
+        expect(result, TransferResult.failed);
+        expect(await db.getMessages(convId), isEmpty);
+        expect(await db.queuedMessages(), isEmpty);
+      });
+
+      test('an attachment evicts older rows to make room, then queues whole',
+          () async {
+        transport = buildTransport(withRoute: false, maxQueued: 6);
+        final convId = await db.createConversationWithPeer('Peer C', peerC);
+        for (var i = 1; i <= 3; i++) {
+          await transport!.sendMessage(
+            peerDeviceId: peerC,
+            conversationId: convId,
+            content: 'message $i',
+          );
+        }
+
+        // Manifest plus three slices: four rows, leaving the cap room
+        // for only two of the three older messages.
+        await transport!.sendAttachment(
+          peerDeviceId: peerC,
+          conversationId: convId,
+          kind: 'image',
+          fileName: 'pic.jpg',
+          bytes: Uint8List.fromList(List<int>.filled(2900 * 3, 9)),
+        );
+
+        final queued = await db.queuedMessages();
+        expect(queued, hasLength(6));
+        expect(
+          queued.map((row) => row.content).where((c) => c.startsWith('[image:')),
+          hasLength(1),
+        );
+        expect(
+          queued.map((row) => row.content).where((c) => c.startsWith('[seg:')),
+          hasLength(3),
+        );
+        expect(
+          queued.map((row) => row.content),
+          containsAll(['message 2', 'message 3']),
+        );
+
+        // The oldest plain row paid for the file, and only one.
+        final failed = (await db.getMessages(convId))
+            .where((row) => row.status == 'failed');
+        expect(failed.map((row) => row.content), ['message 1']);
+      });
+
+      test('a flush sweep brings rows written before the cap back under it',
+          () async {
+        transport = buildTransport(withRoute: false, maxQueued: 2);
+        final convId = await db.createConversationWithPeer('Peer C', peerC);
+
+        // Written straight to the store, the way an older version (or
+        // a racing burst) would have left them.
+        for (var i = 1; i <= 4; i++) {
+          await db.insertMessage(
+            conversationId: convId,
+            content: 'legacy $i',
+            status: 'queued',
+          );
+        }
+        expect(await db.queuedMessages(), hasLength(4));
+
+        await transport!.flushQueued();
+
+        final queued = await db.queuedMessages();
+        expect(queued, hasLength(2));
+        expect(
+          queued.map((row) => row.content),
+          unorderedEquals(['legacy 3', 'legacy 4']),
+        );
+        final failed = (await db.getMessages(convId))
+            .where((row) => row.status == 'failed');
+        expect(
+          failed.map((row) => row.content),
+          unorderedEquals(['legacy 1', 'legacy 2']),
+        );
+      });
+
+      test('rows that already settled are never evicted', () async {
+        transport = buildTransport(maxQueued: 2);
+        final convId = await db.createConversationWithPeer('Peer B', deviceB);
+
+        // A delivered message sits in the thread as `sent`…
+        await transport!.sendMessage(
+          peerDeviceId: deviceB,
+          conversationId: convId,
+          content: 'already gone',
+        );
+        expect((await db.getMessages(convId)).single.status, 'sent');
+
+        // …and stays there while the queue fills and overflows against
+        // an unreachable peerC.
+        for (var i = 1; i <= 3; i++) {
+          await transport!.sendMessage(
+            peerDeviceId: peerC,
+            conversationId: convId,
+            content: 'waiting $i',
+          );
+        }
+
+        final rows = await db.getMessages(convId);
+        expect(
+          rows.firstWhere((row) => row.content == 'already gone').status,
+          'sent',
+        );
+        expect(
+          rows.firstWhere((row) => row.content == 'waiting 1').status,
+          'failed',
+        );
+
+        final queued = await db.queuedMessages();
+        expect(queued, hasLength(2));
+        expect(
+          queued.map((row) => row.content),
+          unorderedEquals(['waiting 2', 'waiting 3']),
+        );
       });
     });
 

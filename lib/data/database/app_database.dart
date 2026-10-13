@@ -447,6 +447,22 @@ class AppDatabase extends _$AppDatabase {
         .get();
   }
 
+  /// Every row the outbox still owes, oldest first, unpaginated.
+  ///
+  /// I9.8.a — the cap needs the whole queue to know what is over it,
+  /// and eviction walks oldest-first, so the order is total: [id]
+  /// breaks the [createdAt] ties that fast in-memory writes share,
+  /// which keeps "oldest" from meaning "arbitrary".
+  Future<List<Message>> allQueuedMessages() {
+    return (select(messages)
+          ..where((t) => t.status.equals('queued'))
+          ..orderBy([
+            (t) => OrderingTerm.asc(t.createdAt),
+            (t) => OrderingTerm.asc(t.id),
+          ]))
+        .get();
+  }
+
   // ── BLE Transport helpers ──
 
   /// Find a conversation linked to a specific peer device.
