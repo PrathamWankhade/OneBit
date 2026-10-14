@@ -20,8 +20,9 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      # Drift/Mockito sources are gitignored (see .gitignore), so they must be
-      # regenerated or `flutter analyze` fails on undefined generated symbols.
+      # Drift's generated sources are gitignored (see .gitignore), so they
+      # must be regenerated or `flutter analyze` fails on undefined symbols.
+      # The Mockito mocks are committed, and this build refreshes them too.
       - name: Code generation
         run: dart run build_runner build --delete-conflicting-outputs
 

@@ -28,6 +28,8 @@ Messages hop between devices using a custom mesh routing protocol. If two people
 | Feature | Description |
 |---------|-------------|
 | **Mesh Networking** | Multi-hop BLE routing with automatic topology discovery and route recovery |
+| **Offline Outbox** | Messages queue while a peer is out of range and send themselves once the mesh finds a way |
+| **Delivery Receipts** | Sent, delivered and read states, with receipts that travel home through relays |
 | **End-to-End Encryption** | AES-256-GCM session encryption, with X25519 key agreement derived from your Ed25519 identity key |
 | **Zero Infrastructure** | No servers, no accounts, no phone number required |
 | **Terminal Aesthetic** | IBM 5153 palette on a Material 3 layout, with Consolas for hashes and identifiers |
@@ -128,7 +130,7 @@ lib/
 │   ├── theme/app_theme.dart      IBM 5153 terminal color scheme
 │   └── version/app_version.dart  Version the update check compares against
 ├── data/
-│   ├── database/app_database.dart             Drift database (schema v11)
+│   ├── database/app_database.dart             Drift database (schema v15)
 │   └── preferences/onboarding_repository.dart Onboarding completion flag
 └── features/
     ├── ble/              BLE service + state management
@@ -148,7 +150,7 @@ lib/
     └── ui/               Shared components library
 ```
 
-Generated sources such as `app_database.g.dart` and the Mockito mocks are gitignored — `dart run build_runner build` recreates them, and CI runs it before analyzing.
+Drift's generated sources (`*.g.dart`) are gitignored — `dart run build_runner build` recreates them, and CI runs that command before analyzing. The Mockito mocks under `test/` are the exception: they are committed to the repo, and the same build refreshes them whenever a mocked service's signature changes.
 
 ## Design System
 

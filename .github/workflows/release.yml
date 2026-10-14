@@ -71,8 +71,9 @@ jobs:
         if: steps.decide.outputs.publish == 'true'
         run: flutter pub get
 
-      # Drift/Mockito sources are gitignored, so they must be regenerated or
-      # neither `flutter analyze` nor the APK build resolves.
+      # Drift's generated sources are gitignored, so they must be regenerated
+      # or neither `flutter analyze` nor the APK build resolves. The Mockito
+      # mocks are committed, and this build refreshes them too.
       - name: Code generation
         if: steps.decide.outputs.publish == 'true'
         run: dart run build_runner build --delete-conflicting-outputs
