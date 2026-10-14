@@ -1,6 +1,7 @@
-// I10.1 — the cross-layer harness: four devices, one box, the whole stack.
+// The cross-layer harness: four devices, one box, the whole stack.
 //
-// Every earlier multi-device test stops at a wall. The multi_peer
+// I10.1 walks it end to end. Every earlier multi-device test stops at
+// a wall. The multi_peer
 // suites prove identity and routing at the state layer, with no
 // radio above them; the I9.17 lifecycle tests run real transports
 // over a wire, but their routes are handed in by hand. This is the
@@ -10,6 +11,12 @@
 // encrypted message multi-hop on the routes they learned — with
 // receipts walking home the same way. Nothing in any routing table
 // below is installed by the test; the cascade installs it.
+//
+// I10.2 then holds the same stack still while identity moves under
+// it: a key that rotates mid-conversation, an address that changes
+// while the identity does not, and a first contact that stays a
+// stranger until someone verifies it — each one proven through the
+// same hops, not at the state layer.
 
 import 'package:cryptography/cryptography.dart';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
@@ -32,6 +39,8 @@ import 'package:onebit/features/routing/route_discovery.dart';
 import 'package:onebit/features/routing/routing_table.dart';
 import 'package:onebit/features/routing/topology_exchange_service.dart';
 import 'package:onebit/features/routing/topology_repository.dart';
+import 'package:onebit/features/trust/peer_trust.dart';
+import 'package:onebit/features/trust/trust_service.dart';
 
 import 'helpers/virtual_medium.dart';
 import 'cross_layer_integration_test.mocks.dart';
@@ -80,6 +89,13 @@ void main() {
     device.transport;
     return device;
   }
+
+  /// A device's X25519 public key as hex — the bytes a peer stores
+  /// from an announcement and encrypts to afterwards.
+  Future<String> keyHexOf(_Device device) async =>
+      IdentityRepository.bytesToHex(
+        Uint8List.fromList((await device.xPair.extractPublicKey()).bytes),
+      );
 
   group('I10.1 — identity, BLE, routing and delivery together', () {
     test(
@@ -238,6 +254,322 @@ void main() {
       expect(sealed.isEncrypted, 1);
     });
   });
+
+  group('I10.2 — identity & trust under the full stack', () {
+    test('a key rotated mid-conversation is taken up, not shrugged off',
+        () async {
+      final a = await makeDevice(address: 'DEV_A');
+      final b = await makeDevice(address: 'DEV_B');
+      final c = await makeDevice(address: 'DEV_C');
+
+      a.neighbors.addNeighbor(b.peerId, bleDeviceId: 'DEV_B');
+      b.neighbors.addNeighbor(a.peerId, bleDeviceId: 'DEV_A');
+      b.neighbors.addNeighbor(c.peerId, bleDeviceId: 'DEV_C');
+      c.neighbors.addNeighbor(b.peerId, bleDeviceId: 'DEV_B');
+
+      await pumpEventQueue();
+      await pumpEventQueue();
+
+      // ── Bootstrap: each end learns the other's first key ────
+      final aConv = await a.db.createConversationWithPeer('C', c.peerId);
+      expect(
+        await a.transport.sendMessage(
+          peerDeviceId: c.peerId,
+          conversationId: aConv,
+          content: 'before the rotation',
+        ),
+        TransferResult.delivered,
+      );
+      await pumpEventQueue();
+      await pumpEventQueue();
+
+      final cConv = (await c.db.getConversationByPeerDevice(a.peerId))!;
+      expect(
+        await c.transport.sendMessage(
+          peerDeviceId: a.peerId,
+          conversationId: cConv.id,
+          content: 'my key before the rotation',
+        ),
+        TransferResult.delivered,
+      );
+      await pumpEventQueue();
+      await pumpEventQueue();
+
+      final key1 = await keyHexOf(c);
+      expect(await a.db.peerKeyAgreementKey(c.peerId), key1);
+      expect(await c.db.peerKeyAgreementKey(a.peerId), await keyHexOf(a));
+
+      // ── The rotation ────────────────────────────────────────
+      // C gets a fresh X25519 pair. Its Ed25519 identity — the
+      // name every envelope and announcement carries — does not
+      // move with it.
+      await c.rotateKeyAgreement();
+      final key2 = await keyHexOf(c);
+      expect(key2, isNot(key1)); // a real rotation, not the same bytes
+
+      expect(
+        await c.transport.sendMessage(
+          peerDeviceId: a.peerId,
+          conversationId: cConv.id,
+          content: 'after the rotation',
+        ),
+        TransferResult.delivered,
+      );
+      await pumpEventQueue();
+      await pumpEventQueue();
+
+      // The new key arrived signed by the same identity and
+      // replaced the old one: A now holds what C encrypts with,
+      // not what C used to.
+      expect(await a.db.peerKeyAgreementKey(c.peerId), key2);
+
+      // The words that rode alongside it still opened at A — the
+      // rotation broke no conversation on the way through B.
+      final rotatedArrival = (await a.db.getMessages(aConv)).singleWhere(
+        (row) => row.content == 'after the rotation',
+      );
+      expect(rotatedArrival.isEncrypted, 1);
+
+      // ── Talk to the new key ─────────────────────────────────
+      expect(
+        await a.transport.sendMessage(
+          peerDeviceId: c.peerId,
+          conversationId: aConv,
+          content: 'sealed to the new key',
+        ),
+        TransferResult.delivered,
+      );
+      await pumpEventQueue();
+      await pumpEventQueue();
+
+      // C's own transport — the one holding the rotated pair —
+      // opened it. A's encryption followed the rotation.
+      final sealed = (await c.db.getMessages(cConv.id)).singleWhere(
+        (row) => row.content == 'sealed to the new key',
+      );
+      expect(sealed.isEncrypted, 1);
+    });
+
+    test('a new BLE address carries the same identity across every hop',
+        () async {
+      final a = await makeDevice(address: 'DEV_A');
+      final b = await makeDevice(address: 'DEV_B');
+      final c = await makeDevice(address: 'DEV_C');
+
+      a.neighbors.addNeighbor(b.peerId, bleDeviceId: 'DEV_B');
+      b.neighbors.addNeighbor(a.peerId, bleDeviceId: 'DEV_A');
+      b.neighbors.addNeighbor(c.peerId, bleDeviceId: 'DEV_C');
+      c.neighbors.addNeighbor(b.peerId, bleDeviceId: 'DEV_B');
+
+      await pumpEventQueue();
+      await pumpEventQueue();
+
+      // ── Bootstrap, both directions, so both ends hold keys ──
+      final aConv = await a.db.createConversationWithPeer('C', c.peerId);
+      expect(
+        await a.transport.sendMessage(
+          peerDeviceId: c.peerId,
+          conversationId: aConv,
+          content: 'hello from the old address',
+        ),
+        TransferResult.delivered,
+      );
+      await pumpEventQueue();
+      await pumpEventQueue();
+
+      final cConv = (await c.db.getConversationByPeerDevice(a.peerId))!;
+      expect(
+        await c.transport.sendMessage(
+          peerDeviceId: a.peerId,
+          conversationId: cConv.id,
+          content: 'and back through the relay',
+        ),
+        TransferResult.delivered,
+      );
+      await pumpEventQueue();
+      await pumpEventQueue();
+
+      expect(await a.db.peerKeyAgreementKey(c.peerId), isNotNull);
+
+      // ── The address rotates ─────────────────────────────────
+      final before = wire.crossings.length;
+      a.moveRadio(wire.radioFor('DEV_A2'));
+      // The neighbour table re-resolves the SAME peer id to the
+      // new address — the update production performs when a peer
+      // reconnects from a new MAC.
+      b.neighbors.addNeighbor(a.peerId, bleDeviceId: 'DEV_A2');
+      await pumpEventQueue();
+      await pumpEventQueue();
+
+      expect(
+        b.neighbors.neighbors
+            .singleWhere((entry) => entry.peerId == a.peerId)
+            .bleDeviceId,
+        'DEV_A2',
+      );
+      // The whole device moved, radio and router together: A's own
+      // advertisement now leaves from the new address.
+      expect(
+        wire.packets,
+        contains(
+          (
+            from: 'DEV_A2',
+            to: 'DEV_B',
+            type: PacketType.topologyAdvertisement,
+          ),
+        ),
+      );
+
+      // ── Traffic, both ways, on the new address ──────────────
+      // C answers: the route's next hop is still B, and B hands
+      // the last leg to the new address — never the old one.
+      expect(
+        await c.transport.sendMessage(
+          peerDeviceId: a.peerId,
+          conversationId: cConv.id,
+          content: 'at the new address',
+        ),
+        TransferResult.delivered,
+      );
+      await pumpEventQueue();
+      await pumpEventQueue();
+
+      final afterArrival = wire.crossings.sublist(before);
+      expect(
+        afterArrival,
+        containsAllInOrder([
+          (from: 'DEV_C', to: 'DEV_B', hops: 0),
+          (from: 'DEV_B', to: 'DEV_A2', hops: 1),
+        ]),
+      );
+      // It arrived in the same thread, under the same identity,
+      // still sealed: the address changed, the peer did not.
+      final arrival = (await a.db.getMessages(aConv))
+          .singleWhere((row) => row.content == 'at the new address');
+      expect(arrival.isEncrypted, 1);
+
+      // And A speaks from the new address too.
+      final afterReply = wire.crossings.length;
+      expect(
+        await a.transport.sendMessage(
+          peerDeviceId: c.peerId,
+          conversationId: aConv,
+          content: 'out from the new address',
+        ),
+        TransferResult.delivered,
+      );
+      await pumpEventQueue();
+      await pumpEventQueue();
+
+      expect(
+        wire.crossings.sublist(afterReply),
+        containsAllInOrder([
+          (from: 'DEV_A2', to: 'DEV_B', hops: 0),
+          (from: 'DEV_B', to: 'DEV_C', hops: 1),
+        ]),
+      );
+      expect(
+        (await c.db.getMessages(cConv.id))
+            .singleWhere((row) => row.content == 'out from the new address')
+            .isEncrypted,
+        1,
+      );
+
+      // Nothing post-rotation ever went to the address A left
+      // behind.
+      expect(
+        wire.crossings.sublist(before).where((leg) => leg.to == 'DEV_A'),
+        isEmpty,
+      );
+    });
+
+    test('first contact through the relay stays a stranger until verified',
+        () async {
+      final a = await makeDevice(address: 'DEV_A');
+      final b = await makeDevice(address: 'DEV_B');
+      final c = await makeDevice(address: 'DEV_C');
+
+      a.neighbors.addNeighbor(b.peerId, bleDeviceId: 'DEV_B');
+      b.neighbors.addNeighbor(a.peerId, bleDeviceId: 'DEV_A');
+      b.neighbors.addNeighbor(c.peerId, bleDeviceId: 'DEV_C');
+      c.neighbors.addNeighbor(b.peerId, bleDeviceId: 'DEV_B');
+
+      await pumpEventQueue();
+      await pumpEventQueue();
+
+      // First contact, two hops out of A's store and into C's.
+      final aConv = await a.db.createConversationWithPeer('C', c.peerId);
+      expect(
+        await a.transport.sendMessage(
+          peerDeviceId: c.peerId,
+          conversationId: aConv,
+          content: 'a stranger writes',
+        ),
+        TransferResult.delivered,
+      );
+      await pumpEventQueue();
+      await pumpEventQueue();
+
+      // ── What trust-on-first-use actually creates ────────────
+      final firstContact = await c.db.getPeerIdentityByIdentityId(a.peerId);
+      expect(firstContact, isNotNull);
+      expect(firstContact!.identityId, a.peerId);
+      expect(firstContact.displayName, 'Unknown');
+      // The identity IS the key: this row's public key is the very
+      // name the announcement's signature was checked against.
+      expect(firstContact.publicKey, a.peerId);
+      expect(firstContact.keyAgreementPublicKey, isNotNull);
+      // A message — even one that decrypts — is not a handshake:
+      // nothing here is verified, and the trust ledger is empty.
+      expect(firstContact.trustState, 'unknown');
+      expect(await c.db.loadAllTrust(), isEmpty);
+
+      // ── The verification, through the production path ───────
+      // Scanning A's QR is a local act, but it lands on the row
+      // the mesh delivered, against the identity the mesh named.
+      final trust = TrustService(IdentityRepository(c.db));
+      trust.verifyIdentity(
+        peerIdentityId: a.peerId,
+        at: DateTime.now(),
+        publicKeyHex: a.peerId,
+        method: VerificationMethod.qrScan,
+      );
+      await pumpEventQueue();
+      await pumpEventQueue();
+
+      expect(trust.isVerified(a.peerId), isTrue);
+      final ledger = await c.db.loadAllTrust();
+      expect(ledger, hasLength(1));
+      expect(ledger.single.peerIdentityId, a.peerId);
+      expect(ledger.single.trustState, 'verified');
+      expect(ledger.single.verificationMethod, 'qrScan');
+      expect(
+        (await c.db.getPeerIdentityByIdentityId(a.peerId))!.trustState,
+        'verified',
+      );
+
+      // ── And the conversation with the now-known peer goes on ─
+      final cConv = (await c.db.getConversationByPeerDevice(a.peerId))!;
+      expect(
+        await c.transport.sendMessage(
+          peerDeviceId: a.peerId,
+          conversationId: cConv.id,
+          content: 'known now, still encrypted',
+        ),
+        TransferResult.delivered,
+      );
+      await pumpEventQueue();
+      await pumpEventQueue();
+
+      final reply = (await a.db.getMessages(aConv)).singleWhere(
+        (msg) => msg.content == 'known now, still encrypted',
+      );
+      expect(reply.isEncrypted, 1);
+      // Verification changed what C thinks of A. It touched no key
+      // and put no extra byte on the wire.
+      expect(await c.db.peerKeyAgreementKey(a.peerId), await keyHexOf(a));
+    });
+  });
 }
 
 /// One device: the full stack in working order — database, keys,
@@ -254,13 +586,15 @@ class _Device {
     required this.reachability,
   });
 
-  final String address;
+  String address;
   final String peerId;
-  final VirtualRadio radio;
+  VirtualRadio radio;
 
   /// The device's own identity: X25519 for encryption, Ed25519 for
-  /// signing the announcements that carry the encryption key.
-  final SimpleKeyPair xPair;
+  /// signing the announcements that carry the encryption key. The
+  /// X25519 half is the one that can rotate (I10.2); the Ed25519
+  /// half IS the peer id and never moves.
+  SimpleKeyPair xPair;
   final SimpleKeyPair edPair;
 
   final MockPeerReachability reachability;
@@ -287,22 +621,24 @@ class _Device {
 
   late final RoutingTable routing = RoutingTable(localPeerId: peerId);
 
-  late final MeshRouter router = MeshRouter(
-    localPeerId: peerId,
-    neighborTable: neighbors,
-    topologyExchange: exchange,
-    topologyRepository: repository,
-    routingTable: routing,
-    bleService: radio,
-    getReachableNeighbors: reachablePeerIds,
-    discoverRoute: discovery.discoverRoute,
-    // Never fires during a test; the neighbour cascade drives
-    // advertisements itself.
-    advertisementInterval: const Duration(hours: 1),
-  );
+  late MeshRouter router = _buildRouter();
 
-  late final MessageRelayService relay;
-  late final MessageTransport transport = _buildTransport();
+  MeshRouter _buildRouter() => MeshRouter(
+        localPeerId: peerId,
+        neighborTable: neighbors,
+        topologyExchange: exchange,
+        topologyRepository: repository,
+        routingTable: routing,
+        bleService: radio,
+        getReachableNeighbors: reachablePeerIds,
+        discoverRoute: discovery.discoverRoute,
+        // Never fires during a test; the neighbour cascade drives
+        // advertisements itself.
+        advertisementInterval: const Duration(hours: 1),
+      );
+
+  late MessageRelayService relay;
+  late MessageTransport transport = _buildTransport();
 
   /// The peers this device can reach in one hop — the edge set it
   /// advertises and the BFS seeds its discovery.
@@ -348,6 +684,30 @@ class _Device {
     );
     built.startListening();
     return built;
+  }
+
+  /// A fresh X25519 pair — the rotation production performs when a
+  /// device's key-agreement key changes. The transport is rebuilt
+  /// around it, so the next send announces the new key exactly the
+  /// way a first send announces an old one.
+  Future<void> rotateKeyAgreement() async {
+    transport.dispose();
+    xPair = await X25519().newKeyPair();
+    transport = _buildTransport();
+  }
+
+  /// The radio moves to a new BLE address — the MAC rotation an OS
+  /// hands a device. The identity walks with it: same peer id, same
+  /// routes, same threads; only the air address changes, and every
+  /// layer above the radio keeps working without being told.
+  void moveRadio(VirtualRadio newRadio) {
+    transport.dispose();
+    router.dispose();
+    address = newRadio.address;
+    radio = newRadio;
+    router = _buildRouter();
+    router.start();
+    transport = _buildTransport();
   }
 
   Future<void> dispose() async {
