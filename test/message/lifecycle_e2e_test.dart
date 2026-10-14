@@ -32,8 +32,16 @@ import 'package:onebit/features/routing/route.dart';
 class _Wire {
   final Map<String, StreamController<ReliableDataReceived>> _inboxes = {};
 
+  /// Addresses whose radio is out of the air: a send to them fails
+  /// the way a link that went away fails — refused, not thrown.
+  final Set<String> down = {};
+
   /// Every envelope that crossed, in order: (from, to, hop count).
   final List<({String from, String to, int hops})> crossings = [];
+
+  /// What actually reached an inbox, kept whole so a test can put
+  /// one copy back on the wire by hand.
+  final List<({String from, String to, List<int> payload})> deliveries = [];
 
   int _transferId = 0;
 
@@ -54,7 +62,9 @@ class _Wire {
     required List<int> payload,
   }) async {
     final inbox = _inboxes[to];
-    if (inbox == null) return TransferResult.failed; // no such radio
+    if (inbox == null || down.contains(to)) {
+      return TransferResult.failed; // no such radio, or it went away
+    }
 
     final packet = PacketCodec.decode(Uint8List.fromList(payload));
     if (packet.type == PacketType.message) {
@@ -63,6 +73,7 @@ class _Wire {
       );
       crossings.add((from: from, to: to, hops: envelope.hopCount));
     }
+    deliveries.add((from: from, to: to, payload: payload));
 
     inbox.add(ReliableDataReceived(
       deviceId: from,
@@ -110,6 +121,11 @@ class _Node {
 
   late final MessageTransport transport = _buildTransport();
 
+  /// The transport's relay, kept reachable so a test can drive
+  /// held-forward retries by hand. Zero backoff: the timer is never
+  /// started here, and a hold should be due the moment we ask.
+  late final MessageRelayService relay;
+
   final Map<String, Route> routes = {};
   final Map<String, String> devices = {};
   final Set<String> connected = {};
@@ -122,14 +138,16 @@ class _Node {
       deviceResolver: (peer) => devices[peer],
       isPeerConnected: (peer) => connected.contains(peer),
     );
+    relay = MessageRelayService(
+      localPeerId: peerId,
+      transmissionService: transmission,
+      retryBaseBackoff: Duration.zero,
+    );
     final built = MessageTransport(
       bleService: ble,
       database: db,
       localPeerId: peerId,
-      relayService: MessageRelayService(
-        localPeerId: peerId,
-        transmissionService: transmission,
-      ),
+      relayService: relay,
       transmissionService: transmission,
       routeLookup: (dest) => routes[dest],
       deviceForPeer: (peer) => devices[peer],
@@ -308,6 +326,143 @@ void main() {
           (from: 'DEV_B', to: 'DEV_A', hops: 1),
         ]),
       );
+      expect((await a.db.getMessages(aConv)).single.status, 'delivered');
+    });
+  });
+
+  group('I9.17.b — offline, recovery, and a replayed copy', () {
+    test('a message waits out its peer being away, and a replay changes nothing',
+        () async {
+      final a = makeNode(address: 'DEV_A', peerId: peerA);
+      final c = makeNode(address: 'DEV_C', peerId: peerC);
+
+      a.routes[peerC] = _route(dest: peerC, nextHop: peerC);
+      a.devices[peerC] = 'DEV_C';
+      a.connected.add(peerC);
+
+      c.routes[peerA] = _route(dest: peerA, nextHop: peerA);
+      c.devices[peerA] = 'DEV_A';
+      c.connected.add(peerA);
+
+      // C's radio goes out of the air before A has anything to say.
+      wire.down.add('DEV_C');
+
+      final aConv = await a.db.createConversationWithPeer('C', peerC);
+      final result = await a.transport.sendMessage(
+        peerDeviceId: peerC,
+        conversationId: aConv,
+        content: 'you were out',
+      );
+
+      // Offline: the send fails honestly, and the words wait in the
+      // outbox rather than being written off.
+      expect(result, TransferResult.failed);
+      final waiting = (await a.db.getMessages(aConv)).single;
+      expect(waiting.status, 'queued');
+      expect(waiting.content, 'you were out');
+
+      // The radio comes back; the outbox takes it out on its own
+      // next pass.
+      wire.down.remove('DEV_C');
+      await a.transport.flushQueued();
+      await pumpEventQueue();
+      await pumpEventQueue();
+
+      final cConv = await c.db.getConversationByPeerDevice(peerA);
+      expect(cConv, isNotNull);
+      expect(
+        (await c.db.getMessages(cConv!.id)).single.content,
+        'you were out',
+      );
+      expect((await a.db.getMessages(aConv)).single.status, 'delivered');
+
+      // The link's own echo of what it carried — the same packet,
+      // once more — changes nothing downstream: one row, and the
+      // sender hears from C exactly once.
+      final copiesToC = wire.deliveries
+          .where((d) => d.to == 'DEV_C')
+          .toList(growable: false);
+      expect(copiesToC, hasLength(1));
+      final receiptsFromC =
+          wire.crossings.where((x) => x.from == 'DEV_C').length;
+      expect(receiptsFromC, 1);
+
+      await wire.send(
+        from: 'DEV_A',
+        to: 'DEV_C',
+        payload: copiesToC.single.payload,
+      );
+      await pumpEventQueue();
+      await pumpEventQueue();
+
+      expect((await c.db.getMessages(cConv.id)).length, 1);
+      expect(
+        wire.crossings.where((x) => x.from == 'DEV_C').length,
+        receiptsFromC,
+      );
+      expect((await a.db.getMessages(aConv)).single.status, 'delivered');
+    });
+
+    test('a forward the relay held lands once the road opens', () async {
+      final a = makeNode(address: 'DEV_A', peerId: peerA);
+      final b = makeNode(address: 'DEV_B', peerId: peerB);
+      final c = makeNode(address: 'DEV_C', peerId: peerC);
+
+      a.routes[peerC] = _route(dest: peerC, nextHop: peerB);
+      a.devices[peerB] = 'DEV_B';
+      a.connected.add(peerB);
+
+      b.routes[peerC] = _route(dest: peerC, nextHop: peerC);
+      b.routes[peerA] = _route(dest: peerA, nextHop: peerA);
+      b.devices[peerC] = 'DEV_C';
+      b.devices[peerA] = 'DEV_A';
+      b.connected.add(peerC);
+      b.connected.add(peerA);
+
+      c.routes[peerA] = _route(dest: peerA, nextHop: peerB);
+      c.devices[peerB] = 'DEV_B';
+      c.connected.add(peerB);
+
+      // The last leg's radio dies after A has handed the message
+      // to B.
+      wire.down.add('DEV_C');
+
+      final aConv = await a.db.createConversationWithPeer('C', peerC);
+      final result = await a.transport.sendMessage(
+        peerDeviceId: peerC,
+        conversationId: aConv,
+        content: 'held at the middle',
+      );
+
+      // A's hop succeeded — past B is B's business now.
+      expect(result, TransferResult.delivered);
+      expect((await a.db.getMessages(aConv)).single.status, 'sent');
+
+      await pumpEventQueue();
+
+      // B tried and could not: the envelope waits on B's hold,
+      // C's database has nothing, and nobody has any receipt to
+      // send.
+      expect(b.relay.pendingForwardCount, 1);
+      expect(await c.db.getConversationByPeerDevice(peerA), isNull);
+
+      // The road reopens; the hold takes its retry by hand.
+      wire.down.remove('DEV_C');
+      await b.relay.retryDueForwards();
+      await pumpEventQueue();
+      await pumpEventQueue();
+
+      expect(b.relay.pendingForwardCount, 0);
+      final cConv = await c.db.getConversationByPeerDevice(peerA);
+      expect(cConv, isNotNull);
+      expect(
+        (await c.db.getMessages(cConv!.id)).single.content,
+        'held at the middle',
+      );
+
+      // B was still only a pipe, and the receipt walked back
+      // through it to A's row.
+      expect(await b.db.getConversationByPeerDevice(peerA), isNull);
       expect((await a.db.getMessages(aConv)).single.status, 'delivered');
     });
   });
