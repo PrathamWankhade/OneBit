@@ -17,6 +17,11 @@
 // while the identity does not, and a first contact that stays a
 // stranger until someone verifies it — each one proven through the
 // same hops, not at the state layer.
+//
+// I10.3 presses on the shelves underneath all of it: queue caps,
+// relay holds, retry schedules — every ceiling checked while two
+// subsystems are under one partition at once, then drained, so
+// bounded separately proves bounded together.
 
 import 'package:cryptography/cryptography.dart';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
@@ -64,7 +69,10 @@ void main() {
     await wire.close();
   });
 
-  Future<_Device> makeDevice({required String address}) async {
+  Future<_Device> makeDevice({
+    required String address,
+    int maxQueuedMessages = MessageTransport.defaultMaxQueuedMessages,
+  }) async {
     final radio = wire.radioFor(address);
     final edPair = await Ed25519().newKeyPair();
     final device = _Device(
@@ -79,6 +87,7 @@ void main() {
       xPair: await X25519().newKeyPair(),
       edPair: edPair,
       reachability: MockPeerReachability(),
+      maxQueuedMessages: maxQueuedMessages,
     );
     devices.add(device);
     when(device.reachability.getReachableNeighbors())
@@ -96,6 +105,12 @@ void main() {
       IdentityRepository.bytesToHex(
         Uint8List.fromList((await device.xPair.extractPublicKey()).bytes),
       );
+
+  /// Drain the event loop until nothing is moving. The bulk phases
+  /// below push hundreds of deliveries through the box — messages
+  /// and their receipts, hop after hop — far past the default pump
+  /// queue's twenty turns.
+  Future<void> settle() => pumpEventQueue(times: 600);
 
   group('I10.1 — identity, BLE, routing and delivery together', () {
     test(
@@ -570,6 +585,268 @@ void main() {
       expect(await c.db.peerKeyAgreementKey(a.peerId), await keyHexOf(a));
     });
   });
+
+  group('I10.3 — resource limits under pressure', () {
+    test('the outbox is a fixed shelf: the partition fills it, healing '
+        'drains it', () async {
+      const shelf = 64;
+      const flood = shelf + 10;
+
+      final a = await makeDevice(address: 'DEV_A', maxQueuedMessages: shelf);
+      final b = await makeDevice(address: 'DEV_B');
+      final c = await makeDevice(address: 'DEV_C');
+
+      a.neighbors.addNeighbor(b.peerId, bleDeviceId: 'DEV_B');
+      b.neighbors.addNeighbor(a.peerId, bleDeviceId: 'DEV_A');
+      b.neighbors.addNeighbor(c.peerId, bleDeviceId: 'DEV_C');
+      c.neighbors.addNeighbor(b.peerId, bleDeviceId: 'DEV_B');
+
+      await pumpEventQueue();
+      await pumpEventQueue();
+
+      // Baseline: the road is open.
+      final aConv = await a.db.createConversationWithPeer('C', c.peerId);
+      expect(
+        await a.transport.sendMessage(
+          peerDeviceId: c.peerId,
+          conversationId: aConv,
+          content: 'baseline',
+        ),
+        TransferResult.delivered,
+      );
+      await pumpEventQueue();
+      await pumpEventQueue();
+      expect(await c.db.select(c.db.messages).get(), hasLength(1));
+
+      // ── Partition: A's first hop closes. ────────────────────
+      wire.down.add('DEV_B');
+
+      final results = <TransferResult>[];
+      for (var i = 0; i < flood; i++) {
+        results.add(await a.transport.sendMessage(
+          peerDeviceId: c.peerId,
+          conversationId: aConv,
+          content: 'flood #$i',
+        ));
+      }
+      await settle();
+
+      // Every attempt told the truth — the road was closed — and
+      // left its row on the shelf for a later pass rather than
+      // losing it or declaring it dead.
+      expect(results.every((r) => r == TransferResult.failed), isTrue);
+
+      // The shelf holds exactly its cap: nothing grew behind it.
+      final waiting = await a.db.allQueuedMessages();
+      expect(waiting, hasLength(shelf));
+
+      // Exactly what ran off the front is written off: ten rows,
+      // kept as history, not queued as work.
+      final aRows = await a.db.getMessages(aConv);
+      expect(aRows, hasLength(flood + 1));
+      expect(
+        aRows.where((m) => m.status == 'queued'),
+        hasLength(shelf),
+      );
+      expect(aRows.where((m) => m.status == 'expired'), hasLength(10));
+
+      // The in-memory retry schedules never outnumber the shelf:
+      // an entry per waiting row, none for the ten written off.
+      for (final row in waiting) {
+        expect(a.transport.retryAttemptsOf(row.id), greaterThanOrEqualTo(1));
+        expect(a.transport.nextRetryAt(row.id), isNotNull);
+      }
+      for (final row in aRows.where((m) => m.status == 'expired')) {
+        expect(a.transport.retryAttemptsOf(row.id), 0);
+        expect(a.transport.nextRetryAt(row.id), isNull);
+      }
+
+      // The partition leaked nothing sideways: the relay's database
+      // is untouched and the far end saw only the baseline.
+      expect(await b.db.select(b.db.messages).get(), isEmpty);
+      expect(await c.db.select(c.db.messages).get(), hasLength(1));
+
+      // ── Heal: the road reopens and the shelf drains. ────────
+      wire.down.remove('DEV_B');
+      // One flush pass moves a batch of fifty — the same
+      // backpressure the retry tick applies in production — so the
+      // shelf empties pass by pass, each pass bounded so a wedged
+      // row can never spin this loop.
+      for (var pass = 0; pass < 4; pass++) {
+        await a.transport.flushQueued();
+        if ((await a.db.allQueuedMessages()).isEmpty) break;
+      }
+      await settle();
+
+      expect(await a.db.allQueuedMessages(), isEmpty);
+      final drained = await a.db.getMessages(aConv);
+      expect(drained.where((m) => m.status == 'queued'), isEmpty);
+      expect(drained.where((m) => m.status == 'expired'), hasLength(10));
+
+      // The shelf's memory went with the rows: no schedule lingers
+      // for anything settled or written off.
+      for (final row in drained) {
+        expect(a.transport.retryAttemptsOf(row.id), 0);
+        expect(a.transport.nextRetryAt(row.id), isNull);
+      }
+
+      // The far end received exactly the newest sixty-four — and
+      // never the ten written off the front. Nothing revives.
+      final cConv = (await c.db.getConversationByPeerDevice(a.peerId))!;
+      final cContents =
+          (await c.db.getMessages(cConv.id)).map((m) => m.content).toSet();
+      expect(cContents, hasLength(shelf + 1)); // baseline + the shelf
+      for (var i = 0; i < 10; i++) {
+        expect(cContents, isNot(contains('flood #$i')));
+      }
+      for (var i = 10; i < flood; i++) {
+        expect(cContents, contains('flood #$i'));
+      }
+    });
+
+    test('one partition presses two shelves at once — memory at the '
+        'relay, disk at the outbox', () async {
+      const shelf = 64;
+      const flood = shelf + 10;
+
+      final a = await makeDevice(address: 'DEV_A');
+      final b = await makeDevice(address: 'DEV_B');
+      final c = await makeDevice(address: 'DEV_C');
+      final d = await makeDevice(address: 'DEV_D', maxQueuedMessages: shelf);
+
+      a.neighbors.addNeighbor(b.peerId, bleDeviceId: 'DEV_B');
+      b.neighbors.addNeighbor(a.peerId, bleDeviceId: 'DEV_A');
+      b.neighbors.addNeighbor(c.peerId, bleDeviceId: 'DEV_C');
+      c.neighbors.addNeighbor(b.peerId, bleDeviceId: 'DEV_B');
+      c.neighbors.addNeighbor(d.peerId, bleDeviceId: 'DEV_D');
+      d.neighbors.addNeighbor(c.peerId, bleDeviceId: 'DEV_C');
+
+      await pumpEventQueue();
+      await pumpEventQueue();
+
+      // Baselines: both roads open before the cut — A's words
+      // cross the whole chain to C, D's ride through C to B.
+      final aConv = await a.db.createConversationWithPeer('C', c.peerId);
+      expect(
+        await a.transport.sendMessage(
+          peerDeviceId: c.peerId,
+          conversationId: aConv,
+          content: 'baseline',
+        ),
+        TransferResult.delivered,
+      );
+      final dConv = await d.db.createConversationWithPeer('B', b.peerId);
+      expect(
+        await d.transport.sendMessage(
+          peerDeviceId: b.peerId,
+          conversationId: dConv,
+          content: 'baseline',
+        ),
+        TransferResult.delivered,
+      );
+      await pumpEventQueue();
+      await pumpEventQueue();
+      expect(await c.db.select(c.db.messages).get(), hasLength(1));
+      expect(await b.db.select(b.db.messages).get(), hasLength(1));
+
+      // ── One partition closes the B—C leg. ───────────────────
+      wire.down.add('DEV_C');
+
+      // A's flood sails as far as B — the mesh accepted every one,
+      // A's rows say so — and B, unable to pass them on, holds the
+      // forwarded envelopes in memory, capped at the relay's own
+      // shelf of sixty-four.
+      final aResults = <TransferResult>[];
+      for (var i = 0; i < flood; i++) {
+        aResults.add(await a.transport.sendMessage(
+          peerDeviceId: c.peerId,
+          conversationId: aConv,
+          content: 'from A #$i',
+        ));
+      }
+
+      // D's own flood cannot leave the house — its first hop IS
+      // the dead leg — so those rows fill the disk shelf instead,
+      // under the same outbox cap.
+      final dResults = <TransferResult>[];
+      for (var i = 0; i < flood; i++) {
+        dResults.add(await d.transport.sendMessage(
+          peerDeviceId: b.peerId,
+          conversationId: dConv,
+          content: 'from D #$i',
+        ));
+      }
+      await settle();
+
+      expect(aResults.every((r) => r == TransferResult.delivered), isTrue);
+      expect(dResults.every((r) => r == TransferResult.failed), isTrue);
+
+      // Memory shelf: exactly the cap, oldest gone — and held
+      // envelopes never became rows: B's database holds only its
+      // own baseline conversation.
+      expect(b.relay.pendingForwardCount, shelf);
+      expect(await b.db.select(b.db.messages).get(), hasLength(1));
+
+      // A's shelf never engaged: its own hop was open.
+      expect(await a.db.allQueuedMessages(), isEmpty);
+
+      // Disk shelf: exactly the cap queued, ten written off the
+      // front as history.
+      expect(await d.db.allQueuedMessages(), hasLength(shelf));
+      final dRows = await d.db.getMessages(dConv);
+      expect(dRows, hasLength(flood + 1));
+      expect(dRows.where((m) => m.status == 'expired'), hasLength(10));
+
+      // The far side of the cut saw nothing new.
+      expect(await c.db.select(c.db.messages).get(), hasLength(1));
+
+      // ── Heal: both shelves drain to nothing. ────────────────
+      wire.down.remove('DEV_C');
+      await b.relay.retryDueForwards();
+      // The outbox drains in batches of fifty — bounded passes,
+      // the way production empties it a tick at a time.
+      for (var pass = 0; pass < 4; pass++) {
+        await d.transport.flushQueued();
+        if ((await d.db.allQueuedMessages()).isEmpty) break;
+      }
+      await settle();
+
+      expect(b.relay.pendingForwardCount, 0);
+      expect(await d.db.allQueuedMessages(), isEmpty);
+
+      // C received A's newest sixty-four — the ten that fell off
+      // B's memory shelf never arrived.
+      final cConv = (await c.db.getConversationByPeerDevice(a.peerId))!;
+      final cContents =
+          (await c.db.getMessages(cConv.id)).map((m) => m.content).toSet();
+      expect(
+        cContents.where((s) => s.startsWith('from A #')),
+        hasLength(shelf),
+      );
+      for (var i = 0; i < 10; i++) {
+        expect(cContents, isNot(contains('from A #$i')));
+      }
+      for (var i = 10; i < flood; i++) {
+        expect(cContents, contains('from A #$i'));
+      }
+
+      // And B received D's newest sixty-four: the ten written off
+      // the back of D's disk shelf stayed written off.
+      final bConv = (await b.db.getConversationByPeerDevice(d.peerId))!;
+      final bContents =
+          (await b.db.getMessages(bConv.id)).map((m) => m.content).toSet();
+      expect(
+        bContents.where((s) => s.startsWith('from D #')),
+        hasLength(shelf),
+      );
+      for (var i = 0; i < 10; i++) {
+        expect(bContents, isNot(contains('from D #$i')));
+      }
+      for (var i = 10; i < flood; i++) {
+        expect(bContents, contains('from D #$i'));
+      }
+    });
+  });
 }
 
 /// One device: the full stack in working order — database, keys,
@@ -584,6 +861,7 @@ class _Device {
     required this.xPair,
     required this.edPair,
     required this.reachability,
+    required this.maxQueuedMessages,
   });
 
   String address;
@@ -598,6 +876,12 @@ class _Device {
   final SimpleKeyPair edPair;
 
   final MockPeerReachability reachability;
+
+  /// I10.3 — how many rows this device's outbox will hold before it
+  /// starts writing the oldest off. A constructor knob on the real
+  /// transport, so a test can flood a shelf of sixty-four instead of
+  /// a thousand.
+  final int maxQueuedMessages;
 
   late final AppDatabase db =
       AppDatabase.test(DatabaseConnection(NativeDatabase.memory()));
@@ -677,6 +961,7 @@ class _Device {
       // The transport hears the router's route changes and flushes
       // anything queued behind them.
       routeEvents: router.routesChanged,
+      maxQueuedMessages: maxQueuedMessages,
       localKeyAgreement: () async => xPair,
       localSign: (message) async => Uint8List.fromList(
         (await Ed25519().sign(message, keyPair: edPair)).bytes,
