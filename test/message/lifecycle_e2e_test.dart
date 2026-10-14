@@ -9,102 +9,17 @@
 // somebody else's relay, lands in a second database, and brings
 // its receipt home again.
 
-import 'dart:async';
-
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:onebit/data/database/app_database.dart';
-import 'package:onebit/features/ble/ble_service.dart';
-import 'package:onebit/features/ble/ble_state.dart';
 import 'package:onebit/features/message/application/message_relay_service.dart';
 import 'package:onebit/features/message/application/message_transmission_service.dart';
-import 'package:onebit/features/message/models/message_envelope_codec.dart';
 import 'package:onebit/features/protocol/message_transport.dart';
-import 'package:onebit/features/protocol/onebit_packet.dart';
-import 'package:onebit/features/protocol/packet_codec.dart';
 import 'package:onebit/features/reliable/transfer.dart';
 import 'package:onebit/features/routing/route.dart';
 
-/// One radio medium in a box: addresses are BLE device ids, and a
-/// send lands in the addressee's inbox as though the stack had
-/// delivered it.
-class _Wire {
-  final Map<String, StreamController<ReliableDataReceived>> _inboxes = {};
-
-  /// Addresses whose radio is out of the air: a send to them fails
-  /// the way a link that went away fails — refused, not thrown.
-  final Set<String> down = {};
-
-  /// Every envelope that crossed, in order: (from, to, hop count).
-  final List<({String from, String to, int hops})> crossings = [];
-
-  /// What actually reached an inbox, kept whole so a test can put
-  /// one copy back on the wire by hand.
-  final List<({String from, String to, List<int> payload})> deliveries = [];
-
-  int _transferId = 0;
-
-  /// The radio a node at [address] talks through. Registers the
-  /// inbox first, so anything sent to this address has somewhere
-  /// to land.
-  _WireBle radioFor(String address) {
-    final inbox = _inboxes.putIfAbsent(
-      address,
-      () => StreamController<ReliableDataReceived>.broadcast(),
-    );
-    return _WireBle(this, address, inbox.stream);
-  }
-
-  Future<TransferResult> send({
-    required String from,
-    required String to,
-    required List<int> payload,
-  }) async {
-    final inbox = _inboxes[to];
-    if (inbox == null || down.contains(to)) {
-      return TransferResult.failed; // no such radio, or it went away
-    }
-
-    final packet = PacketCodec.decode(Uint8List.fromList(payload));
-    if (packet.type == PacketType.message) {
-      final envelope = MessageEnvelopeCodec.decode(
-        Uint8List.fromList(packet.payload),
-      );
-      crossings.add((from: from, to: to, hops: envelope.hopCount));
-    }
-    deliveries.add((from: from, to: to, payload: payload));
-
-    inbox.add(ReliableDataReceived(
-      deviceId: from,
-      payload: payload,
-      transferId: ++_transferId,
-    ));
-    return TransferResult.delivered;
-  }
-
-  Future<void> close() async {
-    for (final inbox in _inboxes.values) {
-      await inbox.close();
-    }
-  }
-}
-
-/// A node's radio: the two calls the stack makes, wired to the box.
-class _WireBle extends BleService {
-  _WireBle(this._wire, this.address, this._inbox);
-
-  final _Wire _wire;
-  final String address;
-  final Stream<ReliableDataReceived> _inbox;
-
-  @override
-  Stream<ReliableDataReceived> get reliableDataReceived => _inbox;
-
-  @override
-  Future<TransferResult> sendReliable(String deviceId, List<int> payload) =>
-      _wire.send(from: address, to: deviceId, payload: payload);
-}
+import '../helpers/virtual_medium.dart';
 
 /// One device: its database, its transport, and what it believes
 /// about the world — which routes exist, which identity sits behind
@@ -114,7 +29,7 @@ class _Node {
 
   final String address;
   final String peerId;
-  final _WireBle ble;
+  final VirtualRadio ble;
 
   late final AppDatabase db =
       AppDatabase.test(DatabaseConnection(NativeDatabase.memory()));
@@ -177,11 +92,11 @@ void main() {
   const peerB = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
   const peerC = 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc';
 
-  late _Wire wire;
+  late VirtualWire wire;
   final nodes = <_Node>[];
 
   setUp(() {
-    wire = _Wire();
+    wire = VirtualWire();
     nodes.clear();
   });
 
