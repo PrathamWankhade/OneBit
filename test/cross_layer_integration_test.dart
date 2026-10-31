@@ -22,14 +22,28 @@
 // relay holds, retry schedules — every ceiling checked while two
 // subsystems are under one partition at once, then drained, so
 // bounded separately proves bounded together.
+//
+// I10.4 then takes the claim to the screen: a radio event, through
+// the transport's own facts, to the words under a bubble — every
+// state I9.14 defines, each one earned by a real send, a real
+// partition, a real receipt, and never staged for the camera.
+
+import 'dart:async';
 
 import 'package:cryptography/cryptography.dart';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
+import 'package:flutter/material.dart'
+    show Icon, Icons, MaterialApp, Size, SizedBox, TextField, ValueKey, Widget;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/annotations.dart';
 import 'package:mockito/mockito.dart';
+import 'package:onebit/app/app.dart';
+import 'package:onebit/core/theme/app_theme.dart';
 import 'package:onebit/data/database/app_database.dart';
+import 'package:onebit/features/ble/ble_providers.dart';
+import 'package:onebit/features/conversations/presentation/conversation_screen.dart';
 import 'package:onebit/features/identity/identity_repository.dart';
 import 'package:onebit/features/message/application/message_relay_service.dart';
 import 'package:onebit/features/message/application/message_transmission_service.dart';
@@ -44,8 +58,11 @@ import 'package:onebit/features/routing/route_discovery.dart';
 import 'package:onebit/features/routing/routing_table.dart';
 import 'package:onebit/features/routing/topology_exchange_service.dart';
 import 'package:onebit/features/routing/topology_repository.dart';
+import 'package:onebit/features/settings/data/settings_providers.dart';
+import 'package:onebit/features/settings/data/settings_repository.dart';
 import 'package:onebit/features/trust/peer_trust.dart';
 import 'package:onebit/features/trust/trust_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'helpers/virtual_medium.dart';
 import 'cross_layer_integration_test.mocks.dart';
@@ -845,6 +862,343 @@ void main() {
       for (var i = 10; i < flood; i++) {
         expect(bContents, contains('from D #$i'));
       }
+    });
+  });
+
+  group('I10.4 — truthful status, radio to bubble', () {
+    late _Device a;
+    late _Device b;
+    late _Device c;
+    late SharedPreferences prefs;
+
+    // A shelf of four keeps the whole thread on one screen: the
+    // assertions here are about words under bubbles, and a word
+    // scrolled out of the list is a word the test cannot see.
+    setUp(() async {
+      SharedPreferences.setMockInitialValues({});
+      prefs = await SharedPreferences.getInstance();
+    });
+
+    /// The mesh, built inside the test's own zone.
+    ///
+    /// A device constructed in `setUp` subscribes to the wire in the
+    /// real zone; a widget test pumps a fake clock, and the callbacks
+    /// that zone owns stop being serviced part-way through the test.
+    /// Built here, every subscription lives on the clock the test
+    /// drives, and each delivery is answered by the same pump that
+    /// caused it.
+    Future<void> buildMesh(WidgetTester tester) async {
+      a = await makeDevice(address: 'DEV_A', maxQueuedMessages: 4);
+      b = await makeDevice(address: 'DEV_B');
+      c = await makeDevice(address: 'DEV_C');
+
+      a.neighbors.addNeighbor(b.peerId, bleDeviceId: 'DEV_B');
+      b.neighbors.addNeighbor(a.peerId, bleDeviceId: 'DEV_A');
+      b.neighbors.addNeighbor(c.peerId, bleDeviceId: 'DEV_C');
+      c.neighbors.addNeighbor(b.peerId, bleDeviceId: 'DEV_B');
+
+      // The advertisements cross on these turns; nothing is installed
+      // by hand, the cascade is. Bounded like every other wait here:
+      // the test asks for the routes it needs, not for a settled app.
+      for (var i = 0;
+          i < 60 &&
+              (a.routing.bestRoute(c.peerId) == null ||
+                  c.routing.bestRoute(a.peerId) == null);
+          i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      expect(a.routing.bestRoute(c.peerId), isNotNull);
+      expect(c.routing.bestRoute(a.peerId), isNotNull);
+    }
+
+    /// The real conversation screen over one real device's stack —
+    /// the same providers production binds, pointed at the harness
+    /// device instead of at the phone.
+    Widget chatScreen({
+      required AppDatabase db,
+      required MessageTransport transport,
+      required VirtualRadio radio,
+      required int conversationId,
+    }) {
+      final settings = SettingsRepository(prefs);
+      return ProviderScope(
+        overrides: [
+          databaseProvider.overrideWithValue(db),
+          messageTransportProvider.overrideWithValue(transport),
+          bleServiceProvider.overrideWithValue(radio),
+          settingsRepositoryProvider.overrideWithValue(settings),
+          settingsRepositoryInitProvider.overrideWith((ref) async => settings),
+        ],
+        child: MaterialApp(
+          // Keyed by the database, because this harness swaps devices
+          // under a structurally identical tree. Without a key Flutter
+          // updates the old element instead of building a new one, and
+          // `initState` — where opening a thread acknowledges it — runs
+          // for the first device only.
+          home: ConversationScreen(
+            key: ValueKey<AppDatabase>(db),
+            conversationId: conversationId,
+          ),
+        ),
+      );
+    }
+
+    /// The tree goes before the stack does: the screen's listeners
+    /// are cancelled before the transports they listen to close, and
+    /// the devices leave the shared list so the outer teardown has
+    /// nothing left to dispose a second time.
+    Future<void> quiesce(WidgetTester tester) async {
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+      // drift closes a cancelled query stream on a zero timer: give
+      // those turns the clock before declaring the tree down.
+      await tester.pump(const Duration(milliseconds: 1));
+      await tester.pump(const Duration(milliseconds: 1));
+      for (final device in [...devices]) {
+        // Every timer and listener stops here, in the fake clock
+        // that owns them. The drift handle is different: its close
+        // waits on stream cancellations that the same clock must
+        // run, so awaiting it from inside the test deadlocks the
+        // zone — and the suite's own timeout lives in that clock,
+        // which is why a hang here never times out. It is closed
+        // without being awaited; the in-memory file goes with the
+        // process either way.
+        device.router.dispose();
+        device.neighbors.dispose();
+        device.transport.dispose();
+        unawaited(device.db.close());
+      }
+      devices.clear();
+      await tester.pump(const Duration(milliseconds: 1));
+    }
+
+    /// Pump in bounded steps until [condition] holds. No unbounded
+    /// settle: every wait here is a number the test can name, and a
+    /// state that never arrives fails the assertion that follows
+    /// instead of hanging the suite.
+    Future<void> pumpUntilTrue(
+      WidgetTester tester,
+      bool Function() condition, {
+      int steps = 60,
+      Duration step = const Duration(milliseconds: 250),
+    }) async {
+      for (var i = 0; i < steps; i++) {
+        if (condition()) return;
+        await tester.pump(step);
+      }
+    }
+
+    /// The same bounded wait, expressed as "until this is on screen".
+    Future<void> pumpUntil(
+      WidgetTester tester,
+      Finder finder, {
+      int steps = 60,
+      Duration step = const Duration(milliseconds: 250),
+    }) =>
+        pumpUntilTrue(
+          tester,
+          () => finder.evaluate().isNotEmpty,
+          steps: steps,
+          step: step,
+        );
+
+    testWidgets(
+        'every step of a real send earns its word on the bubble — '
+        'queued, sending, relayed, delivered, read', (tester) async {
+      tester.view.physicalSize = const Size(800, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      await buildMesh(tester);
+
+      // ── Queued: the composer writes a row with no road to try.
+      // No attempt, no schedule — the outbox's own first state.
+      final roadless = await a.db.createConversation('Nobody yet');
+      await tester.pumpWidget(
+        chatScreen(
+          db: a.db,
+          transport: a.transport,
+          radio: a.radio,
+          conversationId: roadless,
+        ),
+      );
+      await tester.pump();
+      await tester.enterText(find.byType(TextField), 'nothing to aim at');
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.send_rounded));
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('Queued'), findsOneWidget);
+      expect(find.byIcon(Icons.schedule), findsOneWidget);
+
+      // ── Sending: a real attempt, really in the air. The wire is
+      // held open for this one send so the frame can catch it
+      // there; everything the frame shows is the transport's own
+      // transmitting flag, not a staged state.
+      final aConv = await a.db.createConversationWithPeer('C', c.peerId);
+      await tester.pumpWidget(
+        chatScreen(
+          db: a.db,
+          transport: a.transport,
+          radio: a.radio,
+          conversationId: aConv,
+        ),
+      );
+      await tester.pump();
+
+      // The receipt's way home is shut, the ring's way out is not:
+      // A's words reach C, C's receipt reaches B, and B cannot hand
+      // it to A. Handed off is not arrived, and this is that gap.
+      wire.down.add('DEV_A');
+      wire.gate = Completer<void>();
+      await tester.enterText(find.byType(TextField), 'does this road work');
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.send_rounded));
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('Sending…'), findsOneWidget);
+
+      // The same send is released, not replaced: the bytes that
+      // were in the air are the bytes that land.
+      wire.gate!.complete();
+      wire.gate = null;
+      await tester.pump();
+
+      // ── Relayed: the neighbour's radio took it. Handed off is
+      // not arrived, and the thread says neither.
+      await pumpUntil(tester, find.byIcon(Icons.done));
+      expect(find.text('Sending…'), findsNothing);
+      expect(find.byIcon(Icons.done), findsOneWidget);
+      // The bubble's word is the row's word, not a second opinion.
+      expect(
+        (await a.db.getMessages(aConv)).map((m) => m.status),
+        ['sent'],
+      );
+
+      // ── Delivered: the road home reopens and B hands over the
+      // receipt it was holding — the same bytes, finally arrived.
+      // Until then the thread said done, and done was true: the
+      // neighbour had it, the far end had not said so.
+      expect(find.byIcon(Icons.done_all), findsNothing);
+      wire.down.remove('DEV_A');
+      await b.relay.retryDueForwards();
+      await tester.pump();
+      await pumpUntil(tester, find.byIcon(Icons.done_all));
+      expect(find.byIcon(Icons.done), findsNothing);
+      expect(find.byIcon(Icons.done_all), findsOneWidget);
+      expect(
+        (await a.db.getMessages(aConv)).map((m) => m.status),
+        ['delivered'],
+      );
+
+      // ── Read: C opens the thread. The ack that leaves is the
+      // production path — _markConversationRead → ackRead — and it
+      // crosses the wire like any other message.
+      final cConv = (await c.db.getConversationByPeerDevice(a.peerId))!;
+      // What C owes an answer for before the thread is opened …
+      expect(await c.db.readPendingIds(cConv.id), isNotEmpty);
+      await tester.pumpWidget(
+        chatScreen(
+          db: c.db,
+          transport: c.transport,
+          radio: c.radio,
+          conversationId: cConv.id,
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250)); // ack leaves C
+      // … and nothing after: opening the thread is what answers it.
+      expect(await c.db.readPendingIds(cConv.id), isEmpty);
+
+      await tester.pumpWidget(
+        chatScreen(
+          db: a.db,
+          transport: a.transport,
+          radio: a.radio,
+          conversationId: aConv,
+        ),
+      );
+      await tester.pump();
+      await pumpUntilTrue(
+        tester,
+        () => tester
+            .widgetList<Icon>(find.byIcon(Icons.done_all))
+            .any((icon) => icon.color == AppTheme.accent),
+      );
+      expect(find.byIcon(Icons.done_all), findsOneWidget);
+      expect(
+        tester.widget<Icon>(find.byIcon(Icons.done_all)).color,
+        AppTheme.accent,
+      );
+      expect(
+        (await a.db.getMessages(aConv)).map((m) => m.status),
+        ['read'],
+      );
+
+      await quiesce(tester);
+    });
+
+    testWidgets(
+        'the unhappy words come from failures the wire really had — '
+        'retrying, expired, failed', (tester) async {
+      tester.view.physicalSize = const Size(800, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      await buildMesh(tester);
+      final aConv = await a.db.createConversationWithPeer('C', c.peerId);
+      await tester.pumpWidget(
+        chatScreen(
+          db: a.db,
+          transport: a.transport,
+          radio: a.radio,
+          conversationId: aConv,
+        ),
+      );
+      await tester.pump();
+
+      // ── Retrying: the first hop is gone, the attempt failed,
+      // and a backoff is set — so the bubble waits out loud. The
+      // composer says so too: its own report does not flatter.
+      wire.down.add('DEV_B');
+      await tester.enterText(find.byType(TextField), 'where did the road go');
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.send_rounded));
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('Retrying'), findsOneWidget);
+      expect(find.byIcon(Icons.sync_problem), findsOneWidget);
+      expect(find.text('Failed to send message'), findsOneWidget);
+
+      // ── Expired: four more against a shelf of four — the oldest
+      // row is written off as history while the partition stands,
+      // and the rows behind it keep waiting.
+      for (var i = 0; i < 4; i++) {
+        await a.transport.sendMessage(
+          peerDeviceId: c.peerId,
+          conversationId: aConv,
+          content: 'more #$i',
+        );
+      }
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('Expired — never reached recipient'), findsOneWidget);
+      expect(find.byIcon(Icons.timer_off), findsOneWidget);
+      expect(find.text('Retrying'), findsWidgets);
+
+      // ── Failed: a message the codec refuses to carry. No retry
+      // could fix it, so none is offered.
+      await a.transport.sendMessage(
+        peerDeviceId: c.peerId,
+        conversationId: aConv,
+        content: 'x' * 4001,
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('Failed'), findsOneWidget);
+      expect(find.byIcon(Icons.error_outline), findsOneWidget);
+
+      await quiesce(tester);
     });
   });
 }

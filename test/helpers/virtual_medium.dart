@@ -18,12 +18,27 @@ import 'package:onebit/features/reliable/transfer.dart';
 /// One radio medium in a box: addresses are BLE device ids, and a
 /// send lands in the addressee's inbox as though the stack had
 /// delivered it.
+///
+/// Every inbox is a **synchronous** broadcast stream on purpose. An
+/// asynchronous controller delivers in the zone it was created in, and
+/// a harness built in `setUp` lives in the real zone while a widget
+/// test body pumps a fake clock — deliveries between the two stop
+/// being serviced mid-test. Synchronous delivery runs in the caller's
+/// zone, so whoever sends is the one being answered.
 class VirtualWire {
   final Map<String, StreamController<ReliableDataReceived>> _inboxes = {};
 
   /// Addresses whose radio is out of the air: a send to them fails
   /// the way a link that went away fails — refused, not thrown.
   final Set<String> down = {};
+
+  /// When set, every send waits for this to complete before the
+  /// bytes leave. A widget test holds the air open for a moment so
+  /// the frame can catch a send in flight, then releases it: one
+  /// send, one gate, and not a wall-clock millisecond involved —
+  /// a real delay here would be a real timer, invisible to the
+  /// fake clock a widget test pumps.
+  Completer<void>? gate;
 
   /// Every message envelope that crossed, in order: (from, to, hop count).
   final List<({String from, String to, int hops})> crossings = [];
@@ -45,7 +60,7 @@ class VirtualWire {
   VirtualRadio radioFor(String address) {
     final inbox = _inboxes.putIfAbsent(
       address,
-      () => StreamController<ReliableDataReceived>.broadcast(),
+      () => StreamController<ReliableDataReceived>.broadcast(sync: true),
     );
     return VirtualRadio(this, address, inbox.stream);
   }
@@ -59,6 +74,9 @@ class VirtualWire {
     if (inbox == null || down.contains(to)) {
       return TransferResult.failed; // no such radio, or it went away
     }
+
+    final held = gate;
+    if (held != null) await held.future;
 
     final packet = PacketCodec.decode(Uint8List.fromList(payload));
     packets.add((from: from, to: to, type: packet.type));
