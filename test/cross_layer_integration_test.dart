@@ -50,6 +50,8 @@ import 'package:onebit/features/message/application/message_transmission_service
 import 'package:onebit/features/peer_registry/peer_connection_manager.dart';
 import 'package:onebit/features/protocol/message_transport.dart';
 import 'package:onebit/features/protocol/onebit_packet.dart';
+import 'package:onebit/features/protocol/packet_chunking.dart';
+import 'package:onebit/features/protocol/packet_codec.dart';
 import 'package:onebit/features/reliable/transfer.dart';
 import 'package:onebit/features/routing/mesh_router.dart';
 import 'package:onebit/features/routing/neighbor_table.dart';
@@ -1199,6 +1201,126 @@ void main() {
       expect(find.byIcon(Icons.error_outline), findsOneWidget);
 
       await quiesce(tester);
+    });
+  });
+
+  // I10.5 — the two conditions a phone adds that a desk does not have:
+  // a link whose MTU is far smaller than a message, and a radio that can
+  // simply stop existing. Neither is a simulation of the platform — the
+  // fragmentation below the packet is the platform's job and is pinned
+  // in android/app/src/test (MtuPolicyTest, GattClientManager); what is
+  // pinned here is what the stack above must do when those happen.
+  group('I10.5 — the conditions a phone adds', () {
+    test(
+        'a body too large for one packet crosses two hops in slices and '
+        'arrives whole', () async {
+      final a = await makeDevice(address: 'DEV_A');
+      final b = await makeDevice(address: 'DEV_B');
+      final c = await makeDevice(address: 'DEV_C');
+
+      a.neighbors.addNeighbor(b.peerId, bleDeviceId: 'DEV_B');
+      b.neighbors.addNeighbor(a.peerId, bleDeviceId: 'DEV_A');
+      b.neighbors.addNeighbor(c.peerId, bleDeviceId: 'DEV_C');
+      c.neighbors.addNeighbor(b.peerId, bleDeviceId: 'DEV_B');
+      await settle();
+
+      final aConv = await a.db.createConversationWithPeer('C', c.peerId);
+      // Six times the largest payload one packet can carry. On a link
+      // negotiated at the default 23-octet MTU this is dozens of writes
+      // below us, which is exactly why nothing above may assume that a
+      // message is one write.
+      final body =
+          List.generate(1500, (i) => String.fromCharCode(0x61 + i % 26)).join();
+
+      expect(
+        await a.transport.sendMessage(
+          peerDeviceId: c.peerId,
+          conversationId: aConv,
+          content: body,
+        ),
+        TransferResult.delivered,
+      );
+      await settle();
+
+      final fromA = wire.deliveries
+          .where((d) => d.from == 'DEV_A' && d.to == 'DEV_B')
+          .map((d) => PacketCodec.decode(Uint8List.fromList(d.payload)))
+          .where((packet) => packet.type == PacketType.message)
+          .toList();
+
+      // More than one packet left, and every one of them fit the
+      // protocol's ceiling — the wire never saw a 1500-byte write.
+      expect(fromA.length, greaterThan(1));
+      for (final packet in fromA) {
+        expect(
+          packet.payload.length,
+          lessThanOrEqualTo(PacketConstants.maxPayloadSize),
+        );
+      }
+
+      // The body was spread over slices, not cut down to the first one,
+      // and the far end put it back together byte for byte.
+      expect(fromA.where((p) => isChunkPayload(p.payload)).length,
+          greaterThan(1));
+      final cConv = (await c.db.getConversationByPeerDevice(a.peerId))!;
+      final rows = await c.db.getMessages(cConv.id);
+      expect(rows, hasLength(1));
+      expect(rows.single.content, body);
+      expect(rows.single.status, 'received');
+    });
+
+    test(
+        'a radio that goes away holds the outbox, and its return delivers '
+        'each message exactly once', () async {
+      final a = await makeDevice(address: 'DEV_A');
+      final b = await makeDevice(address: 'DEV_B');
+      final c = await makeDevice(address: 'DEV_C');
+
+      a.neighbors.addNeighbor(b.peerId, bleDeviceId: 'DEV_B');
+      b.neighbors.addNeighbor(a.peerId, bleDeviceId: 'DEV_A');
+      b.neighbors.addNeighbor(c.peerId, bleDeviceId: 'DEV_C');
+      c.neighbors.addNeighbor(b.peerId, bleDeviceId: 'DEV_B');
+      await settle();
+
+      final aConv = await a.db.createConversationWithPeer('C', c.peerId);
+
+      // Adapter off, or the permission revoked: not one address in the
+      // ring is reachable, which is what the platform reports for a
+      // radio that is simply gone rather than a link that dropped.
+      wire.down.addAll(['DEV_A', 'DEV_B', 'DEV_C']);
+      final bodies = [
+        for (var i = 0; i < 3; i++) 'written with the radio off #$i',
+      ];
+      final results = <TransferResult>[];
+      for (final body in bodies) {
+        results.add(await a.transport.sendMessage(
+          peerDeviceId: c.peerId,
+          conversationId: aConv,
+          content: body,
+        ));
+      }
+
+      // The attempt really failed, and the bubble will say so — but the
+      // words are still here, queued in the outbox, in order.
+      expect(results, everyElement(TransferResult.failed));
+      expect(
+        (await a.db.allQueuedMessages()).map((m) => m.content),
+        bodies,
+      );
+
+      // The radio comes back. Draining the outbox is what the
+      // connection event does; no message is rewritten or replaced.
+      wire.down.clear();
+      await a.transport.flushQueued();
+      await settle();
+
+      final cConv = (await c.db.getConversationByPeerDevice(a.peerId))!;
+      final arrived = await c.db.getMessages(cConv.id);
+      expect(arrived.map((m) => m.content), bodies);
+      // Exactly once each: a late retry is dropped by the receiver's
+      // dedup, so the row count is the assertion, not a hope.
+      expect(arrived, hasLength(bodies.length));
+      expect(await a.db.allQueuedMessages(), isEmpty);
     });
   });
 }
