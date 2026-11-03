@@ -98,7 +98,9 @@ Every push to `main` runs CI and uploads versioned APKs to that run:
 2. Open the latest green **ci** run
 3. Download `onebit-release-<version>` and install `OneBit-<version>-release.apk`
 
-The file name carries the version and build number from `pubspec.yaml`, so it always matches what the app reports in Settings → App update.
+Tagged versions are also published on the [Releases page](https://github.com/PrathamWankhade/OneBit/releases). The file name carries the version and build number from `pubspec.yaml`, so it always matches what the app reports in Settings → App update.
+
+How a version is cut — and what the pipeline does and does not guarantee — is in [docs/release.md](docs/release.md).
 
 ## Architecture
 
@@ -196,6 +198,8 @@ flutter test --coverage
 ```
 
 **Current status**: the suite is green on every push, and CI fails the build if `flutter analyze` reports a single issue. Live results are on the [Actions page](https://github.com/PrathamWankhade/OneBit/actions).
+
+Bluetooth behaviour differs per phone in ways a desktop test runner cannot see. [docs/device-matrix.md](docs/device-matrix.md) is the script for running the app on hardware, with the automated test behind each row and an honest record of what has been run.
 
 ## Contributing
 

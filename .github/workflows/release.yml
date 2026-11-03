@@ -91,6 +91,14 @@ jobs:
         if: steps.decide.outputs.publish == 'true'
         run: flutter build apk --release
 
+      # The same native tests CI runs, on the commit being published. The
+      # Gradle wrapper is gitignored and materialised by the build above,
+      # which is why this sits after it rather than beside the Dart tests.
+      # A version bump must not be the one push that skips them.
+      - name: Native (Kotlin) unit tests
+        if: steps.decide.outputs.publish == 'true'
+        run: cd android && ./gradlew :app:testDebugUnitTest --console=plain
+
       # Fail loudly rather than attaching a file the update screen could not
       # match against the version it is announcing.
       - name: Verify versioned artifact
