@@ -39,7 +39,7 @@ page exists to find.
 
 | # | Device class | Android | Why this row | What to do | Pass |
 | --- | --- | --- | --- | --- | --- |
-| 1 | Low-end phone, BLE 4.2 | 8–10 (API 26–29) | Oldest supported stack; MTU often stays at 23 | Send a 1500-character message to a peer two hops away | Arrives whole; no truncation; bubble ends at Delivered then Read |
+| 1 | Low-end phone, BLE 4.2 | 9–10 (API 28–29) | Oldest supported stack (`minSdk` is 28); MTU often stays at 23 | Send a 1500-character message to a peer two hops away | Arrives whole; no truncation; bubble ends at Delivered then Read |
 | 2 | Mid-range phone, BLE 5.0 | 11–13 (API 30–33) | The common case; MTU usually negotiates to 185+ | Same message; watch for a `mtuNegotiated` value above 23 | Arrives whole; the log shows the negotiated MTU, not the default |
 | 3 | Current phone, BLE 5.3 | 14–16 (API 34+) | Newest permission model and background limits | Same message, then background the app mid-send and reopen it | Send resumes or is queued, never lost; badge clears when the thread is opened |
 | 4 | Any row, permission revoked | any | "Nearby devices" can be revoked while the app is open | Revoke the permission with a message queued, then grant it again | The queue survives; the message leaves after the grant; exactly one copy arrives |
