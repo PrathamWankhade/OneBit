@@ -175,6 +175,25 @@ class IdentityService {
       throw StateError('Identity already exists');
     }
 
+    // The in-memory check above only sees an identity this service has
+    // already loaded. A row written by an earlier run — or restored from
+    // a backup — is invisible until something reads it, and generating a
+    // new key over it would replace a live identity and orphan every
+    // peer that knows the old one. Ask the repository, not just memory.
+    //
+    // This deliberately does not call initialize(): a row whose key is
+    // missing or corrupt must still stop creation, and a failed attempt
+    // must not leave the service marked as loaded.
+    if (!_initialized) {
+      final stored = await _repository.getLocalIdentity();
+      if (stored != null) {
+        AppLogger.warning(
+          'Cannot create identity: a stored identity already exists',
+        );
+        throw StateError('Identity already exists');
+      }
+    }
+
     AppLogger.info('Creating new identity');
 
     // Generate Ed25519 key pair

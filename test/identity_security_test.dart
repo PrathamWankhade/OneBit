@@ -484,6 +484,7 @@ void main() {
       final mockRepo = MockIdentityRepository();
       final mockKeyStore = MockPrivateKeyStore();
       final service = IdentityService(mockRepo, mockKeyStore);
+      when(mockRepo.getLocalIdentity()).thenAnswer((_) async => null);
 
       // Create identity
       when(mockRepo.createLocalIdentity(
@@ -572,6 +573,7 @@ void main() {
       final mockRepo = MockIdentityRepository();
       final mockKeyStore = MockPrivateKeyStore();
       final service = IdentityService(mockRepo, mockKeyStore);
+      when(mockRepo.getLocalIdentity()).thenAnswer((_) async => null);
 
       when(mockRepo.createLocalIdentity(
         displayName: anyNamed('displayName'),

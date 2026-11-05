@@ -22,6 +22,9 @@ void main() {
   setUp(() {
     mockRepo = MockIdentityRepository();
     mockKeyStore = MockPrivateKeyStore();
+    // Most tests exercise the happy path: nothing stored yet. Tests that
+    // need a stored identity stub this again in the body, which wins.
+    when(mockRepo.getLocalIdentity()).thenAnswer((_) async => null);
     service = IdentityService(mockRepo, mockKeyStore);
   });
 

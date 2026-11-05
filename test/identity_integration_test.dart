@@ -639,4 +639,49 @@ void main() {
       // No private key material in the payload
     });
   });
+
+  group('createIdentity overwrite guard', () {
+    test('refuses when a stored identity exists but is not loaded', () async {
+      final db = AppDatabase.test(DatabaseConnection(NativeDatabase.memory()));
+      final keyStore = InMemoryPrivateKeyStore();
+
+      final first = IdentityService(IdentityRepository(db), keyStore);
+      final alice = await first.createIdentity('Alice');
+      final aliceKey = await keyStore.read();
+      expect(aliceKey, isNotNull);
+
+      // A fresh service has loaded nothing. Without the guard it would
+      // generate a new key, overwrite secure storage, and rewrite the
+      // row's identity — replacing a live identity and orphaning peers.
+      final second = IdentityService(IdentityRepository(db), keyStore);
+
+      await expectLater(
+        second.createIdentity('Bob'),
+        throwsA(isA<StateError>()),
+      );
+
+      final stored = await db.getLocalIdentity();
+      expect(stored!.identityId, alice.identityId);
+      expect(stored.displayName, 'Alice');
+      expect(await keyStore.read(), orderedEquals(aliceKey!));
+
+      await db.close();
+    });
+
+    test('still creates an identity when none is stored', () async {
+      final db = AppDatabase.test(DatabaseConnection(NativeDatabase.memory()));
+      final service = IdentityService(
+        IdentityRepository(db),
+        InMemoryPrivateKeyStore(),
+      );
+
+      final identity = await service.createIdentity('Alice');
+
+      expect(identity.displayName, 'Alice');
+      expect(identity.identityId, isNotNull);
+      expect((await db.getLocalIdentity())!.displayName, 'Alice');
+
+      await db.close();
+    });
+  });
 }

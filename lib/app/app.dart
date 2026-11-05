@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:onebit/app/router.dart';
 import 'package:onebit/app/router_notifier.dart';
+import 'package:onebit/core/logging/app_logger.dart';
 import 'package:onebit/core/theme/app_theme.dart';
 import 'package:onebit/core/version/app_version.dart';
 import 'package:onebit/data/database/app_database.dart';
@@ -51,6 +52,24 @@ final onboardingRepositoryProvider = FutureProvider<OnboardingRepository>(
 final routerNotifierProvider = FutureProvider<RouterNotifier>(
   (ref) async {
     final repo = await ref.watch(onboardingRepositoryProvider.future);
+
+    // The preferences flag caches "onboarding finished"; the identity row
+    // is the fact behind it. They are written separately and can drift —
+    // a restored preferences backup without the database is exactly how a
+    // phone ends up on "No identity found" with no way back to onboarding.
+    // Reconcile before the router is built so the first screen is right.
+    var hasIdentity = repo.isComplete;
+    try {
+      hasIdentity =
+          await ref.watch(databaseProvider).getLocalIdentity() != null;
+    } catch (e) {
+      // A database that cannot answer is not proof the identity is gone.
+      // Leave the flag as it is and let the app surface the real error
+      // rather than silently sending a working install back to onboarding.
+      AppLogger.error('Startup identity check failed', e);
+    }
+    await repo.reconcile(hasIdentity: hasIdentity);
+
     return RouterNotifier(repo);
   },
 );
