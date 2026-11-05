@@ -77,5 +77,6 @@ should be invented for a debug-signed build.
 - **Rollback.** Re-publishing an older version is blocked by Android's
   `versionCode` rule; the fix-forward path is a higher build number.
 - **Hardware verification.** A release is not a claim that the matrix in
-  [device-matrix.md](device-matrix.md) has been run. That page records
-  what has actually been tested on a phone.
+  [device-matrix.md](device-matrix.md) has been run. What has actually
+  been tested on a phone is recorded in
+  [device-evidence.md](device-evidence.md).

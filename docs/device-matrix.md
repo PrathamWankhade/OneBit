@@ -8,10 +8,15 @@ be observed from a desktop test runner, so this page is the script for
 running OneBit on hardware — and an honest record of what has and has not
 been run.
 
-> **Status: not yet executed on hardware.** Every row below is a step to
-> run, not a result. The automated coverage listed in each row is green
-> in CI; the hardware column stays empty until someone runs it on a phone
-> and fills in the date and build.
+> **Status: one single-device baseline recorded, no multi-device row run.**
+> On 2026-11-04 the published `1.1.1+3` binary was installed on a Redmi
+> Note 8 (Android 11) and brought its GATT server and advertisement up —
+> see [device-evidence.md](device-evidence.md). That is the bring-up half
+> of rows 1–3 only. Every row below still needs a second phone, and is
+> marked **BLOCKED** in the evidence record until one is attached. The
+> automated coverage listed in each row is green in CI; the hardware
+> column stays empty until someone runs the row and fills in the date and
+> build.
 
 ## What the automated tests already pin
 
@@ -50,8 +55,11 @@ page exists to find.
 
 ## Recording a run
 
-Copy this table into the pull request or issue that reports the run, one
-row per device. A row with an empty result is a row that was not run.
+Results go in [`device-evidence.md`](device-evidence.md), one section per
+run, with the device, Android version, build, date, result and the log
+excerpt that supports it. Copy this table into the pull request or issue
+that reports the run as well, one row per device. A row with an empty
+result is a row that was not run.
 
 | Date | Build (`OneBit-x.y.z+n`) | Device / OEM | Android | Negotiated MTU | Rows run | Result | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -64,8 +72,9 @@ binary it describes.
 
 ## What this page does not claim
 
-- It does not claim any hardware has been tested. The status line above
-  keeps saying so until a run is recorded here.
+- It does not claim any multi-device row has been tested. The single-device
+  bring-up in [device-evidence.md](device-evidence.md) is recorded there;
+  the rows above stay empty until a two- or three-phone run fills them.
 - It does not claim OEM-specific behaviour is handled. If a row fails,
   that is the finding — write it down with the MTU and the Android
   version rather than working around it silently.

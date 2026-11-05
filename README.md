@@ -199,7 +199,7 @@ flutter test --coverage
 
 **Current status**: the suite is green on every push, and CI fails the build if `flutter analyze` reports a single issue. Live results are on the [Actions page](https://github.com/PrathamWankhade/OneBit/actions).
 
-Bluetooth behaviour differs per phone in ways a desktop test runner cannot see. [docs/device-matrix.md](docs/device-matrix.md) is the script for running the app on hardware, with the automated test behind each row and an honest record of what has been run.
+Bluetooth behaviour differs per phone in ways a desktop test runner cannot see. [docs/device-matrix.md](docs/device-matrix.md) is the script for running the app on hardware, with the automated test behind each row; [docs/device-evidence.md](docs/device-evidence.md) records what has actually been run, on which build and device, and what is still blocked on a second phone.
 
 ## Contributing
 
