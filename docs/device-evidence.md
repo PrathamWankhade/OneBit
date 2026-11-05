@@ -189,11 +189,74 @@ locked (`deviceLocked=1`, keyguard showing). The lock was not bypassed.
 
 ---
 
+## Run 003 — 2026-11-05 — Redmi Note 8 — upgrade to 1.1.2+4
+
+**Scope:** confirm the release that carries the onboarding/identity
+reconciliation fix (`I10.7.2`) installs over `1.1.1+3` in place and starts
+without error. This is an upgrade-path check, not a matrix row, and the UI
+was not observed: the phone was locked for the whole run.
+
+### Binary under test
+
+| Fact | Value |
+| --- | --- |
+| Release | `v1.1.2+4` (published 2026-11-05 08:18:50 UTC) |
+| Asset | `OneBit-1.1.2+4-release.apk` |
+| Size | 90,816,333 bytes |
+| SHA-256 | `56C40D4A90DD74884F17668F06158B7E5C5E969A9324188B127E2D8F666C8D5C` |
+
+The APK was downloaded from the release page, and its local hash matched
+the digest GitHub reports for the asset before installing.
+
+### Result — PASS (upgrade in place)
+
+```text
+adb install -r OneBit-1.1.2+4-release.apk
+Performing Streamed Install
+Success
+```
+
+`dumpsys package dev.onebit.onebit` after the install:
+
+```text
+versionCode=4 minSdk=28 targetSdk=36
+versionName=1.1.2
+firstInstallTime=2026-09-28 17:27:07
+lastUpdateTime=2026-11-05 13:55:37
+```
+
+`firstInstallTime` is unchanged, so this replaced `1.1.1+3` rather than
+reinstalling, and `versionCode` moved from 3 to 4 as Android requires. The
+installed `base.apk` hashed on the device:
+
+```text
+56c40d4a90dd74884f17668f06158b7e5c5e969a9324188b127e2d8f666c8d5c
+```
+
+A cold start produced a live process and no `FATAL`, no `AndroidRuntime`
+exception, and no `Startup identity check failed` line — the startup
+database read the reconciliation depends on answered.
+
+### What this does not establish
+
+The keyguard was showing (`isKeyguardShowing=true`), Bluetooth was off
+(`bluetooth_on=0`), and the battery was 98 %, so no screen, onboarding
+state, or radio behaviour was observed. In particular this run does not
+show that a device which had the stale-flag/no-identity state is now
+repaired: that needs the affected phone.
+
+One device fact is relevant to how such a state arises: the package carries
+`ALLOW_BACKUP`, so Android auto-backup may restore `shared_preferences`
+(a preferences restore without the database), which is the drift the fix
+reconciles at startup.
+
+---
+
 ## Matrix status after these runs
 
 The eight rows in `docs/device-matrix.md` are unchanged. Run 001 proves the
-bring-up half of rows 1–3 on one device; none of the rows can be marked
-passed without a second phone.
+bring-up half of rows 1–3 on one device; Run 003 only proves the upgrade
+path. None of the rows can be marked passed without a second phone.
 
 | Row | What it needs | Status |
 | --- | --- | --- |
