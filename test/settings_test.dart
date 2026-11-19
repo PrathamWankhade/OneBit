@@ -651,7 +651,7 @@ void main() {
       await tester.pumpWidget(buildApp());
       await tester.pumpAndSettle();
 
-      expect(find.text(AppVersion.fallback), findsOneWidget);
+      expect(find.text(AppVersion.fallback.split('+').first), findsOneWidget);
     });
 
     testWidgets('renders description text', (tester) async {
