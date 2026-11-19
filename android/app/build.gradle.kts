@@ -70,7 +70,7 @@ fun attachVersionedApkCopy(taskName: String, mode: String) {
             val source = File(apkDirectory, "app-$mode.apk")
             if (!source.exists()) return@doLast
 
-            val fileName = "OneBit-${flutter.versionName}+${flutter.versionCode}-$mode.apk"
+            val fileName = "OneBit-${flutter.versionName}-$mode.apk"
             val destinations = listOf(
                 apkDirectory,
                 layout.buildDirectory.dir("outputs/flutter-apk").get().asFile,

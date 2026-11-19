@@ -63,7 +63,7 @@ class AboutScreen extends StatelessWidget {
             ),
             child: Column(
               children: [
-                _InfoRow(label: 'Version', value: AppVersion.current),
+                _InfoRow(label: 'Version', value: AppVersion.current.split('+').first),
                 const Divider(height: 24, color: AppTheme.bgMuted),
                 _InfoRow(label: 'Build', value: AppVersion.build),
                 const Divider(height: 24, color: AppTheme.bgMuted),

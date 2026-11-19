@@ -36,7 +36,12 @@ jobs:
         run: |
           $line = Select-String -Path pubspec.yaml -Pattern '^version:\s*(\S+)' |
                   Select-Object -First 1
-          "version=$($line.Matches[0].Groups[1].Value)" >> $env:GITHUB_OUTPUT
+          $raw = $line.Matches[0].Groups[1].Value
+          # Strip the build number (+N) so the tag, title and APK name are
+          # the simple version the user sees (e.g. v1.1.5, not v1.1.5+7).
+          # The build number still drives Android's versionCode via Gradle.
+          $display = $raw -replace '\+.*', ''
+          "version=$display" >> $env:GITHUB_OUTPUT
 
       # Idempotent by design: a push that touched pubspec.yaml without moving
       # the version, or a re-run of a job that already published, is a no-op
