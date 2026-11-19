@@ -57,6 +57,18 @@ class AdaptiveScanControllerTest {
     }
 
     @Test
+    fun `background never bursts even after a recent sighting`() {
+        controller.onDeviceSeen(nowMs = 1_000)
+        val schedule = controller.nextSchedule(
+            background = true,
+            batterySaver = false,
+            nowMs = 2_000,
+        )
+        assertEquals(30_000, schedule.intervalMs)
+        assertFalse(schedule.active)
+    }
+
+    @Test
     fun `battery saver suppresses burst entirely`() {
         controller.onDeviceSeen(nowMs = 1_000)
         val schedule = controller.nextSchedule(

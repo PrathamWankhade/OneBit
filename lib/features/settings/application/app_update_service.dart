@@ -81,9 +81,18 @@ class AppUpdateService {
     final tags = await _tags();
     if (releases == null && tags == null) return null;
 
-    return <AppUpdateInfo>[...?releases, ...?tags]
-        .where((u) => AppVersion.isNewerThanCurrent(u.version))
-        .toList()
+    // A version published both as a Release and as a plain tag shows up
+    // twice; dedupe by version, preferring the Release entry so the APK
+    // download link is retained.
+    final byVersion = <String, AppUpdateInfo>{};
+    for (final update in [...?releases, ...?tags]) {
+      if (!AppVersion.isNewerThanCurrent(update.version)) continue;
+      final existing = byVersion[update.version];
+      if (existing == null || (existing.apkUrl == null && update.apkUrl != null)) {
+        byVersion[update.version] = update;
+      }
+    }
+    return byVersion.values.toList()
       ..sort((a, b) => AppVersion.compare(b.version, a.version));
   }
 

@@ -67,8 +67,12 @@ class AdaptiveScanController(
         return when {
             // Battery saver dominates everything: never burst on saver.
             batterySaver -> if (background) idleSchedule else backgroundSchedule
-            recentlySeen -> burstSchedule
+            // Background is capped to a few scans per 30 s on Android 11+,
+            // so a background app must never burst (10 starts per 30 s)
+            // even if a peer was just seen — the frequency limit would
+            // otherwise surface as SCAN_FAILED_SCANNING_TOO_FREQUENTLY.
             background -> backgroundSchedule
+            recentlySeen -> burstSchedule
             else -> foregroundSchedule
         }
     }

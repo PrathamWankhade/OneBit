@@ -52,6 +52,7 @@ class ScannerManager(
         private set
 
     private var adaptiveMode = false
+    private var windowActive = false
     private var backgroundRequested = false
     private var rssiIntervalMs: Long = 0
     private var configuredMode = "active"
@@ -202,14 +203,22 @@ class ScannerManager(
             reportDelayMs = if (schedule.active) 0 else configuredReportDelayMs,
         )
         val pause = adaptive.pauseMs(schedule)
-        if (pause > 0) {
-            cycleRunnable?.let { handler.removeCallbacks(it) }
-            val runnable = Runnable {
+        cycleRunnable?.let { handler.removeCallbacks(it) }
+        // The platform rejects a second startScan for a callback that is
+        // still registered, so the window must be stopped before the next
+        // one starts. Stopping here (rather than leaving the scan running)
+        // also makes the duty cycle real instead of a no-op.
+        val closeWindow = Runnable {
+            if (scanId == null) return@Runnable
+            stopWindow()
+            val next = Runnable {
                 if (scanId != null) scheduleAdaptiveWindow()
             }
-            cycleRunnable = runnable
-            handler.postDelayed(runnable, schedule.windowMs + pause)
+            cycleRunnable = next
+            handler.postDelayed(next, pause)
         }
+        cycleRunnable = closeWindow
+        handler.postDelayed(closeWindow, schedule.windowMs)
     }
 
     // ---- Single window -----------------------------------------------------------
@@ -221,6 +230,12 @@ class ScannerManager(
         reportDelayMs: Int,
     ) {
         val scanner = adapter?.bluetoothLeScanner ?: return
+        // The platform rejects a second startScan for a callback that is
+        // still registered (SCAN_FAILED_ALREADY_STARTED, code 1). A window
+        // that is still open must be closed first, otherwise the adaptive
+        // duty cycle failed on its second window and the app surfaced
+        // "Scan failed" while the radio kept scanning.
+        if (windowActive) stopWindow()
         val filters = buildFilters(serviceUuids)
         val reportDelay = if (mode == "passive") reportDelayMs.toLong() else 0L
         val settings = ScanSettings.Builder()
@@ -236,6 +251,7 @@ class ScannerManager(
             .build()
         try {
             scanner.startScan(filters, settings, scanCallback)
+            windowActive = true
         } catch (e: SecurityException) {
             BleLog.e("scan blocked by permissions", throwable = e)
             val code = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -248,11 +264,13 @@ class ScannerManager(
     }
 
     private fun stopWindow() {
+        if (!windowActive) return
         try {
             adapter?.bluetoothLeScanner?.stopScan(scanCallback)
         } catch (e: SecurityException) {
             // Adapter has nothing left to clean up.
         }
+        windowActive = false
     }
 
     private val scanCallback = object : ScanCallback() {
@@ -265,6 +283,10 @@ class ScannerManager(
             timeoutRunnable = null
             cycleRunnable?.let { handler.removeCallbacks(it) }
             cycleRunnable = null
+            // The platform may have left a scan registered for this
+            // callback (e.g. SCAN_FAILED_ALREADY_STARTED); make sure it is
+            // torn down so the next startScan does not repeat the failure.
+            stopWindow()
             val id = scanId
             scanId = null
             if (id != null) {

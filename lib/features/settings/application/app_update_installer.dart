@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:onebit/core/logging/app_logger.dart';
+import 'package:onebit/core/version/app_version.dart';
 import 'package:onebit/features/settings/application/app_update_service.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -156,6 +157,9 @@ class AppUpdateInstaller {
     final client = HttpClient();
     try {
       final request = await client.getUrl(Uri.parse(url));
+      request.headers.set('User-Agent', 'OneBit/${AppVersion.current}');
+      request.followRedirects = true;
+      request.maxRedirects = 5;
       final response = await request.close();
       if (response.statusCode != HttpStatus.ok) {
         throw AppUpdateInstallException(
