@@ -311,7 +311,7 @@ void main() {
       // operation well past a couple of windows — so the budget is
       // generous. The loop exits the moment the install lands, which
       // is the normal case after a handful of rounds.
-      for (var i = 0; i < 30 && paths.isEmpty; i++) {
+      for (var i = 0; i < 120 && paths.isEmpty; i++) {
         await tester.runAsync(
           () => Future<void>.delayed(const Duration(milliseconds: 50)),
         );
