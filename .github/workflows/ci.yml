@@ -110,7 +110,11 @@ jobs:
         run: |
           $line = Select-String -Path pubspec.yaml -Pattern '^version:\s*(\S+)' |
                   Select-Object -First 1
-          "version=$($line.Matches[0].Groups[1].Value)" >> $env:GITHUB_OUTPUT
+          $raw = $line.Matches[0].Groups[1].Value
+          # Strip the build number (+N) so the artifact check matches the
+          # APK name Gradle produces (e.g. OneBit-1.1.5-release.apk).
+          $display = $raw -replace '\+.*', ''
+          "version=$display" >> $env:GITHUB_OUTPUT
 
       - name: Install dependencies
         run: flutter pub get
