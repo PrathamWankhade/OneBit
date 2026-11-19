@@ -22,7 +22,7 @@ class AppVersion {
   ///
   /// Keep in sync with `pubspec.yaml`. [load] replaces it with the value
   /// the package manager reports, which is the same string.
-  static const String fallback = '1.1.2+4';
+  static const String fallback = '1.1.3+5';
 
   /// The host channel that knows what was stamped into this build.
   ///
